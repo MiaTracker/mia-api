@@ -1,0 +1,13 @@
+[package]
+name = "views"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+entities = { path = "../entities" }
+serde = "1.0.188"
+sea-orm = { version = "0.12.2", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+chrono = "0.4.31"
+uuid = { version = "1.4.1", features = ["v4"] }
