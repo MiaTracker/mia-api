@@ -6,14 +6,14 @@ use entities::users::ActiveModel;
 use crate::infrastructure::traits::IntoActiveModel;
 
 #[derive(Deserialize)]
-pub struct UserSignup {
+pub struct UserRegistration {
     pub email: String,
     pub username: String,
     pub password: String,
     pub password_repeat: String
 }
 
-impl IntoActiveModel<users::ActiveModel> for &UserSignup {
+impl IntoActiveModel<users::ActiveModel> for &UserRegistration {
     fn into_active_model(self) -> ActiveModel {
         users::ActiveModel {
             id: NotSet,

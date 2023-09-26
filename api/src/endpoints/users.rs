@@ -4,9 +4,9 @@ use axum::Json;
 use axum::response::IntoResponse;
 use services::infrastructure::SrvErr;
 use crate::infrastructure::{ApiErr, AppState};
-use views::users::{UserLogin, UserSignup};
+use views::users::{UserLogin, UserRegistration};
 
-pub async fn register(state: State<AppState>, Json(user): Json<UserSignup>) -> impl IntoResponse {
+pub async fn register(state: State<AppState>, Json(user): Json<UserRegistration>) -> impl IntoResponse {
     let result = services::users::register(&user, &state.conn).await;
     match result {
         Ok(_) => { StatusCode::CREATED.into_response() }

@@ -6,10 +6,8 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use services::infrastructure::SrvErr;
 
-#[derive(Serialize)]
 pub struct ApiErr {
     pub errors: Vec<ApiErrView>,
-    #[serde(skip)]
     pub status: StatusCode,
 }
 

@@ -1,0 +1,108 @@
+openapi: 3.0.3
+info:
+  title: Mia
+  description: Movie and TV show tracker
+  version: 0.1.0
+servers:
+  - url: 'https'
+paths:
+  /users/register:
+    post:
+      description: Registers a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                username:
+                  type: string
+                password:
+                  type: string
+                password_repeat:
+                  type: string
+      responses:
+        201:
+          description: User successfully registered
+        400:
+          $ref: "#/components/responses/400"
+        500:
+          $ref: "#/components/responses/500"
+
+  /users/login:
+    post:
+      description: Generates an authentication token for user with provided credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        200:
+          description: Returns a valid authentication token for user with provided credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expiry_date:
+                    type: string
+        400:
+          $ref: "#/components/responses/400"
+        500:
+          $ref: "#/components/responses/500"
+
+components:
+  responses:
+    400:
+      description: Provided parameters violate one or more requirements
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/apiErr"
+    500:
+      description: An unexpected error occurred while processing the request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/apiErr"
+  schemas:
+    apiErr:
+      type: array
+      minItems: 1
+      items:
+        type: object
+        properties:
+          key:
+            type: string
+            enum:
+              - InternalServerError
+              - NoAuthenticationTokenProvided
+              - InvalidAuthenticationToken
+
+              - SignUpEmailEmpty
+              - SignUpUsernameEmpty
+              - SignUpPasswordEmpty
+              - SignUpPasswordRepeatEmpty
+              - SignUpEmailInvalid
+              - SignUpAccountWithThisEmailAlreadyExists
+              - SignUpUsernameAlreadyTaken
+              - SignUpPasswordsDoNotMatch
+              - SignUpPasswordRequirementsNotMet
+
+              - LoginUsernameEmpty
+              - LoginPasswordEmpty
+              - LoginInvalidCredentials
+          debug_message:
+            type: string
