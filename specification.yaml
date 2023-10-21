@@ -4,10 +4,27 @@ info:
   description: Movie and TV show tracker
   version: 0.1.0
 servers:
-  - url: 'https'
+  - url: 'http://localhost:3000'
 paths:
+  /ping:
+    get:
+      summary: Ping
+      description: Test endpoint
+      responses:
+        200:
+          description: OK
+  /masterdata/refresh:
+    post:
+      summary: Refresh masterdata
+      description: Refreshes masterdata
+      responses:
+        200:
+          description: OK
+        500:
+          $ref: "#/components/responses/500"
   /users/register:
     post:
+      summary: Registration
       description: Registers a new user
       requestBody:
         required: true
@@ -34,6 +51,7 @@ paths:
 
   /users/login:
     post:
+      summary: Login
       description: Generates an authentication token for user with provided credentials
       requestBody:
         required: true
@@ -63,6 +81,71 @@ paths:
         500:
           $ref: "#/components/responses/500"
 
+  /media:
+    get:
+      summary: Media index
+      description: Retrieves a paginated list of all user's tracked media sorted alphabetically
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: offset
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: A page of all user's tracked media sorted alphabetically
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title:
+                    type: string
+                  poster_path:
+                    oneOf:
+                      - type: string
+                      - type: 'null'
+                  stars:
+                    oneOf:
+                      - type: number
+                        format: float
+                      - type: 'null'
+                  type:
+                    type: string
+                    enum: ["movie", "series"]
+                  episode_count:
+                    oneOf:
+                      - type: integer
+                      - type: 'null'
+        400:
+          $ref: "#/components/responses/400"
+        500:
+          $ref: "#/components/responses/500"
+    post:
+      summary: Media create
+      description: Creates a new media
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - name: tmdb_id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        201:
+          description: Media successfully created
+        400:
+          $ref: "#/components/responses/400"
+        500:
+          $ref: "#/components/responses/500"
 components:
   responses:
     400:
@@ -106,3 +189,8 @@ components:
               - LoginInvalidCredentials
           debug_message:
             type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

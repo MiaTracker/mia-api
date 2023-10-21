@@ -8,7 +8,7 @@ use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 use entities::prelude::Users;
 use entities::users;
-use views::users::{UserLogin, UserRegistration, UserToken, UserTokenClaims};
+use views::users::{CurrentUser, UserLogin, UserRegistration, UserToken, UserTokenClaims};
 use crate::infrastructure::{RuleViolation, SrvErr};
 use views::infrastructure::traits::IntoActiveModel;
 
@@ -150,9 +150,14 @@ pub async fn login(user: &UserLogin, jwt_secret: &String, db: &DbConn) -> Result
     Ok(view)
 }
 
-pub async fn query_user_by_uuid(user_id: Uuid, db: &DbConn) -> Result<Option<users::Model>, SrvErr> {
+pub async fn query_user_by_uuid(user_id: Uuid, db: &DbConn) -> Result<Option<CurrentUser>, SrvErr> {
     match users::Entity::find().filter(users::Column::Uuid.eq(user_id)).one(db).await {
-        Ok(user) => { Ok(user) }
+        Ok(opt) => {
+            match opt {
+                None => { Ok(None)}
+                Some(user) => { Ok(Some(CurrentUser::from(user))) }
+            }
+        }
         Err(err) => { Err(SrvErr::DB(err)) }
     }
 }

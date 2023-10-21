@@ -66,6 +66,17 @@ impl Into<ApiErr> for SrvErr {
                     status: StatusCode::INTERNAL_SERVER_ERROR
                 }
             }
+            SrvErr::Integration(integration) => {
+                ApiErr {
+                    errors: vec![
+                        ApiErrView {
+                            key: ErrorKey::InternalServerError.to_string(),
+                            debug_message: integration.to_string()
+                        },
+                    ],
+                    status: StatusCode::INTERNAL_SERVER_ERROR
+                }
+            }
         }
     }
 }

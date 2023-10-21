@@ -2,4 +2,20 @@
 
 pub mod prelude;
 
+pub mod credits;
+pub mod episodes;
+pub mod genres;
+pub mod images;
+pub mod languages;
+pub mod media;
+pub mod media_genres;
+pub mod movies;
+pub mod people;
+pub mod sea_orm_active_enums;
+pub mod seasons;
+pub mod series;
+pub mod series_watchlist;
+pub mod titles;
+pub mod user_media;
 pub mod users;
+pub mod watchlist;

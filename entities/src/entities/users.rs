@@ -18,6 +18,32 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(has_many = "super::user_media::Entity")]
+    UserMedia,
+    #[sea_orm(has_many = "super::watchlist::Entity")]
+    Watchlist,
+}
+
+impl Related<super::user_media::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserMedia.def()
+    }
+}
+
+impl Related<super::watchlist::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Watchlist.def()
+    }
+}
+
+impl Related<super::media::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::user_media::Relation::Media.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::user_media::Relation::Users.def().rev())
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

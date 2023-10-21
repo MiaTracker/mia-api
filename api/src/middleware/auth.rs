@@ -50,7 +50,17 @@ pub async fn auth<B>(State(state): State<AppState>, mut req: Request<B>, next: N
     };
 
     let user = match services::users::query_user_by_uuid(user_id, &state.conn).await {
-        Ok(user) => { user }
+        Ok(user) => {
+            match user {
+                None => {
+                    return Err(ApiErr {
+                        errors: vec![ApiErrView { key: ErrorKey::InvalidAuthenticationToken.to_string(), debug_message: "Invalid authentication token!".to_string() }],
+                        status: StatusCode::UNAUTHORIZED
+                    });
+                }
+                Some(user) => { user }
+            }
+        }
         Err(err) => {
             return Err(<SrvErr as Into<ApiErr>>::into(err))
         }

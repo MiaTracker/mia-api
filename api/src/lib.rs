@@ -15,6 +15,7 @@ use crate::infrastructure::AppState;
 
 pub async fn launch() {
     tracing_subscriber::fmt::init();
+    services::infrastructure::initialize().await;
 
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET not set!");
 
