@@ -78,7 +78,6 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(Media::TMDBVoteAverage).float())
                 .col(ColumnDef::new(Media::OriginalLanguage).string())
                 .col(ColumnDef::new(Media::DateAdded).date().not_null())
-                .col(ColumnDef::new(Media::Logged).boolean().not_null())
                 .col(ColumnDef::new(Media::Type).enumeration(MediaType::Table, [MediaType::Movie, MediaType::Series]).not_null())
                 .foreign_key(ForeignKey::create().from(Media::Table, Media::OriginalLanguage).to(Languages::Table, Languages::ISO6391)
                     .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
@@ -111,6 +110,7 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(Movies::ReleaseDate).date().not_null())
                 .col(ColumnDef::new(Movies::Runtime).integer())
                 .col(ColumnDef::new(Movies::Status).string().not_null())
+                .col(ColumnDef::new(Movies::Stars).double())
                 .foreign_key(ForeignKey::create().from(Movies::Table, Movies::Id).to(Media::Table, Media::Id)
                     .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
                 .to_owned()
@@ -308,7 +308,6 @@ enum Media {
     TMDBVoteAverage,
     OriginalLanguage,
     DateAdded,
-    Logged,
     Type
 }
 

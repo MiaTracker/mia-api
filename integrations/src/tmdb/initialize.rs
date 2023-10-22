@@ -2,5 +2,6 @@ use crate::constants;
 use crate::tmdb::configuration;
 
 pub async fn initialize() {
-    let _ = constants::TMDB_CONFIGURATION.set(configuration::details().await.expect("Failed to initialize TMDB_CONFIGURATION"));
+    let config = configuration::details().await.expect("Failed to initialize TMDB_CONFIGURATION");
+    constants::TMDB_CONFIGURATION.set(config).expect("Failed to set TMDB_CONFIGURATION");
 }

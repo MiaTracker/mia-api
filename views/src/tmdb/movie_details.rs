@@ -49,7 +49,6 @@ impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
             poster_path: if self.poster_path.is_empty() { Set(None) } else { Set(Some(self.poster_path.clone())) },
             tmdb_vote_average: Set(Some(self.vote_average)),
             original_language: if self.original_language.is_empty() { Set(None) } else { Set(Some(self.original_language.clone()))},
-            logged: Set(true),
             date_added: Set(chrono::Utc::now().date_naive()),
             r#type: Set(MediaType::Movie),
         }
@@ -71,6 +70,7 @@ impl IntoActiveModel<movies::ActiveModel> for &MovieDetails {
             },
             runtime: Set(Some(self.runtime)),
             status: Set(self.status.clone()),
+            stars: NotSet,
         }
     }
 }

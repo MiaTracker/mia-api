@@ -19,7 +19,6 @@ pub struct Model {
     pub tmdb_vote_average: Option<f32>,
     pub original_language: Option<String>,
     pub date_added: Date,
-    pub logged: bool,
     pub r#type: MediaType,
 }
 

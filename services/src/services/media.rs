@@ -1,6 +1,6 @@
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, NotSet, QueryFilter, TransactionTrait};
 use sea_orm::ActiveValue::Set;
-use entities::{genres, media, media_genres, movies, user_media};
+use entities::{genres, media, media_genres, movies, titles, user_media};
 use integrations::tmdb;
 use views::infrastructure::traits::IntoActiveModel;
 use views::media::MediaType;
@@ -82,9 +82,29 @@ async fn create_movie(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(
         }
     }
 
+
+    let model = titles::ActiveModel {
+        id: NotSet,
+        media_id: Set(inserted_media.id),
+        primary: Set(true),
+        title: Set(tmdb_movie.title)
+    };
+    model.insert(db).await?;
+
+    let titles = tmdb::movies::alternative_titles(tmdb_id).await?;
+    for title in titles.titles {
+        let model = titles::ActiveModel {
+            id: NotSet,
+            media_id: Set(inserted_media.id),
+            primary: Set(false),
+            title: Set(title.title)
+        };
+        model.insert(db).await?;
+    }
+
     Ok(())
 }
 
-async fn create_series(_tmdb_id: i32, _user: &CurrentUser, _db: &DbConn) {
+async fn create_series(_tmdb_id: i32, _user: &CurrentUser, _db: &DbConn) -> Result<(), SrvErr> {
     panic!("Not implemented!");
 }

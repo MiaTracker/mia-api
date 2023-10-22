@@ -1,13 +1,15 @@
 use axum::http::StatusCode;
 use axum::Router;
 use axum::routing::{get, post};
-use crate::endpoints::{masterdata, media, users};
+use crate::endpoints::{configuration, masterdata, media, movies, users};
 use crate::infrastructure::AppState;
 
 pub fn build() -> Router<AppState>
 {
     Router::new()
         .route("/media", post(media::create))
+        .route("/configuration/images", get(configuration::images))
+        .route("/movies", get(movies::index))
 }
 
 pub fn build_anonymous() -> Router<AppState> {
