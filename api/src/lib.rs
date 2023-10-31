@@ -26,6 +26,7 @@ pub async fn launch() {
     let state = AppState { conn, jwt_secret };
 
     let serv = ServiceBuilder::new()
+        .layer(middleware::cors::build())
         .layer(axum::middleware::from_fn_with_state(state.clone(), middleware::auth));
     let app = routes::build().layer(serv).merge(routes::build_anonymous()).with_state(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
