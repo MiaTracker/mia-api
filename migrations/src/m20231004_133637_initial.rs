@@ -173,7 +173,7 @@ impl MigrationTrait for Migration {
                 .primary_key(Index::create().col(MediaGenres::MediaId).col(MediaGenres::GenreId))
                 .foreign_key(ForeignKey::create().from(MediaGenres::Table, MediaGenres::MediaId).to(Media::Table, Media::Id)
                     .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
-                .foreign_key(ForeignKey::create().from(MediaGenres::Table, MediaGenres::MediaId).to(Media::Table, Media::Id)
+                .foreign_key(ForeignKey::create().from(MediaGenres::Table, MediaGenres::GenreId).to(Genres::Table, Genres::Id)
                     .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
                 .to_owned()
             ).await?;
@@ -197,6 +197,25 @@ impl MigrationTrait for Migration {
             .foreign_key(ForeignKey::create().from(Images::Table, Images::MediaId).to(Media::Table, Media::Id)
                 .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
             .index(Index::create().name("images_unique_constr").table(Images::Table).col(Images::MediaId).col(Images::Path).unique())
+            .to_owned()
+        ).await?;
+
+        manager.create_table(Table::create()
+            .table(Tags::Table)
+            .col(ColumnDef::new(Tags::Id).integer().not_null().auto_increment().primary_key())
+            .col(ColumnDef::new(Tags::Name).string().unique_key().not_null())
+            .to_owned()
+        ).await?;
+
+        manager.create_table(Table::create()
+            .table(MediaTags::Table)
+            .col(ColumnDef::new(MediaTags::MediaId).integer().not_null())
+            .col(ColumnDef::new(MediaTags::TagId).integer().not_null())
+            .primary_key(Index::create().col(MediaTags::MediaId).col(MediaTags::TagId))
+            .foreign_key(ForeignKey::create().from(MediaTags::Table, MediaTags::MediaId).to(Media::Table, Media::Id)
+                .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
+            .foreign_key(ForeignKey::create().from(MediaTags::Table, MediaTags::TagId).to(Tags::Table, Tags::Id)
+                .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
             .to_owned()
         ).await?;
 
@@ -251,14 +270,30 @@ impl MigrationTrait for Migration {
             .foreign_key(ForeignKey::create().from(SeriesWatchlist::Table, SeriesWatchlist::Id).to(Watchlist::Table, Watchlist::Id)
                 .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
             .to_owned()
+        ).await?;
+
+        manager.create_table(Table::create()
+            .table(Logs::Table)
+            .col(ColumnDef::new(Logs::Id).integer().not_null().primary_key().auto_increment())
+            .col(ColumnDef::new(Logs::MediaId).integer().not_null())
+            .col(ColumnDef::new(Logs::Date).date().not_null())
+            .col(ColumnDef::new(Logs::Rating).float())
+            .col(ColumnDef::new(Logs::Completed).boolean().not_null())
+            .col(ColumnDef::new(Logs::Comment).string())
+            .foreign_key(ForeignKey::create().from(Logs::Table, Logs::MediaId).to(Media::Table, Media::Id)
+                .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
+            .to_owned()
         ).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager.drop_table(Table::drop().table(Logs::Table).to_owned()).await?;
         manager.drop_table(Table::drop().table(SeriesWatchlist::Table).to_owned()).await?;
         manager.drop_table(Table::drop().table(Watchlist::Table).to_owned()).await?;
         manager.drop_table(Table::drop().table(Credits::Table).to_owned()).await?;
         manager.drop_table(Table::drop().table(People::Table).to_owned()).await?;
+        manager.drop_table(Table::drop().table(MediaTags::Table).to_owned()).await?;
+        manager.drop_table(Table::drop().table(Tags::Table).to_owned()).await?;
         manager.drop_table(Table::drop().table(Images::Table).to_owned()).await?;
         manager.drop_table(Table::drop().table(Titles::Table).to_owned()).await?;
         manager.drop_table(Table::drop().table(MediaGenres::Table).to_owned()).await?;
@@ -400,6 +435,20 @@ enum Images {
 }
 
 #[derive(DeriveIden)]
+enum Tags {
+    Table,
+    Id,
+    Name
+}
+
+#[derive(DeriveIden)]
+enum MediaTags {
+    Table,
+    MediaId,
+    TagId
+}
+
+#[derive(DeriveIden)]
 enum People {
     Table,
     Id,
@@ -439,6 +488,17 @@ enum SeriesWatchlist {
     Table,
     Id,
     SeasonNumber
+}
+
+#[derive(DeriveIden)]
+enum Logs {
+    Table,
+    Id,
+    MediaId,
+    Date,
+    Rating,
+    Completed,
+    Comment
 }
 
 #[derive(Iden, EnumIter)]

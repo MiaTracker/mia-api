@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
 pub enum MediaType {
-    #[serde(alias = "movie")]
+    #[serde(rename = "movie")]
     Movie,
-    #[serde(alias = "series")]
+    #[serde(rename = "series")]
     Series
 }
 

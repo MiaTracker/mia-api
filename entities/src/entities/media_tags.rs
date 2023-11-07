@@ -3,24 +3,16 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "media_genres")]
+#[sea_orm(table_name = "media_tags")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub media_id: i32,
     #[sea_orm(primary_key, auto_increment = false)]
-    pub genre_id: i32,
+    pub tag_id: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::genres::Entity",
-        from = "Column::GenreId",
-        to = "super::genres::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    Genres,
     #[sea_orm(
         belongs_to = "super::media::Entity",
         from = "Column::MediaId",
@@ -29,17 +21,25 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Media,
-}
-
-impl Related<super::genres::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Genres.def()
-    }
+    #[sea_orm(
+        belongs_to = "super::tags::Entity",
+        from = "Column::TagId",
+        to = "super::tags::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Tags,
 }
 
 impl Related<super::media::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Media.def()
+    }
+}
+
+impl Related<super::tags::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Tags.def()
     }
 }
 

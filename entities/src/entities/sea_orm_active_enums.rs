@@ -18,3 +18,13 @@ pub enum MediaType {
     #[sea_orm(string_value = "series")]
     Series,
 }
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "source_type")]
+pub enum SourceType {
+    #[sea_orm(string_value = "jellyfin")]
+    Jellyfin,
+    #[sea_orm(string_value = "torrent")]
+    Torrent,
+    #[sea_orm(string_value = "web")]
+    Web,
+}

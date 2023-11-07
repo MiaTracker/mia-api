@@ -2,25 +2,21 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "media_genres")]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "logs")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(primary_key)]
+    pub id: i32,
     pub media_id: i32,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub genre_id: i32,
+    pub date: Date,
+    #[sea_orm(column_type = "Float", nullable)]
+    pub rating: Option<f32>,
+    pub completed: bool,
+    pub comment: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::genres::Entity",
-        from = "Column::GenreId",
-        to = "super::genres::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
-    Genres,
     #[sea_orm(
         belongs_to = "super::media::Entity",
         from = "Column::MediaId",
@@ -29,12 +25,6 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Media,
-}
-
-impl Related<super::genres::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Genres.def()
-    }
 }
 
 impl Related<super::media::Entity> for Entity {

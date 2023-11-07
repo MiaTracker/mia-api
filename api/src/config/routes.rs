@@ -10,6 +10,7 @@ pub fn build() -> Router<AppState>
         .route("/media", post(media::create))
         .route("/configuration/images", get(configuration::images))
         .route("/movies", get(movies::index))
+        .route("/movies/:media_id", get(movies::details))
 }
 
 pub fn build_anonymous() -> Router<AppState> {

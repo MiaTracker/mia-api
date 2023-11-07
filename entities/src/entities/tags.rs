@@ -3,34 +3,32 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "genres")]
+#[sea_orm(table_name = "tags")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    #[sea_orm(unique)]
-    pub tmdb_id: Option<i32>,
     #[sea_orm(unique)]
     pub name: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::media_genres::Entity")]
-    MediaGenres,
+    #[sea_orm(has_many = "super::media_tags::Entity")]
+    MediaTags,
 }
 
-impl Related<super::media_genres::Entity> for Entity {
+impl Related<super::media_tags::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::MediaGenres.def()
+        Relation::MediaTags.def()
     }
 }
 
 impl Related<super::media::Entity> for Entity {
     fn to() -> RelationDef {
-        super::media_genres::Relation::Media.def()
+        super::media_tags::Relation::Media.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::media_genres::Relation::Genres.def().rev())
+        Some(super::media_tags::Relation::Tags.def().rev())
     }
 }
 
