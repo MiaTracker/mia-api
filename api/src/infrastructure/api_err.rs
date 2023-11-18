@@ -77,6 +77,12 @@ impl Into<ApiErr> for SrvErr {
                     status: StatusCode::INTERNAL_SERVER_ERROR
                 }
             }
+            SrvErr::NotFound => {
+                ApiErr {
+                    errors: vec![],
+                    status: StatusCode::NOT_FOUND,
+                }
+            }
         }
     }
 }

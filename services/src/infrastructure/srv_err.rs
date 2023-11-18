@@ -5,6 +5,7 @@ use crate::infrastructure::rule_violation::RuleViolation;
 pub enum SrvErr {
     DB(DbErr),
     RuleViolation(Vec<RuleViolation>),
+    NotFound,
     Internal(String),
     Integration(String)
 }
