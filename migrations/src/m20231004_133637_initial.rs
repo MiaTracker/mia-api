@@ -211,11 +211,15 @@ impl MigrationTrait for Migration {
             .table(MediaTags::Table)
             .col(ColumnDef::new(MediaTags::MediaId).integer().not_null())
             .col(ColumnDef::new(MediaTags::TagId).integer().not_null())
-            .primary_key(Index::create().col(MediaTags::MediaId).col(MediaTags::TagId))
+            .col(ColumnDef::new(MediaTags::UserId).integer().not_null())
+            .primary_key(Index::create().col(MediaTags::MediaId).col(MediaTags::TagId).col(MediaTags::UserId))
             .foreign_key(ForeignKey::create().from(MediaTags::Table, MediaTags::MediaId).to(Media::Table, Media::Id)
                 .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
             .foreign_key(ForeignKey::create().from(MediaTags::Table, MediaTags::TagId).to(Tags::Table, Tags::Id)
                 .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
+            .foreign_key(ForeignKey::create().from(MediaTags::Table,MediaTags::UserId).to(Users::Table, Users::Id)
+                .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade)
+            )
             .to_owned()
         ).await?;
 
@@ -445,7 +449,8 @@ enum Tags {
 enum MediaTags {
     Table,
     MediaId,
-    TagId
+    TagId,
+    UserId
 }
 
 #[derive(DeriveIden)]
