@@ -15,7 +15,6 @@ pub enum RuleViolation {
 
     LoginUsernameEmpty,
     LoginPasswordEmpty,
-    LoginInvalidCredentials,
 }
 
 impl fmt::Display for RuleViolation {

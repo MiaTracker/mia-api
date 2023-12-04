@@ -116,7 +116,7 @@ pub async fn login(user: &UserLogin, jwt_secret: &String, db: &DbConn) -> Result
 
     let model = Users::find().filter(users::Column::Username.eq(user.username.clone())).one(db).await.map_err(|err| SrvErr::DB(err))?;
     if model.is_none() {
-        return Err(SrvErr::RuleViolation(vec![RuleViolation::LoginInvalidCredentials]));
+        return Err(SrvErr::Unauthorized);
     }
     let model = model.unwrap();
 
@@ -126,7 +126,7 @@ pub async fn login(user: &UserLogin, jwt_secret: &String, db: &DbConn) -> Result
     };
 
     if !valid {
-        return Err(SrvErr::RuleViolation(vec![RuleViolation::LoginInvalidCredentials]));
+        return Err(SrvErr::Unauthorized);
     }
 
     let now = chrono::Utc::now();

@@ -7,7 +7,8 @@ pub enum SrvErr {
     RuleViolation(Vec<RuleViolation>),
     NotFound,
     Internal(String),
-    Integration(String)
+    Integration(String),
+    Unauthorized
 }
 
 impl From<DbErr> for SrvErr {

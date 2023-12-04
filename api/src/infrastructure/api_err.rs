@@ -83,6 +83,12 @@ impl Into<ApiErr> for SrvErr {
                     status: StatusCode::NOT_FOUND,
                 }
             }
+            SrvErr::Unauthorized => {
+                ApiErr {
+                    errors: vec![],
+                    status: StatusCode::UNAUTHORIZED
+                }
+            }
         }
     }
 }
