@@ -7,6 +7,7 @@ mod production_company;
 mod production_country;
 mod movie_title;
 mod collection;
+mod series_title;
 
 pub use movie_details::*;
 pub use language::*;
@@ -17,3 +18,4 @@ pub use production_company::*;
 pub use production_country::*;
 pub use movie_title::*;
 pub use collection::*;
+pub use series_title::*;
