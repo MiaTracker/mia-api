@@ -16,8 +16,8 @@ pub struct Model {
     pub season_number: Option<i32>,
     #[sea_orm(column_type = "Float", nullable)]
     pub tmdb_vote_average: Option<f32>,
-    #[sea_orm(column_type = "Double", nullable)]
-    pub stars: Option<f64>,
+    #[sea_orm(column_type = "Float", nullable)]
+    pub stars: Option<f32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "movies")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -10,8 +10,6 @@ pub struct Model {
     pub release_date: Date,
     pub runtime: Option<i32>,
     pub status: String,
-    #[sea_orm(column_type = "Double", nullable)]
-    pub stars: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -16,6 +16,8 @@ pub fn build() -> Router<AppState>
         .route("/movies/:media_id/tags", post(tags::create))
         .route("/movies/:media_id/tags/:tag_id", delete(tags::delete))
         .route("/series", post(series::create))
+        .route("/series", get(series::index))
+        .route("/series/:series_id", get(series::details))
 }
 
 pub fn build_anonymous() -> Router<AppState> {

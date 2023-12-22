@@ -101,7 +101,6 @@ impl IntoActiveModel<movies::ActiveModel> for &MovieDetails {
             },
             runtime: Set(self.runtime),
             status: Set(self.status.clone().unwrap_or(env::var("UNSET_MEDIA_STATUS").expect("UNSET_MEDIA_STATUS not set!"))),
-            stars: NotSet,
         }
     }
 }

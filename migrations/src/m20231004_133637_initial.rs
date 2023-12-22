@@ -94,7 +94,7 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(UserMedia::UserId)
                     .integer()
                     .not_null())
-                .col(ColumnDef::new(Movies::Stars).double())
+                .col(ColumnDef::new(UserMedia::Stars).float())
                 .primary_key(Index::create().table(UserMedia::Table)
                     .col(UserMedia::MediaId)
                     .col(UserMedia::UserId))
@@ -111,7 +111,6 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(Movies::ReleaseDate).date().not_null())
                 .col(ColumnDef::new(Movies::Runtime).integer())
                 .col(ColumnDef::new(Movies::Status).string().not_null())
-                .col(ColumnDef::new(Movies::Stars).double())
                 .foreign_key(ForeignKey::create().from(Movies::Table, Movies::Id).to(Media::Table, Media::Id)
                     .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
                 .to_owned()
@@ -140,7 +139,7 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(Seasons::PosterPath).string())
                 .col(ColumnDef::new(Seasons::SeasonNumber).integer())
                 .col(ColumnDef::new(Seasons::TMDBVoteAverage).float())
-                .col(ColumnDef::new(Seasons::Stars).double())
+                .col(ColumnDef::new(Seasons::Stars).float())
                 .to_owned()
             ).await?;
 
@@ -355,7 +354,8 @@ enum Media {
 enum UserMedia {
     Table,
     MediaId,
-    UserId
+    UserId,
+    Stars
 }
 
 #[derive(DeriveIden)]
@@ -364,8 +364,7 @@ enum Movies {
     Id,
     ReleaseDate,
     Runtime,
-    Status,
-    Stars
+    Status
 }
 
 #[derive(DeriveIden)]

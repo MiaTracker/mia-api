@@ -6,6 +6,6 @@ pub struct MediaIndex {
     pub id: i32,
     pub r#type: MediaType,
     pub poster_path: Option<String>,
-    pub stars: Option<f64>,
+    pub stars: Option<f32>,
     pub title: String
 }

@@ -117,31 +117,20 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
             return Err(SrvErr::Internal("User media exists without a media reference!".to_string()));
         }
         let media = media.unwrap();
+        if media.r#type != MediaType::Movie {
+            continue;
+        }
 
         let title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
         let title = if let Some(title) = title {
             title.title
         } else { env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!") };
 
-        let stars;
-        if media.r#type == MediaType::Movie {
-            let movie = media.find_related(Movies).one(db).await?;
-            if let Some(movie) = movie {
-                stars = movie.stars;
-            } else {
-                return Err(SrvErr::Internal("Media of type movie exists without a movie reference!".to_string()));
-            }
-        } else {
-            stars = None;
-            //TODO: series
-        }
-
-
         let index = MediaIndex {
             id: media.id,
             r#type: views::media::MediaType::from(media.r#type),
             poster_path: media.poster_path,
-            stars,
+            stars: um.stars,
             title,
         };
         indexes.push(index);
@@ -155,6 +144,7 @@ pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<O
     if db_user_media.is_none() {
         return Ok(None);
     }
+    let db_user_media = db_user_media.unwrap();
 
     let db_media = Media::find_by_id(movie_id).one(db).await?;
     let db_media = db_media.expect("DB in invalid state!");
@@ -206,7 +196,7 @@ pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<O
         id: movie_id,
         poster_path: db_media.poster_path,
         backdrop_path: db_media.backdrop_path,
-        stars: db_movie.stars,
+        stars: db_user_media.stars,
         title,
         alternative_titles,
         release_date: db_movie.release_date,

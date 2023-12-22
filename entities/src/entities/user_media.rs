@@ -9,8 +9,8 @@ pub struct Model {
     pub media_id: i32,
     #[sea_orm(primary_key, auto_increment = false)]
     pub user_id: i32,
-    #[sea_orm(column_type = "Double", nullable)]
-    pub stars: Option<f64>,
+    #[sea_orm(column_type = "Float", nullable)]
+    pub stars: Option<f32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
