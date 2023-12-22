@@ -25,7 +25,7 @@ pub struct SeriesDetails {
     pub last_air_date: Option<String>,
     pub last_episode_to_air: Option<SeriesEpisode>,
     pub name: String,
-    pub next_episode_to_air: Option<String>,
+    pub next_episode_to_air: Option<SeriesEpisode>,
     pub networks: Option<Vec<SeriesNetwork>>,
     pub number_of_episodes: Option<i32>,
     pub number_of_seasons: Option<i32>,

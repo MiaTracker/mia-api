@@ -7,9 +7,8 @@ use views::media::MediaCreateParams;
 use views::users::CurrentUser;
 use crate::infrastructure::{ApiErr, AppState};
 
-pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>,
-                    Query(params): Query<MediaCreateParams>) -> impl IntoResponse {
-    let result = services::media::create(params.tmdb_id, params.r#type, &user, &state.conn).await;
+pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaCreateParams>) -> impl IntoResponse {
+    let result = services::series::create(params.tmdb_id, &user, &state.conn).await;
     match result {
         Ok(_) => { StatusCode::CREATED.into_response() }
         Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
