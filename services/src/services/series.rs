@@ -1,13 +1,13 @@
 use std::env;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DbConn, EntityTrait, ModelTrait, NotSet, TransactionTrait};
-use entities::{genres, media, media_genres, sea_orm_active_enums, seasons, series, titles, user_media};
+use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, seasons, series, titles, user_media};
 use views::infrastructure::traits::IntoActiveModel;
 use views::tmdb::{Genre, Season, SeriesDetails};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use sea_orm::{QueryFilter, ColumnTrait};
-use entities::prelude::{Genres, Languages, Logs, Media, Series, Sources, Tags, Titles, UserMedia};
+use entities::prelude::{Genres, Languages, Logs, Media, MediaTags, Series, Sources, Tags, Titles, UserMedia};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::languages::Language;
@@ -183,8 +183,13 @@ pub async fn details(user: &CurrentUser, series_id: i32, db: &DbConn) -> Result<
     let genres = db_media.find_related(Genres).all(db).await?.iter().map(|m| {
         views::genres::Genre::from(m)
     }).collect();
-    let tags = db_media.find_related(Tags).all(db).await?.iter().map(|m| {
-        Tag::from(m)
+    let tags = MediaTags::find()
+        .filter(media_tags::Column::MediaId.eq(db_media.id))
+        .filter(media_tags::Column::UserId.eq(user.id))
+        .find_with_related(Tags).all(db).await?.iter().flat_map(|(_, ms)| {
+        ms.iter().map(|m| {
+            Tag::from(m)
+        })
     }).collect();
     let logs = db_media.find_related(Logs).all(db).await?.iter().map(|m| {
         Log::from(m)

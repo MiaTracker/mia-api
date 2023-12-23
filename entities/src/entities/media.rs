@@ -136,15 +136,6 @@ impl Related<super::genres::Entity> for Entity {
     }
 }
 
-impl Related<super::tags::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::media_tags::Relation::Tags.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::media_tags::Relation::Media.def().rev())
-    }
-}
-
 impl Related<super::users::Entity> for Entity {
     fn to() -> RelationDef {
         super::user_media::Relation::Users.def()

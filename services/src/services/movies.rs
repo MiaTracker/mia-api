@@ -1,8 +1,8 @@
 use std::env;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait};
 use sea_orm::ActiveValue::Set;
-use entities::{genres, media, media_genres, movies, sea_orm_active_enums, titles, user_media};
-use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles, UserMedia};
+use entities::{genres, media, media_genres, media_tags, movies, sea_orm_active_enums, titles, user_media};
+use entities::prelude::{Genres, Languages, Logs, Media, MediaTags, Movies, Sources, Tags, Titles, UserMedia};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::genres::Genre;
@@ -167,8 +167,13 @@ pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<O
     let genres = db_media.find_related(Genres).all(db).await?.iter().map(|m| {
         Genre::from(m)
     }).collect();
-    let tags = db_media.find_related(Tags).all(db).await?.iter().map(|m| {
-        Tag::from(m)
+    let tags = MediaTags::find()
+        .filter(media_tags::Column::MediaId.eq(db_media.id))
+        .filter(media_tags::Column::UserId.eq(user.id))
+        .find_with_related(Tags).all(db).await?.iter().flat_map(|(_, ms)| {
+        ms.iter().map(|m| {
+            Tag::from(m)
+        })
     }).collect();
     let logs = db_media.find_related(Logs).all(db).await?.iter().map(|m| {
         Log::from(m)

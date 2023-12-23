@@ -217,7 +217,7 @@ impl MigrationTrait for Migration {
                 .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
             .foreign_key(ForeignKey::create().from(MediaTags::Table, MediaTags::TagId).to(Tags::Table, Tags::Id)
                 .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
-            .foreign_key(ForeignKey::create().from(MediaTags::Table,MediaTags::UserId).to(Users::Table, Users::Id)
+            .foreign_key(ForeignKey::create().from(MediaTags::Table, MediaTags::UserId).to(Users::Table, Users::Id)
                 .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade)
             )
             .to_owned()

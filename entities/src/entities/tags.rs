@@ -23,13 +23,4 @@ impl Related<super::media_tags::Entity> for Entity {
     }
 }
 
-impl Related<super::media::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::media_tags::Relation::Media.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::media_tags::Relation::Tags.def().rev())
-    }
-}
-
 impl ActiveModelBehavior for ActiveModel {}
