@@ -25,7 +25,11 @@ pub fn build() -> Router<AppState>
 pub fn build_anonymous() -> Router<AppState> {
     Router::new()
         .route("/ping", get(StatusCode::OK))
-        .route("/masterdata/refresh", post(masterdata::refresh))
-        .route("/users/register", post(users::register))
         .route("/users/login", post(users::login))
+}
+
+pub fn build_admin() -> Router<AppState> {
+    Router::new()
+        .route("/users/register", post(users::register))
+        .route("/masterdata/refresh", post(masterdata::refresh))
 }
