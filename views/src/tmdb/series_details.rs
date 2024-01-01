@@ -95,6 +95,7 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesDetails {
     fn into_active_model(self) -> media::ActiveModel {
         media::ActiveModel {
             id: NotSet,
+            user_id: NotSet,
             backdrop_path:
                 if let Some(path) = self.backdrop_path.clone() {
                     if path.is_empty() { Set(None) }
@@ -128,6 +129,7 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesDetails {
                 } else { Set(None) },
             date_added: Set(chrono::Utc::now().date_naive()),
             r#type: Set(MediaType::Series),
+            stars: Set(None)
         }
     }
 }

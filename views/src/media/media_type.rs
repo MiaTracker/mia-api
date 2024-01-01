@@ -16,3 +16,12 @@ impl From<entities::sea_orm_active_enums::MediaType> for MediaType {
         }
     }
 }
+
+impl Into<entities::sea_orm_active_enums::MediaType> for MediaType {
+    fn into(self) -> entities::sea_orm_active_enums::MediaType {
+        match self {
+            MediaType::Movie => { entities::sea_orm_active_enums::MediaType::Movie }
+            MediaType::Series => { entities::sea_orm_active_enums::MediaType::Series }
+        }
+    }
+}

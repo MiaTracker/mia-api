@@ -20,6 +20,5 @@ pub mod series_watchlist;
 pub mod sources;
 pub mod tags;
 pub mod titles;
-pub mod user_media;
 pub mod users;
 pub mod watchlist;

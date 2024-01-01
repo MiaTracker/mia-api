@@ -10,14 +10,16 @@ pub fn build() -> Router<AppState>
         .route("/configuration/images", get(configuration::images))
         .route("/movies", post(movies::create))
         .route("/movies", get(movies::index))
-        .route("/movies/:media_id", get(movies::details))
+        .route("/movies/:movie_id", get(movies::details))
         .route("/movies/:media_id/logs", post(logs::create))
         .route("/movies/:media_id/logs/:log_id", delete(logs::delete))
-        .route("/movies/:media_id/tags", post(tags::create))
-        .route("/movies/:media_id/tags/:tag_id", delete(tags::delete))
+        .route("/movies/:media_id/tags", post(tags::create_movie_tag))
+        .route("/movies/:media_id/tags/:tag_id", delete(tags::delete_movie_tag))
         .route("/series", post(series::create))
         .route("/series", get(series::index))
         .route("/series/:series_id", get(series::details))
+        .route("/series/:media_id/tags", post(tags::create_series_tag))
+        .route("/series/:media_id/tags/:tag_id", delete(tags::delete_series_tag))
 }
 
 pub fn build_anonymous() -> Router<AppState> {

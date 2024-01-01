@@ -21,7 +21,8 @@ pub struct ApiErrView {
 pub enum ErrorKey {
     InternalServerError,
     NoAuthenticationTokenProvided,
-    InvalidAuthenticationToken
+    InvalidAuthenticationToken,
+    MasterdataOutdated
 }
 
 impl fmt::Display for ErrorKey {
@@ -87,6 +88,17 @@ impl Into<ApiErr> for SrvErr {
                 ApiErr {
                     errors: vec![],
                     status: StatusCode::UNAUTHORIZED
+                }
+            }
+            SrvErr::MasterdataOutdated => {
+                ApiErr {
+                    errors: vec![
+                        ApiErrView {
+                            key: ErrorKey::MasterdataOutdated.to_string(),
+                            debug_message: "Masterdata is outdated, refresh is required.".to_string(),
+                        }
+                    ],
+                    status: StatusCode::UNPROCESSABLE_ENTITY,
                 }
             }
         }

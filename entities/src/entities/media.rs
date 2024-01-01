@@ -19,6 +19,9 @@ pub struct Model {
     pub original_language: Option<String>,
     pub date_added: Date,
     pub r#type: MediaType,
+    pub user_id: i32,
+    #[sea_orm(column_type = "Float", nullable)]
+    pub stars: Option<f32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -49,8 +52,14 @@ pub enum Relation {
     Sources,
     #[sea_orm(has_many = "super::titles::Entity")]
     Titles,
-    #[sea_orm(has_many = "super::user_media::Entity")]
-    UserMedia,
+    #[sea_orm(
+        belongs_to = "super::users::Entity",
+        from = "Column::UserId",
+        to = "super::users::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Users,
     #[sea_orm(has_many = "super::watchlist::Entity")]
     Watchlist,
 }
@@ -115,9 +124,9 @@ impl Related<super::titles::Entity> for Entity {
     }
 }
 
-impl Related<super::user_media::Entity> for Entity {
+impl Related<super::users::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::UserMedia.def()
+        Relation::Users.def()
     }
 }
 
@@ -136,12 +145,12 @@ impl Related<super::genres::Entity> for Entity {
     }
 }
 
-impl Related<super::users::Entity> for Entity {
+impl Related<super::tags::Entity> for Entity {
     fn to() -> RelationDef {
-        super::user_media::Relation::Users.def()
+        super::media_tags::Relation::Tags.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::user_media::Relation::Media.def().rev())
+        Some(super::media_tags::Relation::Media.def().rev())
     }
 }
 

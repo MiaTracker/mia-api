@@ -1,8 +1,8 @@
 use std::env;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait};
 use sea_orm::ActiveValue::Set;
-use entities::{genres, media, media_genres, media_tags, movies, sea_orm_active_enums, titles, user_media};
-use entities::prelude::{Genres, Languages, Logs, Media, MediaTags, Movies, Sources, Tags, Titles, UserMedia};
+use entities::{genres, media, media_genres, movies, titles};
+use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::genres::Genre;
@@ -17,7 +17,19 @@ use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 
-pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
+    let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
+        .filter(media::Column::UserId.eq(user.id))
+        .filter(media::Column::Type.eq(MediaType::Movie)).one(db).await;
+    match med_res {
+        Ok(media) => {
+            if media.is_some() {
+                return Ok(false);
+            }
+        }
+        Err(err) => { return Err(SrvErr::DB(err)); }
+    };
+
     let trans = db.begin().await?;
 
     let tmdb_movie = match tmdb::movies::details(tmdb_id).await {
@@ -25,62 +37,26 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(),
         Err(err) => { return Err(SrvErr::from(err)); }
     };
 
-    let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
-        .filter(media::Column::Type.eq(sea_orm_active_enums::MediaType::Movie)).one(db).await;
-    let med_opt = match med_res {
-        Ok(media) => { media }
-        Err(err) => { return Err(SrvErr::DB(err)); }
-    };
     let mut media = <&views::tmdb::MovieDetails as IntoActiveModel<media::ActiveModel>>::into_active_model(&tmdb_movie);
     let mut movie = <&views::tmdb::MovieDetails as IntoActiveModel<movies::ActiveModel>>::into_active_model(&tmdb_movie);
-    let inserted_media;
-    if let Some(med) = med_opt {
-        media.id = Set(med.id);
-        media.date_added = NotSet;
-        inserted_media = media.update(db).await?;
-        movie.id = Set(med.id);
-        movie.update(db).await?;
-    } else {
-        inserted_media = media.insert(db).await?;
-        movie.id = Set(inserted_media.id);
-        movie.insert(db).await?;
-    }
 
-    let user_media = user_media::Entity::find()
-        .filter(user_media::Column::UserId.eq(user.id))
-        .filter(user_media::Column::MediaId.eq(inserted_media.id))
-        .one(db).await?;
-    if user_media.is_none() {
-        let user_media_am = user_media::ActiveModel {
-            media_id: Set(inserted_media.id),
-            user_id: Set(user.id),
-            stars: Set(None),
-        };
-        user_media_am.insert(db).await?;
-    }
+    media.user_id = Set(user.id);
+    let inserted_media = media.insert(db).await?;
+    movie.id = Set(inserted_media.id);
+    movie.insert(db).await?;
 
     for genre in &tmdb_movie.genres {
-        let mut model = <&views::tmdb::Genre as IntoActiveModel<genres::ActiveModel>>::into_active_model(&genre);
-        let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id)).one(db).await?;
-        let inserted;
-        if let Some(existing_genre) = existing {
-            model.id = Set(existing_genre.id);
-            inserted = model.update(db).await?;
-        } else {
-            inserted = model.insert(db).await?;
+        let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
+            .filter(genres::Column::Type.eq(MediaType::Movie)).one(db).await?;
+        if existing.is_none() {
+            return Err(SrvErr::MasterdataOutdated);
         }
 
-        let media_genre = media_genres::Entity::find()
-            .filter(media_genres::Column::MediaId.eq(inserted_media.id))
-            .filter(media_genres::Column::GenreId.eq(inserted.id))
-            .one(db).await?;
-        if media_genre.is_none() {
-            let media_genre = media_genres::ActiveModel {
-                media_id: Set(inserted_media.id),
-                genre_id: Set(inserted.id),
-            };
-            media_genre.insert(db).await?;
-        }
+        let media_genre = media_genres::ActiveModel {
+            media_id: Set(inserted_media.id),
+            genre_id: Set(existing.unwrap().id),
+        };
+        media_genre.insert(db).await?;
     }
 
 
@@ -104,33 +80,25 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(),
     }
 
     trans.commit().await?;
-    Ok(())
+    Ok(true)
 }
 
 
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let user_media = UserMedia::find().filter(user_media::Column::UserId.eq(user.id)).all(db).await?;
-    let mut indexes = Vec::with_capacity(user_media.len());
-    for um in user_media {
-        let media = um.find_related(Media).one(db).await?;
-        if media.is_none() {
-            return Err(SrvErr::Internal("User media exists without a media reference!".to_string()));
-        }
-        let media = media.unwrap();
-        if media.r#type != MediaType::Movie {
-            continue;
-        }
-
-        let title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
+    let media = Media::find().filter(media::Column::UserId.eq(user.id))
+        .filter(media::Column::Type.eq(MediaType::Movie)).all(db).await?;
+    let mut indexes = Vec::with_capacity(media.len());
+    for m in media {
+        let title = m.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
         let title = if let Some(title) = title {
             title.title
         } else { env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!") };
 
         let index = MediaIndex {
-            id: media.id,
-            r#type: views::media::MediaType::from(media.r#type),
-            poster_path: media.poster_path,
-            stars: um.stars,
+            id: m.id,
+            r#type: views::media::MediaType::from(m.r#type),
+            poster_path: m.poster_path,
+            stars: m.stars,
             title,
         };
         indexes.push(index);
@@ -140,18 +108,15 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
 }
 
 pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<Option<MovieDetails>, SrvErr> {
-    let db_user_media = UserMedia::find().filter(user_media::Column::UserId.eq(user.id)).filter(user_media::Column::MediaId.eq(movie_id)).one(db).await?;
-    if db_user_media.is_none() {
+    let db_media = Media::find().filter(media::Column::Id.eq(movie_id))
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Movie)).one(db).await?;
+
+    if db_media.is_none() {
         return Ok(None);
     }
-    let db_user_media = db_user_media.unwrap();
+    let db_media = db_media.unwrap();
 
-    let db_media = Media::find_by_id(movie_id).one(db).await?;
-    let db_media = db_media.expect("DB in invalid state!");
-
-    if db_media.r#type != MediaType::Movie { return Ok(None); }
-
-    let db_movie = Movies::find_by_id(movie_id).one(db).await?;
+    let db_movie = db_media.find_related(Movies).one(db).await?;
     let db_movie = db_movie.expect("DB in invalid state!");
 
     let db_titles = db_media.find_related(Titles).all(db).await?;
@@ -167,13 +132,8 @@ pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<O
     let genres = db_media.find_related(Genres).all(db).await?.iter().map(|m| {
         Genre::from(m)
     }).collect();
-    let tags = MediaTags::find()
-        .filter(media_tags::Column::MediaId.eq(db_media.id))
-        .filter(media_tags::Column::UserId.eq(user.id))
-        .find_with_related(Tags).all(db).await?.iter().flat_map(|(_, ms)| {
-        ms.iter().map(|m| {
-            Tag::from(m)
-        })
+    let tags = db_media.find_related(Tags).all(db).await?.iter().map(|m| {
+        Tag::from(m)
     }).collect();
     let logs = db_media.find_related(Logs).all(db).await?.iter().map(|m| {
         Log::from(m)
@@ -201,7 +161,7 @@ pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<O
         id: movie_id,
         poster_path: db_media.poster_path,
         backdrop_path: db_media.backdrop_path,
-        stars: db_user_media.stars,
+        stars: db_media.stars,
         title,
         alternative_titles,
         release_date: db_movie.release_date,

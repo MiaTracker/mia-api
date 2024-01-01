@@ -21,10 +21,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::logs::Entity")]
     Logs,
-    #[sea_orm(has_many = "super::media_tags::Entity")]
-    MediaTags,
-    #[sea_orm(has_many = "super::user_media::Entity")]
-    UserMedia,
+    #[sea_orm(has_many = "super::media::Entity")]
+    Media,
     #[sea_orm(has_many = "super::watchlist::Entity")]
     Watchlist,
 }
@@ -35,30 +33,15 @@ impl Related<super::logs::Entity> for Entity {
     }
 }
 
-impl Related<super::media_tags::Entity> for Entity {
+impl Related<super::media::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::MediaTags.def()
-    }
-}
-
-impl Related<super::user_media::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::UserMedia.def()
+        Relation::Media.def()
     }
 }
 
 impl Related<super::watchlist::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Watchlist.def()
-    }
-}
-
-impl Related<super::media::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::user_media::Relation::Media.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::user_media::Relation::Users.def().rev())
     }
 }
 

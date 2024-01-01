@@ -42,6 +42,7 @@ impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
     fn into_active_model(self) -> media::ActiveModel {
         media::ActiveModel {
             id: NotSet,
+            user_id: NotSet,
             backdrop_path:
                 if let Some(path) = self.backdrop_path.clone() {
                     if path.is_empty() { Set(None) }
@@ -79,6 +80,7 @@ impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
                 } else { Set(None) },
             date_added: Set(chrono::Utc::now().date_naive()),
             r#type: Set(MediaType::Movie),
+            stars: Set(None)
         }
     }
 }
@@ -113,6 +115,7 @@ impl IntoActiveModel<genres::ActiveModel> for &Genre {
             id: NotSet,
             tmdb_id: Set(Some(self.id)),
             name: Set(self.name.clone()),
+            r#type: NotSet,
         }
     }
 }

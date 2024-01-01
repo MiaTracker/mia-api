@@ -1,5 +1,5 @@
 pub mod users;
-pub mod metadata;
+pub mod masterdata;
 pub mod movies;
 pub mod configuration;
 pub mod logs;

@@ -17,6 +17,5 @@ pub use super::series_watchlist::Entity as SeriesWatchlist;
 pub use super::sources::Entity as Sources;
 pub use super::tags::Entity as Tags;
 pub use super::titles::Entity as Titles;
-pub use super::user_media::Entity as UserMedia;
 pub use super::users::Entity as Users;
 pub use super::watchlist::Entity as Watchlist;

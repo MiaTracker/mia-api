@@ -8,7 +8,8 @@ pub enum SrvErr {
     NotFound,
     Internal(String),
     Integration(String),
-    Unauthorized
+    Unauthorized,
+    MasterdataOutdated
 }
 
 impl From<DbErr> for SrvErr {

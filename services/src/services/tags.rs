@@ -1,49 +1,68 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, PaginatorTrait, QueryFilter, TransactionTrait};
 use sea_orm::ActiveValue::Set;
-use entities::prelude::{MediaTags};
-use entities::{media_tags, tags};
+use entities::prelude::{MediaTags, Tags};
+use entities::{media, media_tags, sea_orm_active_enums, tags};
 use views::infrastructure::traits::IntoActiveModel;
+use views::media::MediaType;
 use views::tags::TagCreate;
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 
-pub async fn create(media_id: i32, tag: &TagCreate, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
+    let media = media::Entity::find_by_id(media_id).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
+        .filter(media::Column::UserId.eq(user.id)).one(db).await?;
+
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
+
+    let existing = media.find_related(Tags).filter(tags::Column::Name.eq(&tag.name)).one(db).await?;
+    if existing.is_some() {
+        return Ok(false);
+    }
+
     let existing_db = tags::Entity::find().filter(tags::Column::Name.eq(&tag.name)).one(db).await?;
     if let Some(existing) = existing_db {
-        let rel_db = MediaTags::find()
-            .filter(media_tags::Column::TagId.eq(existing.id))
-            .filter(media_tags::Column::UserId.eq(user.id))
-            .one(db).await?;
-        if rel_db.is_none() {
-            let rel = media_tags::ActiveModel {
-                media_id: Set(media_id),
-                tag_id: Set(existing.id),
-                user_id: Set(user.id),
-            };
-            rel.insert(db).await?;
-        }
+        let rel = media_tags::ActiveModel {
+            media_id: Set(media_id),
+            tag_id: Set(existing.id),
+        };
+        rel.insert(db).await?;
     } else {
         let model = tag.into_active_model();
         let model = model.insert(db).await?;
         let rel = media_tags::ActiveModel {
             media_id: Set(media_id),
             tag_id: Set(model.id),
-            user_id: Set(user.id),
         };
         rel.insert(db).await?;
     }
 
-    Ok(())
+    Ok(true)
 }
 
-pub async fn delete(media_id: i32, tag_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
-    let rel = MediaTags::find().filter(media_tags::Column::MediaId.eq(media_id))
-        .filter(media_tags::Column::TagId.eq(tag_id))
-        .filter(media_tags::Column::UserId.eq(user.id)).one(db).await?;
-    if rel.is_none() { return Ok(()) }
-    let rel = rel.unwrap();
-    rel.delete(db).await?;
-    MediaTags::delete_many().filter(media_tags::Column::TagId.eq(tag_id)).exec(db).await?;
+pub async fn delete(media_id: i32, tag_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    let media = media::Entity::find_by_id(media_id)
+        .filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
+        .filter(media::Column::UserId.eq(user.id)).one(db).await?;
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
 
+    let media_tag = media.find_related(MediaTags).filter(media_tags::Column::TagId.eq(tag_id)).one(db).await?;
+    if let Some(media_tag) = media_tag {
+        let trans = db.begin().await?;
+
+        let tag = media_tag.find_related(Tags).one(db).await?.expect("DB in invalid state!");
+        media_tag.delete(db).await?;
+        let count = tag.find_related(MediaTags).count(db).await?;
+        if count == 0 {
+            tag.delete(db).await?;
+        }
+
+        trans.commit().await?;
+    }
     Ok(())
 }
