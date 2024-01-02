@@ -1,8 +1,8 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, PaginatorTrait, QueryFilter, TransactionTrait};
+use inflector::Inflector;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, PaginatorTrait, QueryFilter, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use entities::prelude::{MediaTags, Tags};
 use entities::{media, media_tags, sea_orm_active_enums, tags};
-use views::infrastructure::traits::IntoActiveModel;
 use views::media::MediaType;
 use views::tags::TagCreate;
 use views::users::CurrentUser;
@@ -17,12 +17,17 @@ pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user:
     }
     let media = media.unwrap();
 
-    let existing = media.find_related(Tags).filter(tags::Column::Name.eq(&tag.name)).one(db).await?;
+    let name = tag.name.to_title_case();
+
+    let existing = media.find_related(Tags).filter(tags::Column::Name.eq(&name)).one(db).await?;
     if existing.is_some() {
         return Ok(false);
     }
 
-    let existing_db = tags::Entity::find().filter(tags::Column::Name.eq(&tag.name)).one(db).await?;
+    let existing_db = tags::Entity::find().filter(tags::Column::Name.eq(&name)).one(db).await?;
+
+    let trans = db.begin().await?;
+
     if let Some(existing) = existing_db {
         let rel = media_tags::ActiveModel {
             media_id: Set(media_id),
@@ -30,7 +35,10 @@ pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user:
         };
         rel.insert(db).await?;
     } else {
-        let model = tag.into_active_model();
+        let model = tags::ActiveModel {
+            id: NotSet,
+            name: Set(name),
+        };
         let model = model.insert(db).await?;
         let rel = media_tags::ActiveModel {
             media_id: Set(media_id),
@@ -39,6 +47,7 @@ pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user:
         rel.insert(db).await?;
     }
 
+    trans.commit().await?;
     Ok(true)
 }
 

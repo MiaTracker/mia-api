@@ -1,6 +1,5 @@
 use uuid::Uuid;
 use entities::users;
-use entities::users::Model;
 
 #[derive(Clone)]
 pub struct CurrentUser {
@@ -12,7 +11,7 @@ pub struct CurrentUser {
 }
 
 impl From<users::Model> for CurrentUser {
-    fn from(value: Model) -> Self {
+    fn from(value: users::Model) -> Self {
         Self {
             id: value.id,
             uuid: value.uuid,

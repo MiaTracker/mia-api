@@ -7,8 +7,8 @@ mod middleware;
 
 use std::env;
 use std::net::SocketAddr;
-use axum::Server;
 use sea_orm::Database;
+use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use crate::config::routes;
 use crate::infrastructure::AppState;
@@ -36,10 +36,9 @@ pub async fn launch() {
         .layer(cors_serv).with_state(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
-    if let Ok(builder) = Server::try_bind(&addr) {
+    if let Ok(listener) = TcpListener::bind(&addr).await {
         tracing::debug!("Listening on {}", addr);
-        let server = builder.serve(app.into_make_service());
-        if let Err(err) = server.await {
+        if let Err(err) = axum::serve(listener, app).await {
             tracing::error!("Server error: {}", err);
         }
     } else {

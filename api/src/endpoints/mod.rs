@@ -5,3 +5,4 @@ pub mod configuration;
 pub mod logs;
 pub mod tags;
 pub mod series;
+pub mod genres;

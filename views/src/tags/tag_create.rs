@@ -1,19 +1,13 @@
-use sea_orm::ActiveValue::Set;
-use sea_orm::NotSet;
 use serde::Deserialize;
-use entities::tags;
-use crate::infrastructure::traits::IntoActiveModel;
+use crate::routing::RouteType;
+
+#[derive(Deserialize)]
+pub struct TagCreateParams {
+    pub route_type: RouteType,
+    pub media_id: i32
+}
 
 #[derive(Deserialize)]
 pub struct TagCreate {
     pub name: String
-}
-
-impl IntoActiveModel<tags::ActiveModel> for &TagCreate {
-    fn into_active_model(self) -> tags::ActiveModel {
-        tags::ActiveModel {
-            id: NotSet,
-            name: Set(self.name.clone()),
-        }
-    }
 }

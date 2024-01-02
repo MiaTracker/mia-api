@@ -1,10 +1,11 @@
+use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use views::users::CurrentUser;
 use crate::infrastructure::{ApiErr, ApiErrView, ErrorKey};
 
-pub async fn admin<B>(req: Request<B>, next: Next<B>) -> Result<impl IntoResponse, ApiErr> {
+pub async fn admin(req: Request<Body>, next: Next) -> Result<impl IntoResponse, ApiErr> {
     let user = req.extensions().get::<CurrentUser>().expect("CurrentUser not set! Middleware order is incorrect!");
     if !user.admin {
         return Err(ApiErr {

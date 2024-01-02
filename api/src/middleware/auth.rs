@@ -1,3 +1,4 @@
+use axum::body::Body;
 use axum::extract::State;
 use axum::http::{header, Request, StatusCode};
 use axum::middleware::Next;
@@ -7,7 +8,7 @@ use services::infrastructure::SrvErr;
 use views::users::UserTokenClaims;
 use crate::infrastructure::{ApiErr, ApiErrView, AppState, ErrorKey};
 
-pub async fn auth<B>(State(state): State<AppState>, mut req: Request<B>, next: Next<B>) -> Result<impl IntoResponse, ApiErr> {
+pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: Next) -> Result<impl IntoResponse, ApiErr> {
 
     let token = req.headers().get(header::AUTHORIZATION)
         .and_then(|auth_header| auth_header.to_str().ok())

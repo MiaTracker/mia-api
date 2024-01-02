@@ -1,5 +1,4 @@
 use sea_orm::DbErr;
-use integrations::infrastructure::Error;
 use crate::infrastructure::rule_violation::RuleViolation;
 
 pub enum SrvErr {
@@ -19,7 +18,7 @@ impl From<DbErr> for SrvErr {
 }
 
 impl From<integrations::infrastructure::Error> for SrvErr {
-    fn from(value: Error) -> Self {
+    fn from(value: integrations::infrastructure::Error) -> Self {
         SrvErr::Integration(value.message)
     }
 }

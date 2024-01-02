@@ -2,7 +2,6 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::NotSet;
 use serde::Deserialize;
 use entities::users;
-use entities::users::ActiveModel;
 use crate::infrastructure::traits::IntoActiveModel;
 
 #[derive(Deserialize)]
@@ -14,7 +13,7 @@ pub struct UserRegistration {
 }
 
 impl IntoActiveModel<users::ActiveModel> for &UserRegistration {
-    fn into_active_model(self) -> ActiveModel {
+    fn into_active_model(self) -> users::ActiveModel {
         users::ActiveModel {
             id: NotSet,
             uuid: Set(uuid::Uuid::new_v4()),
