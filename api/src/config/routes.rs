@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::Router;
 use axum::routing::{delete, get, post};
-use crate::endpoints::{configuration, genres, logs, masterdata, movies, series, tags, users};
+use crate::endpoints::{configuration, genres, logs, masterdata, movies, series, tags, titles, users};
 use crate::infrastructure::AppState;
 
 pub fn build() -> Router<AppState>
@@ -20,6 +20,9 @@ pub fn build() -> Router<AppState>
         .route("/:route_type/:media_id/tags/:tag_id", delete(tags::delete))
         .route("/:route_type/:media_id/genres", post(genres::create))
         .route("/:route_type/:media_id/genres/:genre_id", delete(genres::delete))
+        .route("/:route_type/:media_id/titles", post(titles::create))
+        .route("/:route_type/:media_id/titles/:title_id/primary", post(titles::set_primary))
+        .route("/:route_type/:media_id/titles/:title_id", delete(titles::delete))
 }
 
 pub fn build_anonymous() -> Router<AppState> {

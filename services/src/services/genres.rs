@@ -62,20 +62,23 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
     let media = media.unwrap();
 
     let media_genre = media.find_related(MediaGenres).filter(media_genres::Column::GenreId.eq(genre_id)).one(db).await?;
-    if let Some(media_genre) = media_genre {
-        let trans = db.begin().await?;
-
-        let genre = media_genre.find_related(Genres).one(db).await?.expect("DB in invalid state!");
-        media_genre.delete(db).await?;
-        if genre.tmdb_id.is_none() {
-            let count = genre.find_related(MediaGenres).count(db).await?;
-            if count == 0 {
-                genre.delete(db).await?;
-            }
-        }
-
-        trans.commit().await?;
+    if media_genre.is_none() {
+        return Err(SrvErr::NotFound);
     }
+    let media_genre = media_genre.unwrap();
+
+    let trans = db.begin().await?;
+
+    let genre = media_genre.find_related(Genres).one(db).await?.expect("DB in invalid state!");
+    media_genre.delete(db).await?;
+    if genre.tmdb_id.is_none() {
+        let count = genre.find_related(MediaGenres).count(db).await?;
+        if count == 0 {
+            genre.delete(db).await?;
+        }
+    }
+
+    trans.commit().await?;
 
     Ok(())
 }

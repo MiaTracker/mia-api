@@ -11,7 +11,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
                     Path(params): Path<GenreCreateParams>, Json(genre): Json<GenreCreate>) -> impl IntoResponse {
     let result = services::genres::create(params.media_id, &genre, params.route_type.into(), &user, &state.conn).await;
     match result {
-        Ok(_) => { StatusCode::CREATED.into_response() }
+        Ok(created) => { if created { StatusCode::CREATED.into_response() } else { StatusCode::OK.into_response() } }
         Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
     }
 }
