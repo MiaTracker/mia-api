@@ -25,7 +25,7 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
 
     let existing_db = genres::Entity::find().filter(genres::Column::Name.eq(&name)).one(db).await?;
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     if let Some(existing) = existing_db {
         let rel = media_genres::ActiveModel {
@@ -48,7 +48,7 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
         rel.insert(db).await?;
     }
 
-    trans.commit().await?;
+    tran.commit().await?;
     Ok(true)
 }
 
@@ -67,7 +67,7 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
     }
     let media_genre = media_genre.unwrap();
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     let genre = media_genre.find_related(Genres).one(db).await?.expect("DB in invalid state!");
     media_genre.delete(db).await?;
@@ -78,7 +78,7 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
         }
     }
 
-    trans.commit().await?;
+    tran.commit().await?;
 
     Ok(())
 }

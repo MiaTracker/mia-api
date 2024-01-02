@@ -26,7 +26,7 @@ pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user:
 
     let existing_db = tags::Entity::find().filter(tags::Column::Name.eq(&name)).one(db).await?;
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     if let Some(existing) = existing_db {
         let rel = media_tags::ActiveModel {
@@ -47,7 +47,7 @@ pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user:
         rel.insert(db).await?;
     }
 
-    trans.commit().await?;
+    tran.commit().await?;
     Ok(true)
 }
 
@@ -67,7 +67,7 @@ pub async fn delete(media_id: i32, tag_id: i32, media_type: MediaType, user: &Cu
     }
     let media_tag = media_tag.unwrap();
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     let tag = media_tag.find_related(Tags).one(db).await?.expect("DB in invalid state!");
     media_tag.delete(db).await?;
@@ -76,6 +76,6 @@ pub async fn delete(media_id: i32, tag_id: i32, media_type: MediaType, user: &Cu
         tag.delete(db).await?;
     }
 
-    trans.commit().await?;
+    tran.commit().await?;
     Ok(())
 }

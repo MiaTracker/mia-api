@@ -6,7 +6,7 @@ use views::infrastructure::traits::IntoActiveModel;
 use crate::infrastructure::SrvErr;
 
 pub async fn refresh(db: &DbConn) -> Result<(), SrvErr> {
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
     let languages = integrations::tmdb::configuration::languages().await?;
     for language in languages {
         let existing = languages::Entity::find_by_id(language.iso_639_1.clone()).one(db).await?;
@@ -47,6 +47,6 @@ pub async fn refresh(db: &DbConn) -> Result<(), SrvErr> {
         }
     }
 
-    trans.commit().await?;
+    tran.commit().await?;
     Ok(())
 }

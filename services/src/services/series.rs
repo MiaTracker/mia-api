@@ -16,6 +16,7 @@ use views::media::MediaIndex;
 use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
+use crate::services;
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
@@ -31,7 +32,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
         Err(err) => { return Err(SrvErr::from(err)); }
     }
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     let tmdb_series = match tmdb::series::details(tmdb_id).await {
         Ok(series) => { series }
@@ -90,7 +91,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
 
     //TODO: implement episode fetching
 
-    trans.commit().await?;
+    tran.commit().await?;
     Ok(true)
 }
 
@@ -189,4 +190,8 @@ pub async fn details(user: &CurrentUser, series_id: i32, db: &DbConn) -> Result<
     };
 
     Ok(Some(series))
+}
+
+pub async fn delete(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    services::media::delete(series_id, user, db).await
 }

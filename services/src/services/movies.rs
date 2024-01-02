@@ -16,6 +16,7 @@ use views::tags::Tag;
 use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
+use crate::services;
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
@@ -30,7 +31,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
         Err(err) => { return Err(SrvErr::DB(err)); }
     };
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     let tmdb_movie = match tmdb::movies::details(tmdb_id).await {
         Ok(movie) => { movie }
@@ -79,7 +80,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
         model.insert(db).await?;
     }
 
-    trans.commit().await?;
+    tran.commit().await?;
     Ok(true)
 }
 
@@ -107,7 +108,7 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
     Ok(indexes)
 }
 
-pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<Option<MovieDetails>, SrvErr> {
+pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<Option<MovieDetails>, SrvErr> {
     let db_media = Media::find().filter(media::Column::Id.eq(movie_id))
         .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Movie)).one(db).await?;
 
@@ -177,4 +178,8 @@ pub async fn details(user: &CurrentUser, movie_id: i32, db: &DbConn) -> Result<O
     };
 
     Ok(Some(movie))
+}
+
+pub async fn delete(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    services::media::delete(movie_id, user, db).await
 }

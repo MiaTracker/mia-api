@@ -39,3 +39,11 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
         Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
     }
 }
+
+pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
+    let result = services::series::delete(movie_id, &user, &state.conn).await;
+    match result {
+        Ok(_) => { StatusCode::OK.into_response() }
+        Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
+    }
+}

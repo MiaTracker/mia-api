@@ -28,11 +28,11 @@ pub async fn create(media_id: i32, title: &TitleCreate, media_type: MediaType, u
         title: Set(title.name.clone()),
     };
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     model.insert(db).await?;
 
-    trans.commit().await?;
+    tran.commit().await?;
 
     Ok(true)
 }
@@ -51,7 +51,7 @@ pub async fn set_primary(media_id: i32, title_id: i32, media_type: MediaType, us
         return Err(SrvErr::NotFound);
     }
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     let primary = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
     if primary.is_some() {
@@ -64,7 +64,7 @@ pub async fn set_primary(media_id: i32, title_id: i32, media_type: MediaType, us
     title.primary = Set(true);
     title.update(db).await?;
 
-    trans.commit().await?;
+    tran.commit().await?;
 
     Ok(())
 }
@@ -85,7 +85,7 @@ pub async fn delete(media_id: i32, title_id: i32, media_type: MediaType, user: &
     }
     let title = title.unwrap();
 
-    let trans = db.begin().await?;
+    let tran = db.begin().await?;
 
     if title.primary {
         let first = media.find_related(Titles).filter(titles::Column::Primary.eq(false)).one(db).await?;
@@ -99,7 +99,7 @@ pub async fn delete(media_id: i32, title_id: i32, media_type: MediaType, user: &
         title.delete(db).await?;
     }
 
-    trans.commit().await?;
+    tran.commit().await?;
 
     Ok(())
 }

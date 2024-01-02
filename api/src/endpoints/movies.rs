@@ -30,12 +30,20 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 }
 
 pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
-    let result = services::movies::details(&user, movie_id, &state.conn).await;
+    let result = services::movies::details(movie_id, &user, &state.conn).await;
     match result {
         Ok(movie) => { match movie {
             None => { StatusCode::NOT_FOUND.into_response() }
             Some(some) => { Json(some).into_response() }
         }}
+        Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
+    }
+}
+
+pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
+    let result = services::movies::delete(movie_id, &user, &state.conn).await;
+    match result {
+        Ok(_) => { StatusCode::OK.into_response() }
         Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
     }
 }
