@@ -10,7 +10,7 @@ use views::infrastructure::traits::IntoActiveModel;
 use views::languages::Language;
 use views::logs::Log;
 use views::media::MediaIndex;
-use views::movies::MovieDetails;
+use views::movies::{MovieDetails, MovieMetadata};
 use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
@@ -178,6 +178,33 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
     };
 
     Ok(Some(movie))
+}
+
+pub async fn metadata(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<MovieMetadata, SrvErr> {
+    let db_media = Media::find().filter(media::Column::Id.eq(movie_id))
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Movie)).one(db).await?;
+
+    if db_media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let db_media = db_media.unwrap();
+
+    let movie = db_media.find_related(Movies).one(db).await?.expect("DB in invalid state!");
+
+    let metadata = MovieMetadata {
+        id: movie.id,
+        backdrop_path: db_media.backdrop_path,
+        homepage: db_media.homepage,
+        tmdb_id: db_media.tmdb_id,
+        overview: db_media.overview,
+        poster_path: db_media.poster_path,
+        tmdb_vote_average: db_media.tmdb_vote_average,
+        original_language: db_media.original_language,
+        release_date: Some(movie.release_date),
+        runtime: movie.runtime,
+        status: Some(movie.status),
+    };
+    Ok(metadata)
 }
 
 pub async fn delete(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {

@@ -13,6 +13,7 @@ use integrations::tmdb;
 use views::languages::Language;
 use views::logs::Log;
 use views::media::MediaIndex;
+use views::series::SeriesMetadata;
 use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
@@ -118,7 +119,7 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
     Ok(indexes)
 }
 
-pub async fn details(user: &CurrentUser, series_id: i32, db: &DbConn) -> Result<Option<views::series::SeriesDetails>, SrvErr> {
+pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<Option<views::series::SeriesDetails>, SrvErr> {
     let db_media = Media::find().filter(media::Column::Id.eq(series_id))
         .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Series)).one(db).await?;
 
@@ -190,6 +191,35 @@ pub async fn details(user: &CurrentUser, series_id: i32, db: &DbConn) -> Result<
     };
 
     Ok(Some(series))
+}
+
+pub async fn metadata(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<SeriesMetadata, SrvErr> {
+    let db_media = Media::find().filter(media::Column::Id.eq(series_id))
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Series)).one(db).await?;
+
+    if db_media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let db_media = db_media.unwrap();
+
+    let series = db_media.find_related(Series).one(db).await?.expect("DB in invalid state!");
+
+    let metadata = SeriesMetadata {
+        id: series.id,
+        backdrop_path: db_media.backdrop_path,
+        homepage: db_media.homepage,
+        tmdb_id: db_media.tmdb_id,
+        overview: db_media.overview,
+        poster_path: db_media.poster_path,
+        tmdb_vote_average: db_media.tmdb_vote_average,
+        original_language: db_media.original_language,
+        first_air_date: series.first_air_date,
+        number_of_episodes: series.number_of_episodes,
+        number_of_seasons: series.number_of_seasons,
+        status: Some(series.status),
+        r#type: series.r#type,
+    };
+    Ok(metadata)
 }
 
 pub async fn delete(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {

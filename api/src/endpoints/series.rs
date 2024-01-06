@@ -30,12 +30,20 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 }
 
 pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
-    let result = services::series::details(&user, series_id, &state.conn).await;
+    let result = services::series::details(series_id, &user, &state.conn).await;
     match result {
-        Ok(movie) => { match movie {
+        Ok(series) => { match series {
             None => { StatusCode::NOT_FOUND.into_response() }
             Some(some) => { Json(some).into_response() }
         }}
+        Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
+    }
+}
+
+pub async fn metadata(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
+    let result = services::series::metadata(series_id, &user, &state.conn).await;
+    match result {
+        Ok(series) => { Json(series).into_response() }
         Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
     }
 }
