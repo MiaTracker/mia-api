@@ -1,4 +1,4 @@
-use inflector::Inflector;
+use cruet::Inflector;
 use sea_orm::{NotSet, Set};
 use serde::{Deserialize, Serialize};
 use entities::{media, movies};

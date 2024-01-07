@@ -1,4 +1,4 @@
-use inflector::Inflector;
+use cruet::Inflector;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
 use entities::{genres, media, media_genres, sea_orm_active_enums};
 use entities::prelude::{Genres, MediaGenres};

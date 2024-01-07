@@ -1,4 +1,4 @@
-use inflector::Inflector;
+use cruet::Inflector;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, PaginatorTrait, QueryFilter, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use entities::prelude::{MediaTags, Tags};
