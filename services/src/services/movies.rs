@@ -1,5 +1,5 @@
 use std::env;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use entities::{genres, media, media_genres, movies, titles};
 use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles};
@@ -15,7 +15,7 @@ use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
-use crate::infrastructure::SrvErr;
+use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::services;
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
@@ -191,20 +191,95 @@ pub async fn metadata(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
 
     let movie = db_media.find_related(Movies).one(db).await?.expect("DB in invalid state!");
 
+    let title = db_media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?.map(|m| { m.title });
+
     let metadata = MovieMetadata {
         id: movie.id,
         backdrop_path: db_media.backdrop_path,
         homepage: db_media.homepage,
         tmdb_id: db_media.tmdb_id,
+        imdb_id: db_media.imdb_id,
+        title,
         overview: db_media.overview,
         poster_path: db_media.poster_path,
         tmdb_vote_average: db_media.tmdb_vote_average,
         original_language: db_media.original_language,
-        release_date: Some(movie.release_date),
+        release_date: movie.release_date,
         runtime: movie.runtime,
-        status: Some(movie.status),
+        status: movie.status,
     };
     Ok(metadata)
+}
+
+pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    if movie_id != metadata.id {
+        return Err(SrvErr::BadRequest("Endpoint movie id does not match movie id in metadata!".to_string()));
+    }
+
+    let media = Media::find().filter(media::Column::Id.eq(movie_id))
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Movie)).one(db).await?;
+
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
+
+    let mut rule_violations = Vec::new();
+
+    if metadata.original_language != media.original_language && metadata.original_language.is_some() {
+        let found = Languages::find_by_id(metadata.original_language.as_ref().unwrap()).count(db).await?;
+        if found == 0 {
+            rule_violations.push(RuleViolation::MediaInvalidOriginalLanguage);
+        }
+    }
+
+    if let Some(avg) = metadata.tmdb_vote_average {
+        if avg > 10.0 || avg < 0.0 {
+            rule_violations.push(RuleViolation::MediaTmdbVoteAverageOutOfBounds);
+        }
+    }
+
+    if let Some(runtime) = metadata.runtime {
+        if runtime < 0 {
+            rule_violations.push(RuleViolation::MovieNegativeRuntime);
+        }
+    }
+
+    if !rule_violations.is_empty() {
+        return Err(SrvErr::RuleViolation(rule_violations));
+    }
+
+    let tran = db.begin().await?;
+
+    let media_am: media::ActiveModel = (&metadata).into_active_model();
+    media_am.update(db).await?;
+    let movie_am: movies::ActiveModel = (&metadata).into_active_model();
+    movie_am.update(db).await?;
+
+    let db_title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
+
+    if let Some(title) = metadata.title {
+        if let Some(title_mod) = db_title {
+            let mut am = title_mod.into_active_model();
+            am.title = Set(title);
+            am.update(db).await?;
+        } else {
+            let am = titles::ActiveModel {
+                id: NotSet,
+                media_id: Set(media.id),
+                primary: Set(true),
+                title: Set(title),
+            };
+            am.insert(db).await?;
+        }
+    } else {
+        if let Some(title_mod) = db_title {
+            title_mod.delete(db).await?;
+        }
+    }
+
+    tran.commit().await?;
+    Ok(())
 }
 
 pub async fn delete(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {

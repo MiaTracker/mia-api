@@ -1,4 +1,3 @@
-use std::env;
 use chrono::NaiveDate;
 use sea_orm::ActiveValue::Set;
 use sea_orm::NotSet;
@@ -153,7 +152,7 @@ impl IntoActiveModel<series::ActiveModel> for &SeriesDetails {
                 },
             number_of_episodes: Set(self.number_of_episodes),
             number_of_seasons: Set(self.number_of_seasons),
-            status: Set(self.status.clone().unwrap_or(env::var("UNSET_MEDIA_STATUS").expect("UNSET_MEDIA_STATUS not set!"))),
+            status: Set(self.status.clone()),
             r#type: Set(self.r#type.clone()),
         }
     }

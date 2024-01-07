@@ -11,3 +11,4 @@ serde = "1.0.188"
 sea-orm = { version = "0.12.2", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
 chrono = "0.4.31"
 uuid = { version = "1.4.1", features = ["v4"] }
+Inflector = "0.11.4"

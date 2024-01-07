@@ -10,7 +10,7 @@ pub struct Model {
     pub first_air_date: Option<Date>,
     pub number_of_episodes: Option<i32>,
     pub number_of_seasons: Option<i32>,
-    pub status: String,
+    pub status: Option<String>,
     pub r#type: Option<String>,
 }
 

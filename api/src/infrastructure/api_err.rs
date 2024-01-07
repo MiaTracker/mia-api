@@ -23,7 +23,8 @@ pub enum ErrorKey {
     NoAuthenticationTokenProvided,
     InvalidAuthenticationToken,
     MasterdataOutdated,
-    InsufficientPermissions
+    InsufficientPermissions,
+    InternalClientError
 }
 
 impl fmt::Display for ErrorKey {
@@ -100,6 +101,17 @@ impl Into<ApiErr> for SrvErr {
                         }
                     ],
                     status: StatusCode::UNPROCESSABLE_ENTITY,
+                }
+            }
+            SrvErr::BadRequest(message) => {
+                ApiErr {
+                    errors: vec![
+                        ApiErrView {
+                            key: ErrorKey::InternalClientError.to_string(),
+                            debug_message: message
+                        }
+                    ],
+                    status: StatusCode::BAD_REQUEST
                 }
             }
         }

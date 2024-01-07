@@ -1,12 +1,11 @@
 use std::env;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, DbConn, EntityTrait, ModelTrait, NotSet, TransactionTrait};
+use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel};
 use entities::{genres, media, media_genres, seasons, series, titles};
 use views::infrastructure::traits::IntoActiveModel;
 use views::tmdb::{Season, SeriesDetails};
 use views::users::CurrentUser;
-use crate::infrastructure::SrvErr;
-use sea_orm::{QueryFilter, ColumnTrait};
+use crate::infrastructure::{RuleViolation, SrvErr};
 use entities::prelude::{Genres, Languages, Logs, Media, Series, Sources, Tags, Titles};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
@@ -203,12 +202,15 @@ pub async fn metadata(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result
     let db_media = db_media.unwrap();
 
     let series = db_media.find_related(Series).one(db).await?.expect("DB in invalid state!");
+    let title = db_media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?.map(|m| { m.title });
 
     let metadata = SeriesMetadata {
         id: series.id,
         backdrop_path: db_media.backdrop_path,
         homepage: db_media.homepage,
         tmdb_id: db_media.tmdb_id,
+        imdb_id: db_media.imdb_id,
+        title,
         overview: db_media.overview,
         poster_path: db_media.poster_path,
         tmdb_vote_average: db_media.tmdb_vote_average,
@@ -216,11 +218,77 @@ pub async fn metadata(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result
         first_air_date: series.first_air_date,
         number_of_episodes: series.number_of_episodes,
         number_of_seasons: series.number_of_seasons,
-        status: Some(series.status),
+        status: series.status,
         r#type: series.r#type,
     };
     Ok(metadata)
 }
+
+pub async fn update(series_id: i32, metadata: SeriesMetadata, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    if series_id != metadata.id {
+        return Err(SrvErr::BadRequest("Endpoint series id does not match series id in metadata!".to_string()));
+    }
+
+    let media = Media::find().filter(media::Column::Id.eq(series_id))
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Series)).one(db).await?;
+
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
+
+    let mut rule_violations = Vec::new();
+
+    if metadata.original_language != media.original_language && metadata.original_language.is_some() {
+        let found = Languages::find_by_id(metadata.original_language.as_ref().unwrap()).count(db).await?;
+        if found == 0 {
+            rule_violations.push(RuleViolation::MediaInvalidOriginalLanguage);
+        }
+    }
+
+    if let Some(avg) = metadata.tmdb_vote_average {
+        if avg > 10.0 || avg < 0.0 {
+            rule_violations.push(RuleViolation::MediaTmdbVoteAverageOutOfBounds);
+        }
+    }
+
+    if !rule_violations.is_empty() {
+        return Err(SrvErr::RuleViolation(rule_violations));
+    }
+
+    let tran = db.begin().await?;
+
+    let media_am: media::ActiveModel = (&metadata).into_active_model();
+    media_am.update(db).await?;
+    let series_am: series::ActiveModel = (&metadata).into_active_model();
+    series_am.update(db).await?;
+
+    let db_title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
+
+    if let Some(title) = metadata.title {
+        if let Some(title_mod) = db_title {
+            let mut am = title_mod.into_active_model();
+            am.title = Set(title);
+            am.update(db).await?;
+        } else {
+            let am = titles::ActiveModel {
+                id: NotSet,
+                media_id: Set(media.id),
+                primary: Set(true),
+                title: Set(title),
+            };
+            am.insert(db).await?;
+        }
+    } else {
+        if let Some(title_mod) = db_title {
+            title_mod.delete(db).await?;
+        }
+    }
+
+    tran.commit().await?;
+    Ok(())
+}
+
 
 pub async fn delete(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     services::media::delete(series_id, user, db).await

@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use services::infrastructure::SrvErr;
 use views::media::MediaCreateParams;
+use views::movies::MovieMetadata;
 use views::users::CurrentUser;
 use crate::infrastructure::{ApiErr, AppState};
 
@@ -44,6 +45,15 @@ pub async fn metadata(state: State<AppState>, Extension(user): Extension<Current
     let result = services::movies::metadata(movie_id, &user, &state.conn).await;
     match result {
         Ok(movie) => { Json(movie).into_response() }
+        Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
+    }
+}
+
+pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>,
+                    Json(metadata): Json<MovieMetadata>) -> impl IntoResponse {
+    let result = services::movies::update(movie_id, metadata, &user, &state.conn).await;
+    match result {
+        Ok(_) => { StatusCode::OK.into_response() }
         Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
     }
 }

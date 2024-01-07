@@ -1,4 +1,3 @@
-use std::env;
 use chrono::NaiveDate;
 use sea_orm::ActiveValue::Set;
 use sea_orm::NotSet;
@@ -90,19 +89,19 @@ impl IntoActiveModel<movies::ActiveModel> for &MovieDetails {
         movies::ActiveModel {
             id: NotSet,
             release_date: if let Some(release_date) = self.release_date.clone()  {
-                if release_date.is_empty() { Set(NaiveDate::default()) }
+                if release_date.is_empty() { Set(None) }
                 else {
                     let res = NaiveDate::parse_from_str(release_date.as_str(), "%Y-%m-%d");
                     match res {
-                        Ok(date) => { Set(date) }
-                        Err(_) => { Set(NaiveDate::default()) }
+                        Ok(date) => { Set(Some(date)) }
+                        Err(_) => { Set(None) }
                     }
                 }
             } else {
-                Set(NaiveDate::default())
+                Set(None)
             },
             runtime: Set(self.runtime),
-            status: Set(self.status.clone().unwrap_or(env::var("UNSET_MEDIA_STATUS").expect("UNSET_MEDIA_STATUS not set!"))),
+            status: Set(self.status.clone())
         }
     }
 }

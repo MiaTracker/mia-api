@@ -8,7 +8,8 @@ pub enum SrvErr {
     Internal(String),
     Integration(String),
     Unauthorized,
-    MasterdataOutdated
+    MasterdataOutdated,
+    BadRequest(String)
 }
 
 impl From<DbErr> for SrvErr {

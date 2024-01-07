@@ -15,6 +15,11 @@ pub enum RuleViolation {
 
     LoginUsernameEmpty,
     LoginPasswordEmpty,
+
+    MediaInvalidOriginalLanguage,
+    MediaTmdbVoteAverageOutOfBounds,
+
+    MovieNegativeRuntime,
 }
 
 impl fmt::Display for RuleViolation {

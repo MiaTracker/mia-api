@@ -17,7 +17,7 @@ pub struct SeriesDetails {
     pub first_air_date: Option<chrono::NaiveDate>,
     pub number_of_episodes: Option<i32>,
     pub number_of_seasons: Option<i32>,
-    pub status: String,
+    pub status: Option<String>,
     pub r#type: Option<String>,
     pub overview: Option<String>,
     pub tmdb_vote_average: Option<f32>,

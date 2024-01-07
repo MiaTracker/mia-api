@@ -5,6 +5,8 @@ mod m20231102_160504_sources;
 mod m20231112_145410_add_logs_userid;
 mod m20231231_113504_fix_multiuser_support;
 mod m20240101_171453_seed_users;
+mod m20240106_122113_fix_multiuser_support;
+mod m20240106_122631_make_fields_optional;
 
 pub struct Migrator;
 
@@ -17,6 +19,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20231112_145410_add_logs_userid::Migration),
             Box::new(m20231231_113504_fix_multiuser_support::Migration),
             Box::new(m20240101_171453_seed_users::Migration),
+            Box::new(m20240106_122113_fix_multiuser_support::Migration),
+            Box::new(m20240106_122631_make_fields_optional::Migration),
         ]
     }
 }

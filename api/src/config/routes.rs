@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use axum::Router;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use crate::endpoints::{configuration, genres, logs, masterdata, movies, series, tags, titles, users};
 use crate::infrastructure::AppState;
 
@@ -13,13 +13,16 @@ pub fn build() -> Router<AppState>
         .route("/movies/:movie_id", get(movies::details))
         .route("/movies/:movie_id", delete(movies::delete))
         .route("/movies/:movie_id/metadata", get(movies::metadata))
+        .route("/movies/:movie_id/metadata", patch(movies::update))
         .route("/movies/:media_id/logs", post(logs::create))
         .route("/movies/:media_id/logs/:log_id", delete(logs::delete))
         .route("/series", post(series::create))
         .route("/series", get(series::index))
         .route("/series/:series_id", get(series::details))
+        .route("/series/:series_id", patch(series::update))
         .route("/series/:series_id", delete(series::delete))
         .route("/series/:series_id/metadata", get(series::metadata))
+        .route("/series/:series_id/metadata", patch(series::update))
         .route("/:route_type/:media_id/tags", post(tags::create))
         .route("/:route_type/:media_id/tags/:tag_id", delete(tags::delete))
         .route("/:route_type/:media_id/genres", post(genres::create))
