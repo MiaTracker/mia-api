@@ -1,6 +1,6 @@
 mod movie_details;
 mod language;
-mod configuration;
+pub mod configuration;
 mod series_details;
 mod genre;
 mod production_company;

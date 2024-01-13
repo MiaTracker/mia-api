@@ -1,4 +1,4 @@
-use views::tmdb::{MovieDetails, MovieTitles};
+use crate::tmdb::views::{MovieDetails, MovieTitles};
 use crate::{assert_request, constants, deserialize};
 use crate::infrastructure::{Error, TMDB_HEADERS};
 use crate::infrastructure::CLIENT;

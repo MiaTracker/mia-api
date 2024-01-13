@@ -2,8 +2,7 @@ use std::env;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel};
 use entities::{genres, media, media_genres, seasons, series, titles};
-use views::infrastructure::traits::IntoActiveModel;
-use views::tmdb::{Season, SeriesDetails};
+use integrations::tmdb::views::Season;
 use views::users::CurrentUser;
 use crate::infrastructure::{RuleViolation, SrvErr};
 use entities::prelude::{Genres, Languages, Logs, Media, Series, Sources, Tags, Titles};
@@ -16,6 +15,7 @@ use views::series::SeriesMetadata;
 use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
+use crate::infrastructure::traits::IntoActiveModel;
 use crate::services;
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
@@ -34,13 +34,13 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
 
     let tran = db.begin().await?;
 
-    let tmdb_series = match tmdb::series::details(tmdb_id).await {
+    let tmdb_series = match tmdb::services::series::details(tmdb_id).await {
         Ok(series) => { series }
         Err(err) => { return Err(SrvErr::from(err)); }
     };
 
-    let mut media = <&SeriesDetails as IntoActiveModel<media::ActiveModel>>::into_active_model(&tmdb_series);
-    let mut series = <&SeriesDetails as IntoActiveModel<series::ActiveModel>>::into_active_model(&tmdb_series);
+    let mut media: media::ActiveModel = tmdb_series.into_active_model();
+    let mut series: series::ActiveModel = tmdb_series.into_active_model();
 
     media.user_id = Set(user.id);
     let inserted_media = media.insert(db).await?;
@@ -78,7 +78,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
     };
     model.insert(db).await?;
 
-    let titles = tmdb::series::alternative_titles(tmdb_id).await?;
+    let titles = tmdb::services::series::alternative_titles(tmdb_id).await?;
     for title in titles.results {
         let model = titles::ActiveModel {
             id: NotSet,

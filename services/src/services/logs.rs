@@ -1,10 +1,10 @@
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, QueryFilter};
 use entities::logs;
-use views::infrastructure::traits::IntoActiveModel;
 use views::logs::LogCreate;
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
+use crate::infrastructure::traits::IntoActiveModel;
 
 pub async fn create(media_id: i32, log: &LogCreate, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let mut model = log.into_active_model();

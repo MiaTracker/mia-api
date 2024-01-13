@@ -1,4 +1,4 @@
-use views::tmdb::{Configuration, Languages};
+use crate::tmdb::views::{Configuration, Languages};
 use crate::{assert_request, constants, deserialize};
 use crate::infrastructure::{CLIENT, Error, TMDB_HEADERS};
 

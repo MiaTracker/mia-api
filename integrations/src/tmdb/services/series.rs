@@ -1,6 +1,6 @@
 use crate::{assert_request, constants, deserialize};
 use crate::infrastructure::{CLIENT, Error, TMDB_HEADERS};
-use views::tmdb::{SeriesTitles, SeriesDetails};
+use crate::tmdb::views::{SeriesTitles, SeriesDetails};
 
 pub async fn details(series_id: i32) -> Result<SeriesDetails, Error> {
     let uri = constants::TMDB_URL.to_owned() + "tv/" + series_id.to_string().as_str() + "?languages=" + constants::TMDB_LANG;

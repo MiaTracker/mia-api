@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use crate::routing::RouteType;
+use crate::api::RouteType;
 
 #[derive(Deserialize)]
 pub struct TitleSetPrimaryParams {

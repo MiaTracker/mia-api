@@ -1,4 +1,4 @@
-use views::tmdb::GenreList;
+use crate::tmdb::views::GenreList;
 use crate::{assert_request, constants, deserialize};
 use crate::infrastructure::{CLIENT, Error, TMDB_HEADERS};
 

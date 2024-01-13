@@ -1,12 +1,8 @@
-use axum::Json;
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use services::infrastructure::SrvErr;
-use crate::infrastructure::ApiErr;
+use crate::infrastructure::IntoApiResponse;
 
 pub async fn images() -> impl IntoResponse {
     let result = services::configuration::images().await;
-    match result {
-        Ok(config) => { Json(config).into_response() }
-        Err(err) => { <SrvErr as Into<ApiErr>>::into(err).into_response() }
-    }
+    result.to_response(StatusCode::OK)
 }

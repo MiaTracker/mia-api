@@ -1,7 +1,5 @@
 pub mod users;
-pub mod infrastructure;
 pub mod media;
-pub mod tmdb;
 pub mod tags;
 pub mod genres;
 pub mod logs;
@@ -10,4 +8,4 @@ pub mod languages;
 pub mod titles;
 pub mod sources;
 pub mod series;
-mod routing;
+pub mod api;

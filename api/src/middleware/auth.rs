@@ -5,8 +5,9 @@ use axum::middleware::Next;
 use axum::response::IntoResponse;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use services::infrastructure::SrvErr;
+use views::api::{ApiErr, ApiErrView, ErrorKey};
 use views::users::UserTokenClaims;
-use crate::infrastructure::{ApiErr, ApiErrView, AppState, ErrorKey};
+use crate::infrastructure::AppState;
 
 pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: Next) -> Result<impl IntoResponse, ApiErr> {
 
@@ -63,7 +64,7 @@ pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: N
             }
         }
         Err(err) => {
-            return Err(<SrvErr as Into<ApiErr>>::into(err))
+            return Err(<&SrvErr as Into<ApiErr>>::into(&err))
         }
     };
 

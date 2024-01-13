@@ -1,5 +1,5 @@
 mod app_state;
-mod api_err;
+mod api_response;
 
 pub use app_state::*;
-pub use api_err::*;
+pub use api_response::*;

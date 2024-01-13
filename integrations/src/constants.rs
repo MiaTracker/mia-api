@@ -1,5 +1,5 @@
 use std::sync::OnceLock;
-use views::tmdb::Configuration;
+use crate::tmdb::views::Configuration;
 
 pub const TMDB_URL: &str = "https://api.themoviedb.org/3/";
 pub const TMDB_LANG: &str = "en-US";

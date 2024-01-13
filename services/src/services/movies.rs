@@ -6,7 +6,6 @@ use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, T
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::genres::Genre;
-use views::infrastructure::traits::IntoActiveModel;
 use views::languages::Language;
 use views::logs::Log;
 use views::media::MediaIndex;
@@ -17,6 +16,7 @@ use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
 use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::services;
+use crate::infrastructure::traits::IntoActiveModel;
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
@@ -33,13 +33,13 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
 
     let tran = db.begin().await?;
 
-    let tmdb_movie = match tmdb::movies::details(tmdb_id).await {
+    let tmdb_movie = match tmdb::services::movies::details(tmdb_id).await {
         Ok(movie) => { movie }
         Err(err) => { return Err(SrvErr::from(err)); }
     };
 
-    let mut media = <&views::tmdb::MovieDetails as IntoActiveModel<media::ActiveModel>>::into_active_model(&tmdb_movie);
-    let mut movie = <&views::tmdb::MovieDetails as IntoActiveModel<movies::ActiveModel>>::into_active_model(&tmdb_movie);
+    let mut media: media::ActiveModel = tmdb_movie.into_active_model();
+    let mut movie: movies::ActiveModel = tmdb_movie.into_active_model();
 
     media.user_id = Set(user.id);
     let inserted_media = media.insert(db).await?;
@@ -69,7 +69,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
     };
     model.insert(db).await?;
 
-    let titles = tmdb::movies::alternative_titles(tmdb_id).await?;
+    let titles = tmdb::services::movies::alternative_titles(tmdb_id).await?;
     for title in titles.titles {
         let model = titles::ActiveModel {
             id: NotSet,

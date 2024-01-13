@@ -2,12 +2,12 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, QueryFilter, T
 use sea_orm::ActiveValue::Set;
 use entities::{genres, languages};
 use entities::sea_orm_active_enums::MediaType;
-use views::infrastructure::traits::IntoActiveModel;
 use crate::infrastructure::SrvErr;
+use crate::infrastructure::traits::IntoActiveModel;
 
 pub async fn refresh(db: &DbConn) -> Result<(), SrvErr> {
     let tran = db.begin().await?;
-    let languages = integrations::tmdb::configuration::languages().await?;
+    let languages = integrations::tmdb::services::configuration::languages().await?;
     for language in languages {
         let existing = languages::Entity::find_by_id(language.iso_639_1.clone()).one(db).await?;
         let mut am = language.into_active_model();
@@ -19,7 +19,7 @@ pub async fn refresh(db: &DbConn) -> Result<(), SrvErr> {
         }
     }
 
-    let movie_genres = integrations::tmdb::genres::movie().await?;
+    let movie_genres = integrations::tmdb::services::genres::movie().await?;
     for genre in movie_genres.genres {
         let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
             .filter(genres::Column::Type.eq(MediaType::Movie)).one(db).await?;
@@ -33,7 +33,7 @@ pub async fn refresh(db: &DbConn) -> Result<(), SrvErr> {
         }
     }
 
-    let series_genres = integrations::tmdb::genres::tv().await?;
+    let series_genres = integrations::tmdb::services::genres::tv().await?;
     for genre in series_genres.genres {
         let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
             .filter(genres::Column::Type.eq(MediaType::Series)).one(db).await?;

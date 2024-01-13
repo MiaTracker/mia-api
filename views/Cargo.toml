@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-entities = { path = "../entities" }
 serde = "1.0.188"
-sea-orm = { version = "0.12.2", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+serde_json = "1.0.111"
 chrono = "0.4.31"
-uuid = { version = "1.4.1", features = ["v4"] }
-cruet = "0.14.0"
+http = "1.0.0"
+uuid = { version = "1.6.1", features = ["v4"] }
+axum-core = "0.4.2"
