@@ -107,3 +107,13 @@ impl Into<entities::sea_orm_active_enums::MediaType> for MediaType {
         }
     }
 }
+
+impl Into<entities::sea_orm_active_enums::SourceType> for &SourceType {
+    fn into(self) -> crate::sea_orm_active_enums::SourceType {
+        match self {
+            SourceType::Torrent => { entities::sea_orm_active_enums::SourceType::Torrent }
+            SourceType::Web => { entities::sea_orm_active_enums::SourceType::Web }
+            SourceType::Jellyfin => { entities::sea_orm_active_enums::SourceType::Jellyfin }
+        }
+    }
+}

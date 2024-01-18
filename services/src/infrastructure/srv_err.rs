@@ -11,7 +11,8 @@ pub enum SrvErr {
     Integration(String),
     Unauthorized,
     MasterdataOutdated,
-    BadRequest(String)
+    BadRequest(String),
+    Conflict(String)
 }
 
 impl From<DbErr> for SrvErr {
@@ -105,6 +106,17 @@ impl Into<ApiErr> for &SrvErr {
                         }
                     ],
                     status: StatusCode::BAD_REQUEST
+                }
+            }
+            SrvErr::Conflict(message) => {
+                ApiErr {
+                    errors: vec![
+                        ApiErrView {
+                            key: ErrorKey::InternalClientError.to_string(),
+                            debug_message: message.clone()
+                        }
+                    ],
+                    status: StatusCode::CONFLICT
                 }
             }
         }

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 pub struct Source {
@@ -8,7 +8,7 @@ pub struct Source {
     pub r#type: SourceType
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub enum SourceType {
     #[serde(rename = "torrent")]
     Torrent,

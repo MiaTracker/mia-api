@@ -7,6 +7,7 @@ mod m20231231_113504_fix_multiuser_support;
 mod m20240101_171453_seed_users;
 mod m20240106_122113_fix_multiuser_support;
 mod m20240106_122631_make_fields_optional;
+mod m20240116_180713_sources_name_index;
 
 pub struct Migrator;
 
@@ -21,6 +22,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_171453_seed_users::Migration),
             Box::new(m20240106_122113_fix_multiuser_support::Migration),
             Box::new(m20240106_122631_make_fields_optional::Migration),
+            Box::new(m20240116_180713_sources_name_index::Migration),
         ]
     }
 }

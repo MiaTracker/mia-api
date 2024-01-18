@@ -7,4 +7,5 @@ pub mod tags;
 pub mod series;
 pub mod genres;
 pub mod titles;
+pub mod sources;
 mod media;
