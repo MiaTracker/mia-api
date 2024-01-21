@@ -20,6 +20,8 @@ pub enum RuleViolation {
     MediaTmdbVoteAverageOutOfBounds,
 
     MovieNegativeRuntime,
+
+    LogRatingOutOfBounds
 }
 
 impl fmt::Display for RuleViolation {

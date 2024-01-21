@@ -14,8 +14,6 @@ pub fn build() -> Router<AppState>
         .route("/movies/:movie_id", delete(movies::delete))
         .route("/movies/:movie_id/metadata", get(movies::metadata))
         .route("/movies/:movie_id/metadata", patch(movies::update))
-        .route("/movies/:media_id/logs", post(logs::create))
-        .route("/movies/:media_id/logs/:log_id", delete(logs::delete))
         .route("/series", post(series::create))
         .route("/series", get(series::index))
         .route("/series/:series_id", get(series::details))
@@ -33,6 +31,9 @@ pub fn build() -> Router<AppState>
         .route("/:route_type/:media_id/sources", post(sources::create))
         .route("/:route_type/:media_id/sources/:source_id", post(sources::update))
         .route("/:route_type/:media_id/sources/:source_id", delete(sources::delete))
+        .route("/:route_type/:media_id/logs", post(logs::create))
+        .route("/:route_type/:media_id/logs/:log_id", post(logs::update))
+        .route("/:route_type/:media_id/logs/:log_id", delete(logs::delete))
 }
 
 pub fn build_anonymous() -> Router<AppState> {

@@ -31,7 +31,7 @@ impl IntoActiveModel<logs::ActiveModel> for &LogCreate {
             rating: Set(self.rating),
             completed: Set(self.completed),
             comment: Set(self.comment.clone()),
-            user_id: NotSet,
+            source_id: NotSet,
         }
     }
 }

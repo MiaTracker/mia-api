@@ -43,6 +43,7 @@ impl From<&logs::Model> for Log {
         Self {
             id: value.id,
             date: value.date,
+            source: "".to_string(),
             rating: value.rating,
             completed: value.completed,
             comment: value.comment.clone(),

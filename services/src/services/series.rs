@@ -146,11 +146,16 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
     let tags = db_media.find_related(Tags).all(db).await?.iter().map(|m| {
         Tag::from(m)
     }).collect();
-    let logs = db_media.find_related(Logs).all(db).await?.iter().map(|m| {
-        Log::from(m)
-    }).collect();
-    let sources = db_media.find_related(Sources).all(db).await?.iter().map(|m| {
+    let sources: Vec<Source> = db_media.find_related(Sources).all(db).await?.iter().map(|m| {
         Source::from(m)
+    }).collect();
+    let logs = db_media.find_related(Logs).all(db).await?.iter().map(|m| {
+        let mut log = Log::from(m);
+        let source = sources.iter().find(|&x| { x.id == m.source_id });
+        if let Some(source) = source {
+            log.source = source.name.clone();
+        }
+        log
     }).collect();
 
     let mut title = None;

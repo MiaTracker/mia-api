@@ -16,6 +16,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::logs::Entity")]
+    Logs,
     #[sea_orm(
         belongs_to = "super::media::Entity",
         from = "Column::MediaId",
@@ -24,6 +26,12 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Media,
+}
+
+impl Related<super::logs::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Logs.def()
+    }
 }
 
 impl Related<super::media::Entity> for Entity {

@@ -40,7 +40,7 @@ pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType,
 }
 
 pub async fn update(media_id: i32, source_id: i32, source: &SourceUpdate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
-    if(source.id != source_id) {
+    if source.id != source_id {
         return Err(SrvErr::BadRequest("Endpoint source id does not match source id in metadata!".to_string()));
     }
 
