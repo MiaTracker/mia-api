@@ -10,7 +10,7 @@ pub struct Model {
     pub media_id: i32,
     pub date: Date,
     #[sea_orm(column_type = "Float", nullable)]
-    pub rating: Option<f32>,
+    pub stars: Option<f32>,
     pub completed: bool,
     pub comment: Option<String>,
     pub source_id: i32,

@@ -1,5 +1,6 @@
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, FromQueryResult, ModelTrait, PaginatorTrait, QueryFilter, QuerySelect, TransactionTrait};
+use sea_orm::prelude::Expr;
 use entities::{logs, media, sea_orm_active_enums, sources};
 use entities::prelude::{Logs, Sources};
 use views::logs::{LogCreate, LogUpdate};
@@ -10,7 +11,7 @@ use crate::infrastructure::traits::IntoActiveModel;
 
 pub async fn create(media_id: i32, log: &LogCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let mut rule_violations = Vec::new();
-    if let Some(rating) = log.rating {
+    if let Some(rating) = log.stars {
         if rating < 0f32 || rating > 10f32 {
             rule_violations.push(RuleViolation::LogRatingOutOfBounds);
         }
@@ -34,10 +35,17 @@ pub async fn create(media_id: i32, log: &LogCreate, media_type: MediaType, user:
     }
     let source = source.unwrap();
 
+    let tran = db.begin().await?;
+
     let mut model = log.into_active_model();
     model.media_id = Set(media_id);
     model.source_id = Set(source.id);
     model.insert(db).await?;
+
+    update_media_rating(media, &db).await?;
+
+    tran.commit().await?;
+
     Ok(())
 }
 
@@ -47,8 +55,8 @@ pub async fn update(media_id: i32, log_id: i32, log: &LogUpdate, media_type: Med
     }
 
     let mut rule_violations = Vec::new();
-    if let Some(rating) = log .rating {
-        if rating < 0f32 || rating > 10f32 {
+    if let Some(stars) = log.stars {
+        if stars < 0f32 || stars > 10f32 {
             rule_violations.push(RuleViolation::LogRatingOutOfBounds);
         }
     }
@@ -69,6 +77,7 @@ pub async fn update(media_id: i32, log_id: i32, log: &LogUpdate, media_type: Med
     if model.is_none() {
         return Err(SrvErr::NotFound);
     }
+    let model = model.unwrap();
 
     let source = media.find_related(Sources).filter(sources::Column::Name.eq(&log.source)).one(db).await?;
     if source.is_none() {
@@ -76,16 +85,22 @@ pub async fn update(media_id: i32, log_id: i32, log: &LogUpdate, media_type: Med
     }
     let source = source.unwrap();
 
-    let mut model: logs::ActiveModel = model.unwrap().into();
-    model.source_id = Set(source.id);
-    model.date = Set(log.date);
-    model.completed = Set(log.completed);
-    model.rating = Set(log.rating);
-    model.comment = Set(log.comment.clone());
+    let old_stars_value = model.stars;
+
+    let mut am: logs::ActiveModel = model.into();
+    am.source_id = Set(source.id);
+    am.date = Set(log.date);
+    am.completed = Set(log.completed);
+    am.stars = Set(log.stars);
+    am.comment = Set(log.comment.clone());
 
     let tran = db.begin().await?;
 
-    model.update(db).await?;
+    am.update(db).await?;
+
+    if log.stars != old_stars_value {
+        update_media_rating(media, &db).await?;
+    }
 
     tran.commit().await?;
 
@@ -112,6 +127,36 @@ pub async fn delete(media_id: i32, log_id: i32, media_type: MediaType, user: &Cu
     log.delete(db).await?;
 
     tran.commit().await?;
+
+    Ok(())
+}
+
+async fn update_media_rating(media: media::Model, db: &DbConn) -> Result<(), SrvErr> {
+    #[derive(FromQueryResult)]
+    struct AvgSelect {
+        pub sum: f32,
+        pub count: i64
+    }
+
+    let sel = logs::Entity::find().filter(logs::Column::MediaId.eq(media.id))
+        .filter(logs::Column::Stars.is_not_null())
+        .select_only()
+        .column_as(Expr::col(logs::Column::Id).count(), "count")
+        .column_as(Expr::col(logs::Column::Stars).sum(), "sum")
+        .group_by(logs::Column::MediaId)
+        .into_model::<AvgSelect>()
+        .one(db).await?;
+
+    let avg;
+    if let Some(sel) = sel {
+        avg = sel.sum / sel.count as f32;
+    } else {
+        avg = 0f32;
+    }
+
+    let mut am: media::ActiveModel = media.into();
+    am.stars = Set(Some(avg));
+    am.update(db).await?;
 
     Ok(())
 }

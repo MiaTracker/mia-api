@@ -9,6 +9,7 @@ mod m20240106_122113_fix_multiuser_support;
 mod m20240106_122631_make_fields_optional;
 mod m20240116_180713_sources_name_index;
 mod m20240118_185345_add_log_sources;
+mod m20240121_170225_rename_log_rating;
 
 pub struct Migrator;
 
@@ -25,6 +26,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240106_122631_make_fields_optional::Migration),
             Box::new(m20240116_180713_sources_name_index::Migration),
             Box::new(m20240118_185345_add_log_sources::Migration),
+            Box::new(m20240121_170225_rename_log_rating::Migration),
         ]
     }
 }

@@ -28,7 +28,7 @@ impl IntoActiveModel<logs::ActiveModel> for &LogCreate {
             id: NotSet,
             media_id: NotSet,
             date: Set(self.date),
-            rating: Set(self.rating),
+            stars: Set(self.stars),
             completed: Set(self.completed),
             comment: Set(self.comment.clone()),
             source_id: NotSet,

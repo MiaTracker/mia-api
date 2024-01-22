@@ -1,5 +1,6 @@
 use http::StatusCode;
 use sea_orm::DbErr;
+use log::error;
 use views::api::{ApiErr, ApiErrView, ErrorKey};
 use crate::infrastructure::rule_violation::RuleViolation;
 
@@ -17,6 +18,7 @@ pub enum SrvErr {
 
 impl From<DbErr> for SrvErr {
     fn from(value: DbErr) -> Self {
+        error!("DB error: {}", value.to_string());
         SrvErr::DB(value)
     }
 }

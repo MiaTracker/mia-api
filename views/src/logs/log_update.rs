@@ -13,7 +13,7 @@ pub struct LogUpdateParams {
 pub struct LogUpdate {
     pub id: i32,
     pub date: NaiveDate,
-    pub rating: Option<f32>,
+    pub stars: Option<f32>,
     pub completed: bool,
     pub comment: Option<String>,
     pub source: String

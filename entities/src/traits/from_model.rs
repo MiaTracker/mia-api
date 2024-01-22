@@ -44,7 +44,7 @@ impl From<&logs::Model> for Log {
             id: value.id,
             date: value.date,
             source: "".to_string(),
-            rating: value.rating,
+            stars: value.stars,
             completed: value.completed,
             comment: value.comment.clone(),
         }
