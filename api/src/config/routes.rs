@@ -1,23 +1,25 @@
 use axum::http::StatusCode;
 use axum::Router;
 use axum::routing::{delete, get, patch, post};
-use crate::endpoints::{configuration, genres, logs, masterdata, movies, series, sources, tags, titles, users};
+use crate::endpoints::{configuration, genres, logs, masterdata, media, movies, series, sources, tags, titles, users};
 use crate::infrastructure::AppState;
 
 pub fn build() -> Router<AppState>
 {
     Router::new()
         .route("/configuration/images", get(configuration::images))
+        .route("/media/search", get(media::search))
         .route("/movies", post(movies::create))
         .route("/movies", get(movies::index))
+        .route("/movies/search", get(movies::search))
         .route("/movies/:movie_id", get(movies::details))
         .route("/movies/:movie_id", delete(movies::delete))
         .route("/movies/:movie_id/metadata", get(movies::metadata))
         .route("/movies/:movie_id/metadata", patch(movies::update))
         .route("/series", post(series::create))
         .route("/series", get(series::index))
+        .route("/series/search", get(series::search))
         .route("/series/:series_id", get(series::details))
-        .route("/series/:series_id", patch(series::update))
         .route("/series/:series_id", delete(series::delete))
         .route("/series/:series_id/metadata", get(series::metadata))
         .route("/series/:series_id/metadata", patch(series::update))

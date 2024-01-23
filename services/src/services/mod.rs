@@ -8,4 +8,5 @@ pub mod series;
 pub mod genres;
 pub mod titles;
 pub mod sources;
-mod media;
+pub mod media;
+mod query;

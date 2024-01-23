@@ -2,7 +2,8 @@ use axum::{Extension, Json};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use views::media::MediaCreateParams;
+use views::api::{MaybeRouteType, RouteType};
+use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSearchQueryParams};
 use views::movies::{MovieDetails, MovieMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
@@ -17,6 +18,11 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
     let result = services::movies::index(&user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaSearchQueryParams>) -> impl IntoResponse {
+    let result = services::media::search(params.query, MaybeRouteType::Movies.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -41,7 +47,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
     result.to_response(StatusCode::OK)
 }
 
-pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
-    let result = services::movies::delete(movie_id, &user, &state.conn).await;
+pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(path): Path<MediaDeletePathParams>) -> impl IntoResponse {
+    let result = services::media::delete(path.media_id, RouteType::Movies.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }

@@ -88,23 +88,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Movie)).all(db).await?;
-    let mut indexes = Vec::with_capacity(media.len());
-    for m in media {
-        let title = m.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
-        let title = if let Some(title) = title {
-            title.title
-        } else { env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!") };
-
-        let index = MediaIndex {
-            id: m.id,
-            r#type: views::media::MediaType::from(m.r#type),
-            poster_path: m.poster_path,
-            stars: m.stars,
-            title,
-        };
-        indexes.push(index);
-    }
-
+    let indexes = services::media::build_media_indexes(media, db).await?;
     Ok(indexes)
 }
 
@@ -285,8 +269,4 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
 
     tran.commit().await?;
     Ok(())
-}
-
-pub async fn delete(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
-    services::media::delete(movie_id, user, db).await
 }
