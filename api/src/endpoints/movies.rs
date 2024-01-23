@@ -10,9 +10,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaCreateParams>) -> impl IntoResponse {
     let result = services::movies::create(params.tmdb_id, &user, &state.conn).await;
-    result.map_to_status(|&created| {
-        if created { StatusCode::CREATED }
-        else { StatusCode::OK }
+    result.map_to_status_and_result(|&res| {
+        if res.0 { (StatusCode::CREATED, res.1) }
+        else { (StatusCode::OK, res.1) }
     })
 }
 

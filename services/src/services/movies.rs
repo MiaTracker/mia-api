@@ -18,14 +18,14 @@ use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::services;
 use crate::infrastructure::traits::IntoActiveModel;
 
-pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
+pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
         .filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Movie)).one(db).await;
     match med_res {
         Ok(media) => {
             if media.is_some() {
-                return Ok(false);
+                return Ok((false, media.unwrap().id));
             }
         }
         Err(err) => { return Err(SrvErr::DB(err)); }
@@ -67,7 +67,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
         primary: Set(true),
         title: Set(tmdb_movie.title)
     };
-    model.insert(db).await?;
+    let model = model.insert(db).await?;
 
     let titles = tmdb::services::movies::alternative_titles(tmdb_id).await?;
     for title in titles.titles {
@@ -81,7 +81,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
     }
 
     tran.commit().await?;
-    Ok(true)
+    Ok((true, model.id))
 }
 
 

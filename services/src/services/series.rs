@@ -18,7 +18,7 @@ use views::titles::AlternativeTitle;
 use crate::infrastructure::traits::IntoActiveModel;
 use crate::services;
 
-pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
+pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
         .filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series)).one(db).await;
@@ -26,7 +26,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
     match med_res {
         Ok(media) => {
             if media.is_some() {
-                return Ok(false)
+                return Ok((false, media.unwrap().id))
             }
         }
         Err(err) => { return Err(SrvErr::from(err)); }
@@ -45,7 +45,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
     media.user_id = Set(user.id);
     let inserted_media = media.insert(db).await?;
     series.id = Set(inserted_media.id);
-    series.insert(db).await?;
+    let series = series.insert(db).await?;
 
     if let Some(seasons) = &tmdb_series.seasons {
         for season in seasons {
@@ -92,7 +92,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
     //TODO: implement episode fetching
 
     tran.commit().await?;
-    Ok(true)
+    Ok((true, series.id))
 }
 
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
