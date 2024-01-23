@@ -8,6 +8,7 @@ pub fn build() -> Router<AppState>
 {
     Router::new()
         .route("/configuration/images", get(configuration::images))
+        .route("/users/profile", get(users::profile))
         .route("/media", get(media::index))
         .route("/media/search", get(media::search))
         .route("/movies", post(movies::create))

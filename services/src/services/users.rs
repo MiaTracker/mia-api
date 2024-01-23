@@ -8,7 +8,7 @@ use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 use entities::prelude::Users;
 use entities::users;
-use views::users::{CurrentUser, UserLogin, UserRegistration, UserToken, UserTokenClaims};
+use views::users::{CurrentUser, UserLogin, UserProfile, UserRegistration, UserToken, UserTokenClaims};
 use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
 
@@ -159,5 +159,13 @@ pub async fn query_user_by_uuid(user_id: Uuid, db: &DbConn) -> Result<Option<Cur
             }
         }
         Err(err) => { Err(SrvErr::DB(err)) }
+    }
+}
+
+pub fn profile(user: &CurrentUser) -> UserProfile {
+    UserProfile {
+        username: user.username.clone(),
+        email: user.email.clone(),
+        admin: user.admin,
     }
 }
