@@ -1,6 +1,6 @@
 use std::env;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel};
+use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder};
 use entities::{genres, media, media_genres, seasons, series, titles};
 use integrations::tmdb::views::Season;
 use views::users::CurrentUser;
@@ -96,9 +96,10 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
 }
 
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let media = Media::find().filter(media::Column::UserId.eq(user.id))
-        .filter(media::Column::Type.eq(MediaType::Series)).all(db).await?;
-    let indexes = services::media::build_media_indexes(media, db).await?;
+    let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id))
+        .filter(media::Column::Type.eq(MediaType::Series)).find_also_related(Titles)
+        .filter(titles::Column::Primary.eq(true)).order_by_asc(titles::Column::Title).all(db).await?;
+    let indexes = services::media::build_media_indexes(media_w_titles).await?;
     Ok(indexes)
 }
 

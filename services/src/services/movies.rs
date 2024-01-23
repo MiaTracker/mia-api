@@ -1,5 +1,5 @@
 use std::env;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use entities::{genres, media, media_genres, movies, titles};
 use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles};
@@ -86,9 +86,10 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<boo
 
 
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let media = Media::find().filter(media::Column::UserId.eq(user.id))
-        .filter(media::Column::Type.eq(MediaType::Movie)).all(db).await?;
-    let indexes = services::media::build_media_indexes(media, db).await?;
+    let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id))
+        .filter(media::Column::Type.eq(MediaType::Movie)).find_also_related(Titles)
+        .filter(titles::Column::Primary.eq(true)).order_by_asc(titles::Column::Title).all(db).await?;
+    let indexes = services::media::build_media_indexes(media_w_titles).await?;
     Ok(indexes)
 }
 
