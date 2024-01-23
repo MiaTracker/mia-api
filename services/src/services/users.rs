@@ -164,8 +164,22 @@ pub async fn query_user_by_uuid(user_id: Uuid, db: &DbConn) -> Result<Option<Cur
 
 pub fn profile(user: &CurrentUser) -> UserProfile {
     UserProfile {
+        uuid: user.uuid,
         username: user.username.clone(),
         email: user.email.clone(),
         admin: user.admin,
     }
+}
+
+pub async fn index(db: &DbConn) -> Result<Vec<UserProfile>, SrvErr> {
+    let users = users::Entity::find().all(db).await?;
+    let users = users.iter().map(|u| {
+        UserProfile {
+            uuid: u.uuid,
+            username: u.username.clone(),
+            email: u.email.clone(),
+            admin: u.admin,
+        }
+    }).collect();
+    Ok(users)
 }

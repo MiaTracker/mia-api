@@ -48,6 +48,7 @@ pub fn build_anonymous() -> Router<AppState> {
 
 pub fn build_admin() -> Router<AppState> {
     Router::new()
+        .route("/users", get(users::index))
         .route("/users/register", post(users::register))
         .route("/masterdata/refresh", post(masterdata::refresh))
 }

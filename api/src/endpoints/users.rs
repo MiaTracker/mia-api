@@ -19,3 +19,8 @@ pub async fn profile(Extension(user): Extension<CurrentUser>) -> Response {
     let result = services::users::profile(&user);
     (StatusCode::OK, Json(result)).into_response()
 }
+
+pub async fn index(state: State<AppState>) -> Response {
+    let result = services::users::index(&state.conn).await;
+    result.to_response(StatusCode::OK)
+}
