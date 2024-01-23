@@ -5,24 +5,46 @@ use sea_orm::sea_query::Query;
 use sea_orm::QueryFilter;
 use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles};
 use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Tags, Titles};
-use views::media::{MediaIndex, MediaType};
+use integrations::tmdb::views::MultiResultMediaType;
+use views::media::{MediaIndex, MediaType, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
+use crate::infrastructure::traits::IntoView;
 use crate::services;
 
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id)).find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true)).order_by_asc(titles::Column::Title).all(db).await?;
-    let indexes = build_media_indexes(media_w_titles).await?;
+    let indexes = build_media_indexes(media_w_titles);
     Ok(indexes)
 }
 
-pub async fn search(query: String, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
+pub async fn search(query: String, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
     let query = services::query::parse(query, media_type);
+    let external = integrations::tmdb::services::search::multi(query.title.clone()).await?;
     let select = services::query::build_sql_query(query, user);
     let media_w_titles = select.all(db).await?;
-    let indexes = build_media_indexes(media_w_titles).await?;
-    Ok(indexes)
+
+    let external = external.results.iter().filter_map(|r| {
+        if r.media_type == MultiResultMediaType::Person { return None }
+        if media_w_titles.iter().find(|x| {
+            if x.0.tmdb_id == Some(r.id) && ((x.0.r#type == sea_orm_active_enums::MediaType::Movie && r.media_type == MultiResultMediaType::Movie)
+                || (x.0.r#type == sea_orm_active_enums::MediaType::Series.into() && r.media_type == MultiResultMediaType::Tv)) { return true; }
+            return false;
+        }).is_some() { return None }
+        if let Some(media_type) = media_type {
+            if (media_type == MediaType::Movie && r.media_type == MultiResultMediaType::Movie)
+                || (media_type == MediaType::Series && r.media_type == MultiResultMediaType::Tv) { return Some(r.into_view()); }
+        } else { return Some(r.into_view()) }
+        return None;
+    }).collect();
+
+    let indexes = build_media_indexes(media_w_titles);
+
+    Ok(SearchResults {
+        indexes,
+        external,
+    })
 }
 
 pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
@@ -57,7 +79,7 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
     Ok(())
 }
 
-pub(crate) async fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>) -> Result<Vec<MediaIndex>, SrvErr> {
+pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>) -> Vec<MediaIndex> {
     let mut indexes = Vec::with_capacity(media_w_titles.len());
     for m in media_w_titles {
         let title = if let Some(title) = m.1 {
@@ -82,5 +104,5 @@ pub(crate) async fn build_media_indexes(media_w_titles: Vec<(media::Model, Optio
         t1.cmp(t2)
     });
 
-    Ok(indexes)
+    indexes
 }

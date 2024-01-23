@@ -8,6 +8,7 @@ mod production_country;
 mod movie_title;
 mod collection;
 mod series_title;
+mod multi_results;
 
 pub use movie_details::*;
 pub use language::*;
@@ -19,3 +20,4 @@ pub use production_country::*;
 pub use movie_title::*;
 pub use collection::*;
 pub use series_title::*;
+pub use multi_results::*;

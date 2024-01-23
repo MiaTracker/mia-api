@@ -1,9 +1,11 @@
+use std::env;
 use chrono::NaiveDate;
 use sea_orm::{NotSet, Set};
 use entities::{genres, languages, media, movies, seasons, series};
 use entities::sea_orm_active_enums::MediaType;
-use integrations::tmdb::views::{Genre, Languages, MovieDetails, Season, SeriesDetails};
-use crate::infrastructure::traits::IntoActiveModel;
+use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiResult, MultiResultMediaType, Season, SeriesDetails};
+use views::media::ExternalIndex;
+use crate::infrastructure::traits::{IntoActiveModel, IntoView};
 
 impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
     fn into_active_model(self) -> media::ActiveModel {
@@ -189,6 +191,25 @@ impl IntoActiveModel<languages::ActiveModel> for &Languages {
             iso6391: Set(self.iso_639_1.clone()),
             english_name: Set(self.english_name.clone()),
             name: Set(self.name.clone()),
+        }
+    }
+}
+
+impl IntoView<ExternalIndex> for &MultiResult {
+    fn into_view(self) -> ExternalIndex {
+        ExternalIndex {
+            external_id: self.id,
+            r#type: match self.media_type {
+                MultiResultMediaType::Movie => { views::media::MediaType::Movie }
+                MultiResultMediaType::Tv => { views::media::MediaType::Series }
+                MultiResultMediaType::Person => { panic!("Invalid conversion!") }
+            },
+            poster_path: self.poster_path.clone(),
+            title: if let Some(title) = self.title.clone() {
+                title
+            } else {
+                env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
+            },
         }
     }
 }
