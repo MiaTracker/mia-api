@@ -9,3 +9,4 @@ pub mod genres;
 pub mod titles;
 pub mod sources;
 pub mod media;
+pub mod watchlist;

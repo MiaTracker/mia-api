@@ -16,7 +16,6 @@ pub mod people;
 pub mod sea_orm_active_enums;
 pub mod seasons;
 pub mod series;
-pub mod series_watchlist;
 pub mod sources;
 pub mod tags;
 pub mod titles;

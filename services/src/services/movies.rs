@@ -2,7 +2,7 @@ use std::env;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use entities::{genres, media, media_genres, movies, titles};
-use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles};
+use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles, Watchlist};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::genres::Genre;
@@ -148,6 +148,8 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
         env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
     };
 
+    let on_watchlist = db_media.find_related(Watchlist).count(db).await? != 0;
+
     let movie = MovieDetails {
         id: movie_id,
         poster_path: db_media.poster_path,
@@ -160,6 +162,7 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
         status: db_movie.status,
         overview: db_media.overview,
         tmdb_vote_average: db_media.tmdb_vote_average,
+        on_watchlist,
         original_language: language,
         genres,
         tags,

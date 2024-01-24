@@ -21,6 +21,7 @@ pub struct SeriesDetails {
     pub r#type: Option<String>,
     pub overview: Option<String>,
     pub tmdb_vote_average: Option<f32>,
+    pub on_watchlist: bool,
     pub original_language: Option<Language>,
     pub genres: Vec<Genre>,
     pub tags: Vec<Tag>,

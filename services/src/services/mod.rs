@@ -10,3 +10,4 @@ pub mod titles;
 pub mod sources;
 pub mod media;
 mod query;
+pub mod watchlist;

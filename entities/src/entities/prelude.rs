@@ -13,7 +13,6 @@ pub use super::movies::Entity as Movies;
 pub use super::people::Entity as People;
 pub use super::seasons::Entity as Seasons;
 pub use super::series::Entity as Series;
-pub use super::series_watchlist::Entity as SeriesWatchlist;
 pub use super::sources::Entity as Sources;
 pub use super::tags::Entity as Tags;
 pub use super::titles::Entity as Titles;

@@ -10,3 +10,4 @@ pub mod sources;
 pub mod series;
 pub mod api;
 pub mod configuration;
+pub mod watchlist;
