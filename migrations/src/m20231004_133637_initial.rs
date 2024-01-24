@@ -124,7 +124,8 @@ impl MigrationTrait for Migration {
                 .col(ColumnDef::new(Series::NumberOfSeasons).integer())
                 .col(ColumnDef::new(Series::Status).string().not_null())
                 .col(ColumnDef::new(Series::Type).string())
-                .foreign_key(ForeignKey::create().from(Series::Table, Series::Id).to(Media::Table, Media::Id))
+                .foreign_key(ForeignKey::create().from(Series::Table, Series::Id).to(Media::Table, Media::Id)
+                    .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
                 .to_owned()
             ).await?;
 

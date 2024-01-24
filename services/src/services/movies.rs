@@ -67,7 +67,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
         primary: Set(true),
         title: Set(tmdb_movie.title)
     };
-    let model = model.insert(db).await?;
+    model.insert(db).await?;
 
     let titles = tmdb::services::movies::alternative_titles(tmdb_id).await?;
     for title in titles.titles {
@@ -81,7 +81,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
     }
 
     tran.commit().await?;
-    Ok((true, model.id))
+    Ok((true, inserted_media.id))
 }
 
 

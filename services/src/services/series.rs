@@ -45,7 +45,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
     media.user_id = Set(user.id);
     let inserted_media = media.insert(db).await?;
     series.id = Set(inserted_media.id);
-    let series = series.insert(db).await?;
+    series.insert(db).await?;
 
     if let Some(seasons) = &tmdb_series.seasons {
         for season in seasons {
@@ -92,7 +92,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
     //TODO: implement episode fetching
 
     tran.commit().await?;
-    Ok((true, series.id))
+    Ok((true, inserted_media.id))
 }
 
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
