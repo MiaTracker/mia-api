@@ -4,6 +4,7 @@ use crate::media::{MediaIndex, MediaType};
 #[derive(Deserialize)]
 pub struct MediaSearchQueryParams {
     pub query: String,
+    pub committed: bool
 }
 
 #[derive(Serialize)]

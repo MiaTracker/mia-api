@@ -22,7 +22,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 }
 
 pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaSearchQueryParams>) -> impl IntoResponse {
-    let result = services::media::search(params.query, MaybeRouteType::Movies.into(), &user, &state.conn).await;
+    let result = services::media::search(params.query, params.committed, MaybeRouteType::Movies.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 

@@ -5,7 +5,7 @@ use sea_orm::sea_query::Query;
 use sea_orm::QueryFilter;
 use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles};
 use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Tags, Titles};
-use integrations::tmdb::views::MultiResultMediaType;
+use integrations::tmdb::views::MultiResult;
 use views::media::{MediaIndex, MediaType, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
@@ -19,25 +19,39 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
     Ok(indexes)
 }
 
-pub async fn search(query: String, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
+pub async fn search(query: String, committed: bool, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
     let query = services::query::parse(query, media_type);
-    let external = integrations::tmdb::services::search::multi(query.title.clone()).await?;
+    let external_t;
+    if query.title.len() > 3 || committed {
+        external_t = Some(integrations::tmdb::services::search::multi(query.title.clone()));
+    } else { external_t = None }
     let select = services::query::build_sql_query(query, user);
     let media_w_titles = select.all(db).await?;
 
-    let external = external.results.iter().filter_map(|r| {
-        if r.media_type == MultiResultMediaType::Person { return None }
-        if media_w_titles.iter().find(|x| {
-            if x.0.tmdb_id == Some(r.id) && ((x.0.r#type == sea_orm_active_enums::MediaType::Movie && r.media_type == MultiResultMediaType::Movie)
-                || (x.0.r#type == sea_orm_active_enums::MediaType::Series.into() && r.media_type == MultiResultMediaType::Tv)) { return true; }
-            return false;
-        }).is_some() { return None }
-        if let Some(media_type) = media_type {
-            if (media_type == MediaType::Movie && r.media_type == MultiResultMediaType::Movie)
-                || (media_type == MediaType::Series && r.media_type == MultiResultMediaType::Tv) { return Some(r.into_view()); }
-        } else { return Some(r.into_view()) }
-        return None;
-    }).collect();
+    let external;
+    if let Some(future) = external_t {
+        external = future.await?.results.iter().filter_map(|r| {
+            match r {
+                MultiResult::Movie(movie) => {
+                    if media_w_titles.iter().find(|x| {
+                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { true }
+                        else { false }
+                    }).is_some() { return None }
+                    if media_type.is_none() || media_type == Some(MediaType::Movie) { Some(movie.into_view()) }
+                    else { None }
+                }
+                MultiResult::Tv(tv) => {
+                    if media_w_titles.iter().find(|x| {
+                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { true }
+                        else { false }
+                    }).is_some() { return None }
+                    if media_type.is_none() || media_type == Some(MediaType::Series) { Some(tv.into_view()) }
+                    else { None }
+                }
+                MultiResult::Person(_) => { None }
+            }
+        }).collect();
+    } else { external = Vec::new(); }
 
     let indexes = build_media_indexes(media_w_titles);
 

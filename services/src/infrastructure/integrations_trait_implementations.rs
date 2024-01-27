@@ -3,7 +3,7 @@ use chrono::NaiveDate;
 use sea_orm::{NotSet, Set};
 use entities::{genres, languages, media, movies, seasons, series};
 use entities::sea_orm_active_enums::MediaType;
-use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiResult, MultiResultMediaType, Season, SeriesDetails};
+use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeriesDetails};
 use views::media::ExternalIndex;
 use crate::infrastructure::traits::{IntoActiveModel, IntoView};
 
@@ -195,17 +195,28 @@ impl IntoActiveModel<languages::ActiveModel> for &Languages {
     }
 }
 
-impl IntoView<ExternalIndex> for &MultiResult {
+impl IntoView<ExternalIndex> for &MultiMovieResult {
     fn into_view(self) -> ExternalIndex {
         ExternalIndex {
             external_id: self.id,
-            r#type: match self.media_type {
-                MultiResultMediaType::Movie => { views::media::MediaType::Movie }
-                MultiResultMediaType::Tv => { views::media::MediaType::Series }
-                MultiResultMediaType::Person => { panic!("Invalid conversion!") }
-            },
+            r#type: views::media::MediaType::Movie,
             poster_path: self.poster_path.clone(),
             title: if let Some(title) = self.title.clone() {
+                title
+            } else {
+                env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
+            }
+        }
+    }
+}
+
+impl IntoView<ExternalIndex> for &MultiTvResult {
+    fn into_view(self) -> ExternalIndex {
+        ExternalIndex {
+            external_id: self.id,
+            r#type: views::media::MediaType::Series,
+            poster_path: self.poster_path.clone(),
+            title: if let Some(title) = self.name.clone() {
                 title
             } else {
                 env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
