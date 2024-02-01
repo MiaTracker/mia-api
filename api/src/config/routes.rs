@@ -32,6 +32,7 @@ pub fn build() -> Router<AppState>
         .route("/:route_type/:media_id/titles", post(titles::create))
         .route("/:route_type/:media_id/titles/:title_id/primary", post(titles::set_primary))
         .route("/:route_type/:media_id/titles/:title_id", delete(titles::delete))
+        .route("/:route_type/:media_id/sources", get(sources::index))
         .route("/:route_type/:media_id/sources", post(sources::create))
         .route("/:route_type/:media_id/sources/:source_id", post(sources::update))
         .route("/:route_type/:media_id/sources/:source_id", delete(sources::delete))

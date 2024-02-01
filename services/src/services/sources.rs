@@ -2,7 +2,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, No
 use entities::{media, sea_orm_active_enums, sources};
 use entities::prelude::Sources;
 use views::media::MediaType;
-use views::sources::{SourceCreate, SourceUpdate};
+use views::sources::{Source, SourceCreate, SourceUpdate};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 
@@ -37,6 +37,21 @@ pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType,
     tran.commit().await?;
 
     Ok(())
+}
+
+pub async fn index(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<Vec<Source>, SrvErr> {
+    let media = media::Entity::find_by_id(media_id).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
+        .filter(media::Column::UserId.eq(user.id)).one(db).await?;
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
+
+    let sources = media.find_related(Sources).all(db).await?;
+    let sources: Vec<Source> = sources.iter().map(|src| {
+        Source::from(src)
+    }).collect();
+    Ok(sources)
 }
 
 pub async fn update(media_id: i32, source_id: i32, source: &SourceUpdate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
