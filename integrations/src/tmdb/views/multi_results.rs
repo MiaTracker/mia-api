@@ -70,8 +70,11 @@ pub struct MultiPersonResult {
 }
 
 #[derive(Deserialize)]
+#[serde(tag = "media_type")]
 pub enum KnownForResult {
+    #[serde(rename = "movie")]
     Movie(MultiMovieResult),
+    #[serde(rename = "tv")]
     Tv(MultiTvResult)
 }
 
