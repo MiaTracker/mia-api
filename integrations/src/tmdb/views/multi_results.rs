@@ -1,5 +1,4 @@
-use serde::{Deserialize, Deserializer};
-use serde::de::{MapAccess, Visitor};
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct MultiResults {
