@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::Router;
 use axum::routing::{delete, get, patch, post};
-use crate::endpoints::{configuration, genres, logs, masterdata, media, movies, series, sources, tags, titles, users, watchlist};
+use crate::endpoints::{configuration, genres, logs, logset, masterdata, media, movies, series, sources, tags, titles, users, watchlist};
 use crate::infrastructure::AppState;
 
 pub fn build() -> Router<AppState>
@@ -18,6 +18,7 @@ pub fn build() -> Router<AppState>
         .route("/movies/:movie_id", delete(movies::delete))
         .route("/movies/:movie_id/metadata", get(movies::metadata))
         .route("/movies/:movie_id/metadata", patch(movies::update))
+        .route("/movies/:movie_id/on_watchlist", get(movies::on_watchlist))
         .route("/series", post(series::create))
         .route("/series", get(series::index))
         .route("/series/search", get(series::search))
@@ -25,6 +26,7 @@ pub fn build() -> Router<AppState>
         .route("/series/:series_id", delete(series::delete))
         .route("/series/:series_id/metadata", get(series::metadata))
         .route("/series/:series_id/metadata", patch(series::update))
+        .route("/series/:series_id/on_watchlist", get(series::on_watchlist))
         .route("/:route_type/:media_id/tags", post(tags::create))
         .route("/:route_type/:media_id/tags/:tag_id", delete(tags::delete))
         .route("/:route_type/:media_id/genres", post(genres::create))
@@ -43,6 +45,7 @@ pub fn build() -> Router<AppState>
         .route("/watchlist/search", get(watchlist::search))
         .route("/watchlist/add", post(watchlist::add))
         .route("/watchlist/remove", post(watchlist::remove))
+        .route("/logset", post(logset::create))
 }
 
 pub fn build_anonymous() -> Router<AppState> {

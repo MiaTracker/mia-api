@@ -1,9 +1,9 @@
 use std::env;
-use sea_orm::{ColumnTrait, DbConn, EntityTrait, ModelTrait, QueryOrder, TransactionTrait};
+use sea_orm::{ColumnTrait, DbConn, EntityTrait, ModelTrait, PaginatorTrait, QueryOrder, TransactionTrait};
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::Query;
 use sea_orm::QueryFilter;
-use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles};
+use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
 use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Tags, Titles};
 use integrations::tmdb::views::MultiResult;
 use views::media::{MediaIndex, MediaType, SearchResults};
@@ -59,6 +59,18 @@ pub async fn search(query: String, committed: bool, media_type: Option<MediaType
         indexes,
         external,
     })
+}
+
+pub async fn on_watchlist(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
+    let found = media::Entity::find_by_id(media_id).filter(media::Column::UserId.eq(user.id))
+        .filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).count(db).await? > 0;
+
+    if !found {
+        return Err(SrvErr::NotFound)
+    }
+
+    let on_watchlist = watchlist::Entity::find().filter(watchlist::Column::MediaId.eq(media_id)).count(db).await? > 0;
+    Ok(on_watchlist)
 }
 
 pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {

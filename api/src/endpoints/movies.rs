@@ -3,7 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
-use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSearchQueryParams};
+use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSearchQueryParams, MediaType};
 use views::movies::{MovieDetails, MovieMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
@@ -38,6 +38,11 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
 
 pub async fn metadata(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
     let result = services::movies::metadata(movie_id, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+pub async fn on_watchlist(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
+    let result = services::media::on_watchlist(movie_id, MediaType::Movie, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
