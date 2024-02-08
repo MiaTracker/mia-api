@@ -11,6 +11,7 @@ mod m20240116_180713_sources_name_index;
 mod m20240118_185345_add_log_sources;
 mod m20240121_170225_rename_log_rating;
 mod m20240124_142349_fix_watchlist_table;
+mod m20240208_125123_app_tokens;
 
 pub struct Migrator;
 
@@ -29,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240118_185345_add_log_sources::Migration),
             Box::new(m20240121_170225_rename_log_rating::Migration),
             Box::new(m20240124_142349_fix_watchlist_table::Migration),
+            Box::new(m20240208_125123_app_tokens::Migration),
         ]
     }
 }

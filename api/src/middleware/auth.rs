@@ -1,13 +1,23 @@
+use std::collections::HashSet;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{header, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use jsonwebtoken::{decode, DecodingKey, Validation};
+use once_cell::sync::Lazy;
 use services::infrastructure::SrvErr;
 use views::api::{ApiErr, ApiErrView, ErrorKey};
-use views::users::UserTokenClaims;
+use views::users::{TokenClaims, TokenType};
 use crate::infrastructure::AppState;
+
+static JWT_VALIDATION: Lazy<Validation> = Lazy::new(|| {
+    let mut val = Validation::default();
+    val.validate_exp = false;
+    val.required_spec_claims = HashSet::from(["sub".to_string(), "type".to_string()]);
+    val
+});
+
 
 pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: Next) -> Result<impl IntoResponse, ApiErr> {
 
@@ -31,9 +41,11 @@ pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: N
         Some(x) => { x }
     };
 
-    let claims = match decode::<UserTokenClaims>(&token, &DecodingKey::from_secret(state.jwt_secret.as_ref()), &Validation::default()) {
+    let claims = match decode::<TokenClaims>(&token, &DecodingKey::from_secret(state.jwt_secret.as_ref()), &JWT_VALIDATION) {
         Ok(data) => { data }
-        Err(_) => {
+        Err(err) => {
+            println!("{}", err);
+
            return Err(ApiErr {
                errors: vec![ApiErrView { key: ErrorKey::InvalidAuthenticationToken.to_string(), debug_message: "Invalid authentication token!".to_string() }],
                status: StatusCode::UNAUTHORIZED,
@@ -41,17 +53,30 @@ pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: N
        }
     }.claims;
 
-    let user_id = match uuid::Uuid::parse_str(&claims.sub) {
-        Ok(id) => { id }
-        Err(_) => {
-            return Err(ApiErr {
-                errors: vec![ApiErrView { key: ErrorKey::InvalidAuthenticationToken.to_string(), debug_message: "Invalid authentication token!".to_string() }],
-                status: StatusCode::UNAUTHORIZED
-            });
+    let res = match claims.r#type {
+        TokenType::UserToken => {
+            if let Some(exp) = claims.exp {
+                if exp < chrono::Utc::now().timestamp() as usize {
+                    return Err(ApiErr {
+                        errors: vec![ApiErrView { key: ErrorKey::InvalidAuthenticationToken.to_string(), debug_message: "Authentication token expired!".to_string() }],
+                        status: StatusCode::UNAUTHORIZED,
+                    });
+                }
+            } else {
+                return Err(ApiErr {
+                    errors: vec![ApiErrView { key: ErrorKey::InvalidAuthenticationToken.to_string(), debug_message: "Invalid authentication token!".to_string() }],
+                    status: StatusCode::UNAUTHORIZED,
+                });
+            }
+
+            services::users::query_user_by_uuid(claims.sub, &state.conn).await
+        }
+        TokenType::AppToken => {
+            services::users::query_user_by_app_token(claims.sub, &state.conn).await
         }
     };
 
-    let user = match services::users::query_user_by_uuid(user_id, &state.conn).await {
+    let user = match res {
         Ok(user) => {
             match user {
                 None => {
@@ -69,5 +94,6 @@ pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: N
     };
 
     req.extensions_mut().insert(user);
+
     Ok(next.run(req).await)
 }

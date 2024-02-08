@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::Router;
 use axum::routing::{delete, get, patch, post};
-use crate::endpoints::{configuration, genres, logs, logset, masterdata, media, movies, series, sources, tags, titles, users, watchlist};
+use crate::endpoints::{app_tokens, configuration, genres, logs, logset, masterdata, media, movies, series, sources, tags, titles, users, watchlist};
 use crate::infrastructure::AppState;
 
 pub fn build() -> Router<AppState>
@@ -9,6 +9,8 @@ pub fn build() -> Router<AppState>
     Router::new()
         .route("/configuration/images", get(configuration::images))
         .route("/users/profile", get(users::profile))
+        .route("/users/app_tokens/generate", post(app_tokens::generate))
+        .route("/users/app_tokens/:name", delete(app_tokens::revoke))
         .route("/media", get(media::index))
         .route("/media/search", get(media::search))
         .route("/movies", post(movies::create))

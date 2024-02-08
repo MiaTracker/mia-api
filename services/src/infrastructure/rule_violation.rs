@@ -21,7 +21,9 @@ pub enum RuleViolation {
 
     MovieNegativeRuntime,
 
-    LogRatingOutOfBounds
+    LogRatingOutOfBounds,
+
+    AppTokenNameAlreadyExists
 }
 
 impl fmt::Display for RuleViolation {

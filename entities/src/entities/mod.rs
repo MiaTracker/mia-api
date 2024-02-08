@@ -2,6 +2,7 @@
 
 pub mod prelude;
 
+pub mod app_tokens;
 pub mod credits;
 pub mod episodes;
 pub mod genres;

@@ -6,9 +6,9 @@ use jsonwebtoken::{encode, EncodingKey, Header};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbBackend, DbConn, EntityTrait, FromQueryResult, JsonValue, QueryFilter, Statement};
 use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
-use entities::prelude::Users;
-use entities::users;
-use views::users::{CurrentUser, UserLogin, UserProfile, UserRegistration, UserToken, UserTokenClaims};
+use entities::prelude::{AppTokens, Users};
+use entities::{app_tokens, users};
+use views::users::{CurrentUser, TokenClaims, TokenType, UserLogin, UserProfile, UserRegistration, UserToken};
 use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
 
@@ -133,10 +133,11 @@ pub async fn login(user: &UserLogin, jwt_secret: &String, db: &DbConn) -> Result
     let iat = now.timestamp() as usize;
     let expiry_date = now + chrono::Duration::days(60);
     let exp = expiry_date.timestamp() as usize;
-    let claims = UserTokenClaims {
-        sub: model.uuid.to_string(),
-        exp,
-        iat
+    let claims = TokenClaims {
+        sub: model.uuid,
+        exp: Some(exp),
+        iat: Some(iat),
+        r#type: TokenType::UserToken
     };
 
     let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref()))
@@ -160,6 +161,13 @@ pub async fn query_user_by_uuid(user_id: Uuid, db: &DbConn) -> Result<Option<Cur
         }
         Err(err) => { Err(SrvErr::DB(err)) }
     }
+}
+
+pub async fn query_user_by_app_token(token_id: Uuid, db: &DbConn) -> Result<Option<CurrentUser>, SrvErr> {
+    let user = Users::find().inner_join(AppTokens)
+        .filter(app_tokens::Column::Uuid.eq(token_id)).one(db).await?;
+
+    Ok(user.map(|user| { CurrentUser::from(user) }))
 }
 
 pub fn profile(user: &CurrentUser) -> UserProfile {
