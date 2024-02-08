@@ -22,7 +22,7 @@ pub enum ErrorKey {
     InvalidAuthenticationToken,
     MasterdataOutdated,
     InsufficientPermissions,
-    InternalClientError,
+    InternalClientError
 }
 
 impl fmt::Display for ErrorKey {

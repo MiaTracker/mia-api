@@ -12,6 +12,7 @@ pub struct Model {
     pub name: String,
     pub url: String,
     pub r#type: SourceType,
+    pub bot_controllable: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

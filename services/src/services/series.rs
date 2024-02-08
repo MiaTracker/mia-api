@@ -43,6 +43,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
     let mut series: series::ActiveModel = tmdb_series.into_active_model();
 
     media.user_id = Set(user.id);
+    media.bot_controllable = Set(user.though_bot);
     let inserted_media = media.insert(db).await?;
     series.id = Set(inserted_media.id);
     series.insert(db).await?;

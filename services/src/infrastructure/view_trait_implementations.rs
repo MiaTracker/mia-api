@@ -52,6 +52,7 @@ impl IntoActiveModel<media::ActiveModel> for &MovieMetadata {
             r#type: sea_orm::Set(Movie),
             user_id: NotSet,
             stars: NotSet,
+            bot_controllable: sea_orm::Set(false)
         }
     }
 }
@@ -83,6 +84,7 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesMetadata {
             r#type: sea_orm::Set(Series),
             user_id: NotSet,
             stars: NotSet,
+            bot_controllable: sea_orm::Set(false)
         }
     }
 }

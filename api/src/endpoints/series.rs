@@ -1,15 +1,24 @@
 use axum::{Extension, Json};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use views::api::{MaybeRouteType, RouteType};
-use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSearchQueryParams, MediaType};
+use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSearchQueryParams, MediaSourceCreate, MediaType};
 use views::series::{SeriesDetails, SeriesMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaCreateParams>) -> impl IntoResponse {
     let result = services::series::create(params.tmdb_id, &user, &state.conn).await;
+    result.map_to_status_and_result(|&res| {
+        if res.0 { (StatusCode::CREATED, res.1) }
+        else { (StatusCode::OK, res.1) }
+    })
+}
+
+pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                             Json(json): Json<MediaSourceCreate>) -> Response {
+    let result = services::media::create_w_source(json, MediaType::Series, &user, &state.conn).await;
     result.map_to_status_and_result(|&res| {
         if res.0 { (StatusCode::CREATED, res.1) }
         else { (StatusCode::OK, res.1) }

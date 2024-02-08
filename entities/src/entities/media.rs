@@ -22,6 +22,7 @@ pub struct Model {
     pub user_id: i32,
     #[sea_orm(column_type = "Float", nullable)]
     pub stars: Option<f32>,
+    pub bot_controllable: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

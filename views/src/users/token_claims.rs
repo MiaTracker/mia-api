@@ -11,7 +11,7 @@ pub struct TokenClaims {
     pub r#type: TokenType
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub enum TokenType {
     UserToken,
     AppToken

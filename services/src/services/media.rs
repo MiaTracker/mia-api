@@ -6,11 +6,22 @@ use sea_orm::QueryFilter;
 use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
 use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Tags, Titles};
 use integrations::tmdb::views::MultiResult;
-use views::media::{MediaIndex, MediaType, SearchResults};
+use views::media::{MediaIndex, MediaSourceCreate, MediaType, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use crate::infrastructure::traits::IntoView;
-use crate::services;
+use crate::{movies, series, services, sources};
+
+pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
+    let (created, id) = match media_type {
+        MediaType::Movie => { movies::create(view.tmdb_id, user, db).await? }
+        MediaType::Series => { series::create(view.tmdb_id, user, db).await? }
+    };
+
+    sources::create(id, &view.source, media_type, &user, &db).await?;
+
+    Ok((created, id))
+}
 
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id)).find_also_related(Titles)
@@ -81,6 +92,11 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
         return Err(SrvErr::NotFound);
     }
     let media = media.unwrap();
+
+
+    if user.though_bot && !media.bot_controllable {
+        return Err(SrvErr::Unauthorized);
+    }
 
     let tran = db.begin().await?;
     media.delete(db).await?;

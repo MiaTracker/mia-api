@@ -49,7 +49,8 @@ impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
             } else { Set(None) },
             date_added: Set(chrono::Utc::now().date_naive()),
             r#type: Set(MediaType::Movie),
-            stars: Set(None)
+            stars: Set(None),
+            bot_controllable: Set(false)
         }
     }
 }
@@ -126,7 +127,8 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesDetails {
             } else { Set(None) },
             date_added: Set(chrono::Utc::now().date_naive()),
             r#type: Set(MediaType::Series),
-            stars: Set(None)
+            stars: Set(None),
+            bot_controllable: Set(false)
         }
     }
 }

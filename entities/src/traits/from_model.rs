@@ -15,7 +15,8 @@ impl From<users::Model> for CurrentUser {
             uuid: value.uuid,
             email: value.email,
             username: value.username,
-            admin: value.admin
+            admin: value.admin,
+            though_bot: false
         }
     }
 }

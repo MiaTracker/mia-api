@@ -28,6 +28,7 @@ pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType,
         name: Set(source.name.clone()),
         url: Set(source.url.clone()),
         r#type: Set((&source.r#type).into()),
+        bot_controllable: Set(user.though_bot)
     };
 
     let tran = db.begin().await?;
@@ -105,6 +106,10 @@ pub async fn delete(media_id: i32, source_id: i32, media_type: MediaType, user: 
         return Err(SrvErr::NotFound);
     }
     let source = source.unwrap();
+
+    if user.though_bot && !source.bot_controllable {
+        return Err(SrvErr::Unauthorized)
+    }
 
     let tran = db.begin().await?;
 

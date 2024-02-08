@@ -76,7 +76,7 @@ pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: N
         }
     };
 
-    let user = match res {
+    let mut user = match res {
         Ok(user) => {
             match user {
                 None => {
@@ -92,6 +92,8 @@ pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: N
             return Err(<&SrvErr as Into<ApiErr>>::into(&err))
         }
     };
+
+    user.though_bot = claims.r#type == TokenType::AppToken;
 
     req.extensions_mut().insert(user);
 

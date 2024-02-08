@@ -28,11 +28,17 @@ pub async fn launch() {
     let admin_serv = ServiceBuilder::new()
         .layer(axum::middleware::from_fn_with_state(state.clone(), middleware::auth))
         .layer(axum::middleware::from_fn(middleware::admin));
+    let user_serv = ServiceBuilder::new()
+        .layer(axum::middleware::from_fn_with_state(state.clone(), middleware::auth))
+        .layer(axum::middleware::from_fn(middleware::user));
     let auth_serv = ServiceBuilder::new()
         .layer(axum::middleware::from_fn_with_state(state.clone(), middleware::auth));
     let cors_serv = ServiceBuilder::new()
         .layer(middleware::cors::build());
-    let app = routes::build_admin().layer(admin_serv).merge(routes::build().layer(auth_serv)).merge(routes::build_anonymous())
+    let app = routes::build_admin().layer(admin_serv)
+        .merge(routes::build_bot().layer(auth_serv))
+        .merge(routes::build().layer(user_serv))
+        .merge(routes::build_anonymous())
         .layer(cors_serv).with_state(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
