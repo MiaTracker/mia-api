@@ -245,8 +245,10 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
 
     let tran = db.begin().await?;
 
-    let media_am: media::ActiveModel = (&metadata).into_active_model();
+    let mut media_am: media::ActiveModel = (&metadata).into_active_model();
+    media_am.bot_controllable = sea_orm::Set(media.bot_controllable && user.though_bot);
     media_am.update(db).await?;
+
     let movie_am: movies::ActiveModel = (&metadata).into_active_model();
     movie_am.update(db).await?;
 

@@ -1,5 +1,5 @@
 use cruet::Inflector;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
 use entities::{genres, media, media_genres, sea_orm_active_enums};
 use entities::prelude::{Genres, MediaGenres};
 use views::genres::GenreCreate;
@@ -48,6 +48,13 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
         rel.insert(db).await?;
     }
 
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
+    }
+
     tran.commit().await?;
     Ok(true)
 }
@@ -76,6 +83,13 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
         if count == 0 {
             genre.delete(db).await?;
         }
+    }
+
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
     }
 
     tran.commit().await?;

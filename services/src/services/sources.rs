@@ -1,4 +1,4 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
 use entities::{media, sea_orm_active_enums, sources};
 use entities::prelude::Sources;
 use views::media::MediaType;
@@ -34,6 +34,13 @@ pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType,
     let tran = db.begin().await?;
 
     model.insert(db).await?;
+
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
+    }
 
     tran.commit().await?;
 
@@ -87,6 +94,13 @@ pub async fn update(media_id: i32, source_id: i32, source: &SourceUpdate, media_
 
     model.update(db).await?;
 
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
+    }
+
     tran.commit().await?;
 
     Ok(())
@@ -95,7 +109,6 @@ pub async fn update(media_id: i32, source_id: i32, source: &SourceUpdate, media_
 pub async fn delete(media_id: i32, source_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let media = media::Entity::find_by_id(media_id).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
         .filter(media::Column::UserId.eq(user.id)).one(db).await?;
-
     if media.is_none() {
         return Err(SrvErr::NotFound);
     }
@@ -107,6 +120,12 @@ pub async fn delete(media_id: i32, source_id: i32, media_type: MediaType, user: 
     }
     let source = source.unwrap();
 
+    delete_from_media(media, source, user, db).await?;
+
+    Ok(())
+}
+
+pub async fn delete_from_media(media: media::Model, source: sources::Model, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     if user.though_bot && !source.bot_controllable {
         return Err(SrvErr::Unauthorized)
     }
@@ -114,6 +133,13 @@ pub async fn delete(media_id: i32, source_id: i32, media_type: MediaType, user: 
     let tran = db.begin().await?;
 
     source.delete(db).await?;
+
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
+    }
 
     tran.commit().await?;
 

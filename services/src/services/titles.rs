@@ -1,4 +1,4 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
 use entities::{media, sea_orm_active_enums, titles};
 use entities::prelude::Titles;
 use views::media::MediaType;
@@ -32,6 +32,13 @@ pub async fn create(media_id: i32, title: &TitleCreate, media_type: MediaType, u
 
     model.insert(db).await?;
 
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
+    }
+
     tran.commit().await?;
 
     Ok(true)
@@ -63,6 +70,13 @@ pub async fn set_primary(media_id: i32, title_id: i32, media_type: MediaType, us
     let mut title: titles::ActiveModel = title.unwrap().into();
     title.primary = Set(true);
     title.update(db).await?;
+
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
+    }
 
     tran.commit().await?;
 
@@ -97,6 +111,13 @@ pub async fn delete(media_id: i32, title_id: i32, media_type: MediaType, user: &
         }
     } else {
         title.delete(db).await?;
+    }
+
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
     }
 
     tran.commit().await?;

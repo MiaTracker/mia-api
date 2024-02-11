@@ -1,4 +1,4 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, Set};
 use sea_orm::sea_query::Query;
 use entities::{media, titles, watchlist};
 use entities::prelude::{Media, Titles, Watchlist};
@@ -8,9 +8,8 @@ use crate::infrastructure::SrvErr;
 use crate::services;
 
 pub async fn add(media_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
-    let exists = media::Entity::find_by_id(media_id).filter(media::Column::UserId.eq(user.id))
-        .count(db).await? != 0;
-    if !exists {
+    let media = media::Entity::find_by_id(media_id).filter(media::Column::UserId.eq(user.id)).one(db).await?;
+    if !media.is_none() {
         return Err(SrvErr::NotFound);
     }
 
@@ -25,6 +24,15 @@ pub async fn add(media_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool,
         date_added: Set(chrono::Utc::now().date_naive()),
     };
     am.insert(db).await?;
+
+    let media = media.unwrap();
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.into_active_model();
+        media_am.bot_controllable = Set(bot_controllable);
+        media_am.update(db).await?;
+    }
+
     Ok(true)
 }
 

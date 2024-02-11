@@ -1,5 +1,5 @@
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, FromQueryResult, ModelTrait, QueryFilter, QuerySelect, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, FromQueryResult, IntoActiveModel as SOIntoActiveModel, ModelTrait, QueryFilter, QuerySelect, TransactionTrait};
 use sea_orm::prelude::Expr;
 use entities::{logs, media, sea_orm_active_enums, sources};
 use entities::prelude::{Logs, Sources};
@@ -41,6 +41,20 @@ pub async fn create(media_id: i32, log: &LogCreate, media_type: MediaType, user:
     model.media_id = Set(media_id);
     model.source_id = Set(source.id);
     model.insert(db).await?;
+
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.clone().into_active_model();
+        media_am.bot_controllable = sea_orm::Set(bot_controllable);
+        media_am.update(db).await?;
+    }
+
+    let src_bot_controllable = source.bot_controllable && user.though_bot;
+    if src_bot_controllable != source.bot_controllable {
+        let mut source_am = source.into_active_model();
+        source_am.bot_controllable = Set(src_bot_controllable);
+        source_am.update(db).await?;
+    }
 
     update_media_rating(media, &db).await?;
 
@@ -97,6 +111,20 @@ pub async fn update(media_id: i32, log_id: i32, log: &LogUpdate, media_type: Med
     let tran = db.begin().await?;
 
     am.update(db).await?;
+
+    let bot_controllable = media.bot_controllable && user.though_bot;
+    if bot_controllable != media.bot_controllable {
+        let mut media_am = media.clone().into_active_model();
+        media_am.bot_controllable = sea_orm::Set(bot_controllable);
+        media_am.update(db).await?;
+    }
+
+    let src_bot_controllable = source.bot_controllable && user.though_bot;
+    if src_bot_controllable != source.bot_controllable {
+        let mut source_am = source.into_active_model();
+        source_am.bot_controllable = Set(src_bot_controllable);
+        source_am.update(db).await?;
+    }
 
     if log.stars != old_stars_value {
         update_media_rating(media, &db).await?;

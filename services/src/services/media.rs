@@ -4,13 +4,14 @@ use sea_orm::prelude::Expr;
 use sea_orm::sea_query::Query;
 use sea_orm::QueryFilter;
 use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
-use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Tags, Titles};
+use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
 use integrations::tmdb::views::MultiResult;
 use views::media::{MediaIndex, MediaSourceCreate, MediaType, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use crate::infrastructure::traits::IntoView;
 use crate::{movies, series, services, sources};
+use crate::sources::delete_from_media;
 
 pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let (created, id) = match media_type {
@@ -84,6 +85,52 @@ pub async fn on_watchlist(media_id: i32, media_type: MediaType, user: &CurrentUs
     Ok(on_watchlist)
 }
 
+pub async fn delete_w_source(tmdb_id: i32, source_name: String, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    let media = media::Entity::find().filter(media::Column::UserId.eq(user.id))
+        .filter(media::Column::TmdbId.eq(tmdb_id))
+        .filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
+
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
+
+
+    if user.though_bot && !media.bot_controllable {
+        let source = media.find_related(Sources).filter(entities::sources::Column::Name.eq(source_name)).one(db).await?;
+        if source.is_none() {
+            return Err(SrvErr::NotFound);
+        }
+        let source = source.unwrap();
+
+        delete_from_media(media, source, user, db).await?;
+
+        return Ok(());
+    }
+
+    let tran = db.begin().await?;
+    media.delete(db).await?;
+
+    Tags::delete_many().filter(tags::Column::Id.in_subquery(
+        Query::select().column(tags::Column::Id).from(Tags)
+            .left_join(MediaTags, Expr::col((Tags, tags::Column::Id)).equals((MediaTags, media_tags::Column::TagId)))
+            .cond_where(media_tags::Column::TagId.is_null())
+            .to_owned())
+    ).exec(db).await?;
+
+    Genres::delete_many().filter(genres::Column::Id.in_subquery(
+        Query::select().column(genres::Column::Id).from(Genres)
+            .left_join(MediaGenres, Expr::col((Genres, genres::Column::Id)).equals((MediaGenres, media_genres::Column::GenreId)))
+            .cond_where(media_genres::Column::GenreId.is_null())
+            .and_where(genres::Column::TmdbId.is_null())
+            .to_owned())
+    ).exec(db).await?;
+
+    tran.commit().await?;
+
+    Ok(())
+}
+
 pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let media = media::Entity::find_by_id(media_id).filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
@@ -120,6 +167,7 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
 
     Ok(())
 }
+
 
 pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>) -> Vec<MediaIndex> {
     let mut indexes = Vec::with_capacity(media_w_titles.len());

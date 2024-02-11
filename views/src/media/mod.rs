@@ -4,6 +4,7 @@ mod media_index;
 mod media_search;
 mod media_delete;
 mod media_source_create;
+mod media_source_delete;
 
 pub use media_create_params::*;
 pub use media_type::*;
@@ -11,3 +12,4 @@ pub use media_index::*;
 pub use media_search::*;
 pub use media_delete::*;
 pub use media_source_create::*;
+pub use media_source_delete::*;

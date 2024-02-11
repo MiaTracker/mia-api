@@ -8,11 +8,9 @@ use crate::infrastructure::AppState;
 pub fn build_bot() -> Router<AppState> {
     Router::new()
         .route("/movies/source_create", post(movies::create_w_source))
-        .route("/movies/:movie_id", delete(movies::delete))
-        .route("/series/:series_id", delete(series::delete))
+        .route("/movies/source_delete", post(movies::delete_w_source))
         .route("/series/source_create", post(series::create_w_source))
-        .route("/:route_type/:media_id/sources", post(sources::create))
-        .route("/:route_type/:media_id/sources/:source_id", delete(sources::delete))
+        .route("/series/source_delete", post(series::delete_w_source))
 }
 
 pub fn build() -> Router<AppState>
@@ -31,6 +29,7 @@ pub fn build() -> Router<AppState>
         .route("/movies/:movie_id/metadata", get(movies::metadata))
         .route("/movies/:movie_id/metadata", patch(movies::update))
         .route("/movies/:movie_id/on_watchlist", get(movies::on_watchlist))
+        .route("/movies/:movie_id", delete(movies::delete))
         .route("/series", post(series::create))
         .route("/series", get(series::index))
         .route("/series/search", get(series::search))
@@ -38,6 +37,7 @@ pub fn build() -> Router<AppState>
         .route("/series/:series_id/metadata", get(series::metadata))
         .route("/series/:series_id/metadata", patch(series::update))
         .route("/series/:series_id/on_watchlist", get(series::on_watchlist))
+        .route("/series/:series_id", delete(series::delete))
         .route("/:route_type/:media_id/tags", post(tags::create))
         .route("/:route_type/:media_id/tags/:tag_id", delete(tags::delete))
         .route("/:route_type/:media_id/genres", post(genres::create))
@@ -45,8 +45,10 @@ pub fn build() -> Router<AppState>
         .route("/:route_type/:media_id/titles", post(titles::create))
         .route("/:route_type/:media_id/titles/:title_id/primary", post(titles::set_primary))
         .route("/:route_type/:media_id/titles/:title_id", delete(titles::delete))
+        .route("/:route_type/:media_id/sources", post(sources::create))
         .route("/:route_type/:media_id/sources", get(sources::index))
         .route("/:route_type/:media_id/sources/:source_id", post(sources::update))
+        .route("/:route_type/:media_id/sources/:source_id", delete(sources::delete))
         .route("/:route_type/:media_id/logs", post(logs::create))
         .route("/:route_type/:media_id/logs/:log_id", post(logs::update))
         .route("/:route_type/:media_id/logs/:log_id", delete(logs::delete))
