@@ -8,7 +8,7 @@ use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 use entities::prelude::{AppTokens, Users};
 use entities::{app_tokens, users};
-use views::users::{CurrentUser, TokenClaims, TokenType, UserLogin, UserProfile, UserRegistration, UserToken};
+use views::users::{CurrentUser, TokenClaims, TokenType, UserIndex, UserLogin, UserProfile, UserRegistration, UserToken};
 use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
 
@@ -179,10 +179,10 @@ pub fn profile(user: &CurrentUser) -> UserProfile {
     }
 }
 
-pub async fn index(db: &DbConn) -> Result<Vec<UserProfile>, SrvErr> {
+pub async fn index(db: &DbConn) -> Result<Vec<UserIndex>, SrvErr> {
     let users = users::Entity::find().all(db).await?;
     let users = users.iter().map(|u| {
-        UserProfile {
+        UserIndex {
             uuid: u.uuid,
             username: u.username.clone(),
             email: u.email.clone(),

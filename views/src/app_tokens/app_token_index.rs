@@ -2,8 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 #[derive(Serialize)]
-pub struct AppToken {
+pub struct AppTokenIndex {
     pub name: String,
-    pub token: String,
     pub generated: DateTime<Utc>
 }

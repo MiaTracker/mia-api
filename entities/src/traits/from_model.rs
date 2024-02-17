@@ -1,3 +1,4 @@
+use views::app_tokens::AppTokenIndex;
 use views::genres::Genre;
 use views::languages::Language;
 use views::logs::Log;
@@ -6,7 +7,7 @@ use views::sources::{Source, SourceType};
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
-use crate::{entities, genres, languages, logs, sources, tags, titles, users};
+use crate::{app_tokens, entities, genres, languages, logs, sources, tags, titles, users};
 
 impl From<users::Model> for CurrentUser {
     fn from(value: users::Model) -> Self {
@@ -97,6 +98,15 @@ impl From<entities::sea_orm_active_enums::MediaType> for MediaType {
         match value {
             entities::sea_orm_active_enums::MediaType::Movie => { MediaType::Movie }
             entities::sea_orm_active_enums::MediaType::Series => { MediaType::Series }
+        }
+    }
+}
+
+impl From<&app_tokens::Model> for AppTokenIndex {
+    fn from(value: &app_tokens::Model) -> Self {
+        Self {
+            name: value.name.clone(),
+            generated: value.generated.and_utc(),
         }
     }
 }

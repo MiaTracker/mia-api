@@ -13,6 +13,7 @@ mod m20240121_170225_rename_log_rating;
 mod m20240124_142349_fix_watchlist_table;
 mod m20240208_125123_app_tokens;
 mod m20240208_152207_add_bot_created;
+mod m20240217_103742_app_token_generated;
 
 pub struct Migrator;
 
@@ -33,6 +34,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240124_142349_fix_watchlist_table::Migration),
             Box::new(m20240208_125123_app_tokens::Migration),
             Box::new(m20240208_152207_add_bot_created::Migration),
+            Box::new(m20240217_103742_app_token_generated::Migration),
         ]
     }
 }

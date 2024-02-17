@@ -9,6 +9,7 @@ pub struct Model {
     pub uuid: Uuid,
     pub name: String,
     pub user_id: i32,
+    pub generated: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
