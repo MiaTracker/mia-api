@@ -4,5 +4,6 @@ use serde::Serialize;
 #[derive(Serialize)]
 pub struct UserToken {
     pub token: String,
-    pub expiry_date: DateTime<Utc>
+    pub expiry_date: DateTime<Utc>,
+    pub admin: bool
 }

@@ -145,7 +145,8 @@ pub async fn login(user: &UserLogin, jwt_secret: &String, db: &DbConn) -> Result
 
     let view = UserToken {
         token,
-        expiry_date
+        expiry_date,
+        admin: model.admin
     };
 
     Ok(view)
