@@ -3,7 +3,7 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use fancy_regex::Regex;
 use jsonwebtoken::{encode, EncodingKey, Header};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbBackend, DbConn, EntityTrait, FromQueryResult, JsonValue, QueryFilter, Statement};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbBackend, DbConn, EntityTrait, FromQueryResult, JsonValue, ModelTrait, QueryFilter, Statement};
 use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 use entities::prelude::{AppTokens, Users};
@@ -190,4 +190,14 @@ pub async fn index(db: &DbConn) -> Result<Vec<UserIndex>, SrvErr> {
         }
     }).collect();
     Ok(users)
+}
+
+pub async fn delete(uuid: Uuid, db: &DbConn) -> Result<(), SrvErr> {
+    let user = Users::find().filter(users::Column::Uuid.eq(uuid)).one(db).await?;
+    if user.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let user = user.unwrap();
+    user.delete(db).await?;
+    Ok(())
 }

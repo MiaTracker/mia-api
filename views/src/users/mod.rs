@@ -5,6 +5,7 @@ mod user_token;
 mod current_user;
 mod user_profile;
 mod user_index;
+mod user_delete;
 
 pub use user_registration::*;
 pub use user_login::*;
@@ -13,3 +14,4 @@ pub use user_token::*;
 pub use current_user::*;
 pub use user_profile::*;
 pub use user_index::*;
+pub use user_delete::*;

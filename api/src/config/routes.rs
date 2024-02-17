@@ -70,5 +70,6 @@ pub fn build_admin() -> Router<AppState> {
     Router::new()
         .route("/users", get(users::index))
         .route("/users/register", post(users::register))
+        .route("/users/:uuid", delete(users::delete))
         .route("/masterdata/refresh", post(masterdata::refresh))
 }
