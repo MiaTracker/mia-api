@@ -23,7 +23,14 @@ pub enum RuleViolation {
 
     LogRatingOutOfBounds,
 
-    AppTokenNameAlreadyExists
+    AppTokenNameAlreadyExists,
+
+    PasswordChangeOldPasswordEmpty,
+    PasswordChangeNewPasswordEmpty,
+    PasswordChangePasswordRepeatEmpty,
+    PasswordChangeOldPasswordIncorrect,
+    PasswordChangePasswordsDoNotMatch,
+    PasswordChangePasswordRequirementsNotMet,
 }
 
 impl fmt::Display for RuleViolation {

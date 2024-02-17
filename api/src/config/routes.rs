@@ -18,6 +18,7 @@ pub fn build() -> Router<AppState>
     Router::new()
         .route("/configuration/images", get(configuration::images))
         .route("/users/profile", get(users::profile))
+        .route("/users/password", patch(users::change_password))
         .route("/app_tokens", get(app_tokens::index))
         .route("/app_tokens", post(app_tokens::generate))
         .route("/app_tokens/:name", delete(app_tokens::revoke))

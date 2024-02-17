@@ -6,6 +6,7 @@ mod current_user;
 mod user_profile;
 mod user_index;
 mod user_delete;
+mod password_change;
 
 pub use user_registration::*;
 pub use user_login::*;
@@ -15,3 +16,4 @@ pub use current_user::*;
 pub use user_profile::*;
 pub use user_index::*;
 pub use user_delete::*;
+pub use password_change::*;

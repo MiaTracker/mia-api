@@ -3,14 +3,19 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use fancy_regex::Regex;
 use jsonwebtoken::{encode, EncodingKey, Header};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbBackend, DbConn, EntityTrait, FromQueryResult, JsonValue, ModelTrait, QueryFilter, Statement};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbBackend, DbConn, EntityTrait, FromQueryResult, IntoActiveModel as SORMIntoActiveModel, JsonValue, ModelTrait, QueryFilter, Statement};
 use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 use entities::prelude::{AppTokens, Users};
 use entities::{app_tokens, users};
-use views::users::{CurrentUser, TokenClaims, TokenType, UserIndex, UserLogin, UserProfile, UserRegistration, UserToken};
+use once_cell::sync::Lazy;
+use views::users::{CurrentUser, PasswordChange, TokenClaims, TokenType, UserIndex, UserLogin, UserProfile, UserRegistration, UserToken};
 use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
+
+static PASS_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d\w\W]{7,}$"#).expect("Invalid password regex!")
+});
 
 pub async fn register(user: &UserRegistration, db: &DbConn) -> Result<(), SrvErr> {
     let email_regex = Regex::new(r#"(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)])"#).expect("Regex is invalid!");
@@ -71,8 +76,7 @@ pub async fn register(user: &UserRegistration, db: &DbConn) -> Result<(), SrvErr
         violations.push(RuleViolation::SignUpPasswordsDoNotMatch);
     }
 
-    let pass_regex = Regex::new(r#"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d\w\W]{7,}$"#).expect("Invalid password regex!");
-    if let Ok(m) = pass_regex.find(user.password.as_str()) {
+    if let Ok(m) = PASS_REGEX.find(user.password.as_str()) {
         if m.is_none() {
             violations.push(RuleViolation::SignUpPasswordRequirementsNotMet);
         }
@@ -191,6 +195,71 @@ pub async fn index(db: &DbConn) -> Result<Vec<UserIndex>, SrvErr> {
         }
     }).collect();
     Ok(users)
+}
+
+pub async fn change_password(pass_change: PasswordChange, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    let mut violations = Vec::new();
+    if pass_change.old_password.is_empty() {
+        violations.push(RuleViolation::PasswordChangeOldPasswordEmpty);
+    }
+    if pass_change.new_password.is_empty() {
+        violations.push(RuleViolation::PasswordChangeNewPasswordEmpty);
+    }
+    if pass_change.password_repeat.is_empty() {
+        violations.push(RuleViolation::PasswordChangePasswordRepeatEmpty);
+    }
+
+    if !violations.is_empty() {
+        return Err(SrvErr::RuleViolation(violations));
+    }
+
+    let model = Users::find_by_id(user.id).one(db).await.map_err(|err| SrvErr::DB(err))?;
+    if model.is_none() {
+        return Err(SrvErr::Unauthorized);
+    }
+    let model = model.unwrap();
+
+    let valid = match PasswordHash::new(&model.password_hash) {
+        Ok(parsed_hash) => { Argon2::default().verify_password(pass_change.old_password.as_bytes(), &parsed_hash).map_or(false, |_| true ) }
+        Err(_) => { false }
+    };
+
+    if !valid {
+        return Err(SrvErr::Unauthorized);
+    }
+
+    if pass_change.new_password != pass_change.password_repeat {
+        violations.push(RuleViolation::PasswordChangePasswordsDoNotMatch);
+    }
+
+
+    if let Ok(m) = PASS_REGEX.find(pass_change.new_password.as_str()) {
+        if m.is_none() {
+            violations.push(RuleViolation::PasswordChangePasswordRequirementsNotMet);
+        }
+    }
+    else {
+        violations.push(RuleViolation::PasswordChangePasswordRequirementsNotMet);
+    }
+
+    if !violations.is_empty() {
+        return Err(SrvErr::RuleViolation(violations));
+    }
+
+    let salt = SaltString::generate(&mut OsRng);
+    let hashed_password = match Argon2::default().hash_password(pass_change.new_password.as_bytes(), &salt) {
+        Ok(hash) => { hash }
+        Err(err) => {
+            return Err(SrvErr::Internal(format!("Error while hashing password: {}", err)));
+        }
+    }.to_string();
+
+    let mut am = model.into_active_model();
+    am.password_hash = Set(hashed_password);
+    match am.update(db).await {
+        Ok(_) => { Ok(()) }
+        Err(db_err) => { Err(SrvErr::DB(db_err)) }
+    }
 }
 
 pub async fn delete(uuid: Uuid, db: &DbConn) -> Result<(), SrvErr> {

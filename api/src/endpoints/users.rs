@@ -2,7 +2,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use axum::response::IntoResponse;
-use views::users::{CurrentUser, UserDeleteParams, UserLogin, UserRegistration};
+use views::users::{CurrentUser, PasswordChange, UserDeleteParams, UserLogin, UserRegistration};
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 pub async fn register(state: State<AppState>, Json(user): Json<UserRegistration>) -> impl IntoResponse {
@@ -22,6 +22,12 @@ pub async fn profile(Extension(user): Extension<CurrentUser>) -> impl IntoRespon
 
 pub async fn index(state: State<AppState>) -> impl IntoResponse {
     let result = services::users::index(&state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+pub async fn change_password(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                             Json(params): Json<PasswordChange>) -> impl IntoResponse {
+    let result = services::users::change_password(params, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
