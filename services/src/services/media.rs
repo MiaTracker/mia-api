@@ -172,18 +172,7 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
 pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>) -> Vec<MediaIndex> {
     let mut indexes = Vec::with_capacity(media_w_titles.len());
     for m in media_w_titles {
-        let title = if let Some(title) = m.1 {
-            title.title
-        } else { env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!") };
-
-        let index = MediaIndex {
-            id: m.0.id,
-            r#type: views::media::MediaType::from(m.0.r#type),
-            poster_path: m.0.poster_path,
-            stars: m.0.stars,
-            title,
-        };
-        indexes.push(index);
+        indexes.push(build_media_index(m));
     }
 
     indexes.sort_by(|x, y| {
@@ -195,4 +184,18 @@ pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titl
     });
 
     indexes
+}
+
+pub(crate) fn build_media_index(m: (media::Model, Option<titles::Model>)) -> MediaIndex {
+    let title = if let Some(title) = m.1 {
+        title.title
+    } else { env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!") };
+
+    MediaIndex {
+        id: m.0.id,
+        r#type: views::media::MediaType::from(m.0.r#type),
+        poster_path: m.0.poster_path,
+        stars: m.0.stars,
+        title,
+    }
 }

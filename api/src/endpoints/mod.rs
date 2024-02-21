@@ -12,3 +12,4 @@ pub mod media;
 pub mod watchlist;
 pub mod logset;
 pub mod app_tokens;
+pub mod statistics;
