@@ -5,6 +5,7 @@ use views::media::MediaType;
 use views::sources::{Source, SourceCreate, SourceUpdate};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
+use crate::logs::update_media_rating;
 
 pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let media = media::Entity::find_by_id(media_id).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
@@ -120,7 +121,9 @@ pub async fn delete(media_id: i32, source_id: i32, media_type: MediaType, user: 
     }
     let source = source.unwrap();
 
-    delete_from_media(media, source, user, db).await?;
+    delete_from_media(media.clone(), source, user, db).await?;
+
+    update_media_rating(media, &db).await?;
 
     Ok(())
 }

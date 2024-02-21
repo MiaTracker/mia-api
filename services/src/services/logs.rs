@@ -159,7 +159,7 @@ pub async fn delete(media_id: i32, log_id: i32, media_type: MediaType, user: &Cu
     Ok(())
 }
 
-async fn update_media_rating(media: media::Model, db: &DbConn) -> Result<(), SrvErr> {
+pub async fn update_media_rating(media: media::Model, db: &DbConn) -> Result<(), SrvErr> {
     #[derive(FromQueryResult)]
     struct AvgSelect {
         pub sum: f32,
