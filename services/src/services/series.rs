@@ -2,9 +2,9 @@ use std::env;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder};
 use entities::{genres, media, media_genres, seasons, series, titles};
-use integrations::tmdb::views::Season;
+use integrations::tmdb::views::{Season, SeriesTitle};
 use views::users::CurrentUser;
-use crate::infrastructure::{RuleViolation, SrvErr};
+use crate::infrastructure::{constants, RuleViolation, SrvErr};
 use entities::prelude::{Genres, Languages, Logs, Media, Series, Sources, Tags, Titles, Watchlist};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
@@ -80,12 +80,19 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
     model.insert(db).await?;
 
     let titles = tmdb::services::series::alternative_titles(tmdb_id).await?;
-    for title in titles.results {
+    let titles = titles.results.iter().filter(|x| {
+        if x.iso_3166_1 == constants::TMDB_3166_1 { return true }
+        if let Some(countries) = &tmdb_series.production_countries {
+            return countries.iter().any(|y| { y.iso_3166_1 == x.iso_3166_1 })
+        }
+        true
+    }).collect::<Vec<&SeriesTitle>>();
+    for title in titles {
         let model = titles::ActiveModel {
             id: NotSet,
             media_id: Set(inserted_media.id),
             primary: Set(false),
-            title: Set(title.title)
+            title: Set(title.title.clone())
         };
         model.insert(db).await?;
     }

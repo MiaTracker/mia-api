@@ -4,6 +4,7 @@ mod initialize;
 pub(crate) mod traits;
 mod integrations_trait_implementations;
 mod view_trait_implementations;
+pub mod constants;
 
 pub use srv_err::*;
 pub use rule_violation::*;
