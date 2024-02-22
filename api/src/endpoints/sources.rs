@@ -2,7 +2,7 @@ use axum::{Extension, Json};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use views::sources::{SourceCreate, SourceCreateParams, SourceDeleteParams, SourceIndexParams, SourceUpdate, SourceUpdateParams};
+use views::sources::{SourceCreate, SourceCreateParams, SourceDeleteParams, SourceDetailsParams, SourceIndexParams, SourceUpdate, SourceUpdateParams};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
@@ -14,6 +14,11 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(params): Path<SourceIndexParams>) -> impl IntoResponse {
     let result = services::sources::index(params.media_id, params.route_type.into(), &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(params): Path<SourceDetailsParams>) -> impl IntoResponse {
+    let result = services::sources::details(params.media_id, params.route_type.into(), params.source_id, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 

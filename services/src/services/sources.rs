@@ -1,6 +1,6 @@
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
 use entities::{media, sea_orm_active_enums, sources};
-use entities::prelude::Sources;
+use entities::prelude::{Media, Sources};
 use views::media::MediaType;
 use views::sources::{Source, SourceCreate, SourceUpdate};
 use views::users::CurrentUser;
@@ -61,6 +61,17 @@ pub async fn index(media_id: i32, media_type: MediaType, user: &CurrentUser, db:
         Source::from(src)
     }).collect();
     Ok(sources)
+}
+
+pub async fn details(media_id: i32, media_type: MediaType, source_id: i32, user: &CurrentUser, db: &DbConn) -> Result<Source, SrvErr> {
+    let source = Sources::find_by_id(source_id).left_join(Media)
+        .filter(media::Column::Id.eq(media_id)).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
+        .filter(media::Column::UserId.eq(user.id))
+        .one(db).await?;
+    if source.is_none() {
+        return Err(SrvErr::NotFound)
+    }
+    Ok(Source::from(&source.unwrap()))
 }
 
 pub async fn update(media_id: i32, source_id: i32, source: &SourceUpdate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
