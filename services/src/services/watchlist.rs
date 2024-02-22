@@ -9,7 +9,7 @@ use crate::services;
 
 pub async fn add(media_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
     let media = media::Entity::find_by_id(media_id).filter(media::Column::UserId.eq(user.id)).one(db).await?;
-    if !media.is_none() {
+    if media.is_none() {
         return Err(SrvErr::NotFound);
     }
 
