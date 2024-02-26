@@ -2,7 +2,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveMode
 use sea_orm::sea_query::Query;
 use entities::{media, titles, watchlist};
 use entities::prelude::{Media, Titles, Watchlist};
-use views::media::MediaIndex;
+use views::media::{MediaIndex, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use crate::services;
@@ -47,16 +47,28 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
     Ok(indexes)
 }
 
-pub async fn search(query: String, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let query = services::query::parse(query, None);
-    let select = services::query::build_sql_query(query, user)
-        .filter(media::Column::Id.in_subquery(Query::select()
-            .column(watchlist::Column::MediaId).from(Watchlist).to_owned()));
-    let media_w_titles = select.all(db).await?;
+pub async fn search(query: String, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
+    let res = transpiler::transpile(query, user.id, None);
+    if res.is_err() {
+        return Ok(SearchResults {
+            indexes: vec![],
+            external: vec![],
+            query_valid: false,
+        });
+    }
+    let res = res.ok().unwrap();
+
+    let media_w_titles = res.query.filter(media::Column::Id.in_subquery(Query::select()
+            .column(watchlist::Column::MediaId).from(Watchlist).to_owned()))
+        .all(db).await?;
 
     let indexes = services::media::build_media_indexes(media_w_titles);
 
-    Ok(indexes)
+    Ok(SearchResults {
+        indexes,
+        external: vec![],
+        query_valid: true,
+    })
 }
 
 

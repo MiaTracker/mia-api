@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["api", "migrations", "entities", "services", "views", "integrations"]
+members = ["api", "migrations", "entities", "services", "views", "integrations", "transpiler"]
 
 [dependencies]
 tokio = "1.32.0"

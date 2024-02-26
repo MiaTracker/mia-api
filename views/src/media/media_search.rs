@@ -11,7 +11,8 @@ pub struct MediaSearchQueryParams {
 #[derive(Serialize)]
 pub struct SearchResults {
     pub indexes: Vec<MediaIndex>,
-    pub external: Vec<ExternalIndex>
+    pub external: Vec<ExternalIndex>,
+    pub query_valid: bool
 }
 
 #[derive(Serialize)]

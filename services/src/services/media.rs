@@ -10,7 +10,7 @@ use views::media::{MediaIndex, MediaSourceCreate, MediaType, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use crate::infrastructure::traits::IntoView;
-use crate::{movies, series, services, sources};
+use crate::{movies, series, sources};
 use crate::sources::delete_from_media;
 
 pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
@@ -32,13 +32,22 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
 }
 
 pub async fn search(query: String, committed: bool, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
-    let query = services::query::parse(query, media_type);
+    let res = transpiler::transpile(query, user.id, media_type.map(|m| { m.into() }));
+
+    if res.is_err() {
+        return Ok(SearchResults {
+            indexes: vec![],
+            external: vec![],
+            query_valid: false,
+        })
+    }
+    let res = res.ok().unwrap();
+
     let external_t;
-    if query.title.len() > 3 || committed {
-        external_t = Some(integrations::tmdb::services::search::multi(query.title.clone()));
+    if res.is_primitive && (res.name_search.len() > 3 || committed) {
+        external_t = Some(integrations::tmdb::services::search::multi(res.name_search));
     } else { external_t = None }
-    let select = services::query::build_sql_query(query, user);
-    let media_w_titles = select.all(db).await?;
+    let media_w_titles = res.query.all(db).await?;
 
     let external;
     if let Some(future) = external_t {
@@ -70,6 +79,7 @@ pub async fn search(query: String, committed: bool, media_type: Option<MediaType
     Ok(SearchResults {
         indexes,
         external,
+        query_valid: true
     })
 }
 
