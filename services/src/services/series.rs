@@ -107,7 +107,7 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
     let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series)).find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true)).order_by_asc(titles::Column::Title).all(db).await?;
-    let indexes = services::media::build_media_indexes(media_w_titles);
+    let indexes = services::media::build_media_indexes(media_w_titles, true);
     Ok(indexes)
 }
 

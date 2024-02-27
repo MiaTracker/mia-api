@@ -1,12 +1,12 @@
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, sea_query};
+use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::{BinOper, Query, SelectStatement, SimpleExpr};
-use entities::{logs, media, sea_orm_active_enums, titles};
+use sea_orm::sea_query::{Alias, BinOper, Query, SelectStatement, SimpleExpr};
+use entities::{logs, media, titles};
 use entities::prelude::{Media, Titles};
 use sea_orm::prelude::Expr;
 use entities::sea_orm_active_enums::MediaType;
 use crate::{ErrorSource, parser, TranspilationError, TranspilationResult};
-use crate::parser::{BinaryExpr, ComparisonOperator, Literal, LogicalExpr, LogicalOperator, TernaryExpr};
+use crate::parser::{BinaryExpr, ComparisonOperator, Literal, LogicalExpr, LogicalOperator, SortDirection, TernaryExpr};
 
 #[derive(Debug)]
 pub struct ConstructionError {
@@ -130,18 +130,35 @@ pub fn construct(query: parser::Query, user_id: i32, media_type: Option<MediaTyp
     let mut select = Media::find()
         .filter(media::Column::UserId.eq(user_id))
         .find_also_related(Titles)
-        .filter(titles::Column::Primary.eq(true))
-        .order_by_asc(titles::Column::Title)
-        .distinct();
+        .filter(titles::Column::Primary.eq(true));
+
+    let custom_sort;
+    if let Some(sort_target) = query.sort_target {
+        let dir = match sort_target.direction {
+            None => { Order::Asc }
+            Some(d) => {
+                match d {
+                    SortDirection::Ascending => { Order::Asc }
+                    SortDirection::Descending => { Order::Desc }
+                }
+            }
+        };
+
+        select = select.order_by(sort(sort_target.identifier)?, dir.clone());
+        custom_sort = true;
+    } else {
+        custom_sort = false;
+    }
+    select = select.order_by_asc(Expr::col((titles::Entity, titles::Column::Title)));
 
     if !query.search.is_empty() {
-        select = select.filter(media::Column::Id.in_subquery(sea_query::Query::select().distinct()
+        select = select.filter(media::Column::Id.in_subquery(Query::select().distinct()
             .column(titles::Column::MediaId).from(titles::Entity)
             .cond_where(Expr::col(titles::Column::Title).ilike(format!("{}%", query.search))).to_owned()))
     }
 
     if let Some(media_type) = media_type {
-        select = select.filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()));
+        select = select.filter(media::Column::Type.eq::<MediaType>(media_type.into()));
     }
 
     if let Some(expr) = query.expr {
@@ -152,7 +169,8 @@ pub fn construct(query: parser::Query, user_id: i32, media_type: Option<MediaTyp
     Ok(TranspilationResult {
         query: select,
         is_primitive: primitive,
-        name_search: query.search
+        name_search: query.search,
+        custom_sort
     })
 }
 
@@ -224,6 +242,14 @@ fn stars_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatem
     )
 }
 
+fn stars_sort_target() -> SelectStatement {
+    Query::select()
+        .expr(Expr::col((Alias::new("ord_media"), media::Column::Stars)).if_null(-1))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .to_owned()
+}
+
 fn watched_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     Ok(
         Query::select()
@@ -234,6 +260,16 @@ fn watched_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStat
             .and_having(Expr::col((logs::Entity, logs::Column::Id)).count().binary(BinOper::GreaterThan, 0).binary(operator(op), literal.to_value::<bool>()?))
             .to_owned()
     )
+}
+
+fn watched_sort_target() -> SelectStatement {
+    Query::select()
+        .expr_as(Expr::col((Alias::new("ord_logs"), logs::Column::Id)).count().binary(BinOper::GreaterThan, 0), Alias::new("count"))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .join_as(JoinType::LeftJoin, logs::Entity, Alias::new("ord_logs"), Expr::col((Alias::new("ord_logs"), logs::Column::MediaId)).equals((Alias::new("ord_media"), media::Column::Id)))
+        .and_where(Expr::col((Alias::new("ord_media"), logs::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .group_by_col((Alias::new("ord_logs"), logs::Column::MediaId))
+        .to_owned()
 }
 
 fn times_watched_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
@@ -248,6 +284,16 @@ fn times_watched_target(op: ComparisonOperator, literal: Literal) -> Result<Sele
     )
 }
 
+fn times_watched_sort_target() -> SelectStatement {
+    Query::select()
+        .expr_as(Expr::col((Alias::new("ord_logs"), logs::Column::Id)).count(), Alias::new("count"))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .join_as(JoinType::LeftJoin, logs::Entity, Alias::new("ord_logs"), Expr::col((Alias::new("ord_logs"), logs::Column::MediaId)).equals((Alias::new("ord_media"), media::Column::Id)))
+        .and_where(Expr::col((Alias::new("ord_media"), logs::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .group_by_col((Alias::new("ord_logs"), logs::Column::MediaId))
+        .to_owned()
+}
+
 fn media_type_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     Ok(
         match op {
@@ -255,20 +301,27 @@ fn media_type_target(op: ComparisonOperator, literal: Literal) -> Result<SelectS
                 Query::select()
                     .columns([(media::Entity, media::Column::Id)])
                     .from(media::Entity)
-                    .and_where(media::Column::Type.eq(literal.to_value::<sea_orm_active_enums::MediaType>()?))
+                    .and_where(media::Column::Type.eq(literal.to_value::<MediaType>()?))
                     .to_owned()
             }
             ComparisonOperator::NotEqual => {
                 Query::select()
                     .columns([(media::Entity, media::Column::Id)])
                     .from(media::Entity)
-                    .and_where(media::Column::Type.ne(literal.to_value::<sea_orm_active_enums::MediaType>()?))
+                    .and_where(media::Column::Type.ne(literal.to_value::<MediaType>()?))
                     .to_owned()
             },
             x=> { return Err(ConstructionError::from(format!("Cannot compare enum value with operator '{:?}'", x))) }
         }
-
     )
+}
+
+fn media_type_sort_target() -> SelectStatement {
+    Query::select()
+        .columns([(Alias::new("ord_media"), media::Column::Type)])
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .to_owned()
 }
 
 fn operator(operator: ComparisonOperator) -> BinOper {
@@ -280,4 +333,16 @@ fn operator(operator: ComparisonOperator) -> BinOper {
         ComparisonOperator::Greater => { BinOper::GreaterThan }
         ComparisonOperator::GreaterEqual => { BinOper::GreaterThanOrEqual }
     }
+}
+
+fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
+    Ok(SimpleExpr::SubQuery(None, Box::new(
+        match target.as_str() {
+            "stars" => { stars_sort_target() },
+            "watched" => { watched_sort_target() },
+            "times_watched" => { times_watched_sort_target() },
+            "type" => { media_type_sort_target() },
+            t => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", t))) }
+        }.into_sub_query_statement()
+    )))
 }

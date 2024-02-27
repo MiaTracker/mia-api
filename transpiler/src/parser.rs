@@ -4,8 +4,19 @@ use crate::lexer::{LexingError, scan};
 pub struct Query {
     pub search: String,
     pub expr: Option<Expr>,
+    pub sort_target: Option<SortTarget>,
     pub lexing_errs: Option<Vec<LexingError>>,
-    pub parsing_err: Option<ParseError>,
+    pub parsing_errs: Option<Vec<ParseError>>
+}
+
+pub struct SortTarget {
+    pub identifier: String,
+    pub direction: Option<SortDirection>
+}
+
+pub enum SortDirection {
+    Ascending,
+    Descending
 }
 
 #[derive(Debug)]
@@ -98,36 +109,56 @@ pub enum LogicalOperator {
 }
 
 pub fn parse(str: String) -> Query {
-    let res = str.rsplit_once(" : ");
+    let res: Vec<&str> = str.rsplitn(3, " : ").collect();
+    let mut it = res.iter().rev();
+
     let search;
+    if let Some(s) = it.next() {
+        search = s.replace(" \\: ", " : ");
+    } else { search = str.clone(); }
+
     let mut expr = None;
     let mut lexing_errs = None;
-    let mut parsing_err = None;
-    if let Some((src, expr_str)) = res {
-        search = src.to_string();
-        let res = scan(expr_str);
-        match res {
-            Ok(t) => {
-                match Parser::parse(t) {
-                    Ok(tree) => { expr = Some(tree); }
-                    Err(err) => {
-                        parsing_err = Some(err);
+    let mut parsing_errs = None;
+    if let Some(expr_str) = it.next() {
+        if !expr_str.is_empty() {
+            let res = scan(expr_str);
+            match res {
+                Ok(t) => {
+                    match Parser::parse(t) {
+                        Ok(tree) => { expr = Some(tree); }
+                        Err(err) => {
+                            parsing_errs = Some(vec![err]);
+                        }
                     }
                 }
-            }
-            Err(errs) => {
-                lexing_errs = Some(errs);
+                Err(errs) => {
+                    lexing_errs = Some(errs);
+                }
             }
         }
-    } else { search = str }
+    }
 
-    let search = search.replace(" \\: ", " : ");
+    let sort_target;
+    if let Some(sort_str) = it.next() {
+        match parse_sort_target(sort_str) {
+            Ok(t) => { sort_target = t; }
+            Err(err) => {
+                if let Some(errs) = &mut parsing_errs {
+                    errs.push(err);
+                } else { parsing_errs = Some(vec![err]); }
+                sort_target = None;
+            }
+        }
+    } else { sort_target = None; }
+
 
     Query {
         search,
         expr,
+        sort_target,
         lexing_errs,
-        parsing_err
+        parsing_errs
     }
 }
 
@@ -141,11 +172,11 @@ pub struct ParseError {
     pub message: String
 }
 
-impl Into<TranspilationError> for ParseError {
+impl Into<TranspilationError> for &ParseError {
     fn into(self) -> TranspilationError {
         TranspilationError {
             source: ErrorSource::Parsing,
-            message: self.message,
+            message: self.message.clone(),
         }
     }
 }
@@ -313,4 +344,32 @@ impl Parser {
             ParseError { message: format!("At '{}': {}", token.lexeme, message)}
         }
     }
+}
+
+fn parse_sort_target(str: &str) -> Result<Option<SortTarget>, ParseError> {
+    let mut res = str.splitn(2, ' ');
+    let identifier;
+    if let Some(id) = res.next() {
+        identifier = id.trim().to_string();
+    } else {
+        return Ok(None)
+    }
+
+    let direction;
+    if let Some(dir) = res.next() {
+        direction = Some(match dir.trim().to_lowercase().as_str() {
+            "asc" => SortDirection::Ascending,
+            "ascending" => SortDirection::Ascending,
+            "desc" => SortDirection::Descending,
+            "descending" => SortDirection::Descending,
+            d => return Err(ParseError { message: format!("Invalid sorting direction '{}'", d) })
+        })
+    } else {
+        direction = None
+    }
+
+    Ok(Some(SortTarget {
+        identifier,
+        direction,
+    }))
 }

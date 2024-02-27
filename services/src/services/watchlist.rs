@@ -43,7 +43,7 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
         .filter(titles::Column::Primary.eq(true))
         .order_by_asc(titles::Column::Title)
         .all(db).await?;
-    let indexes = services::media::build_media_indexes(media_w_titles);
+    let indexes = services::media::build_media_indexes(media_w_titles, true);
     Ok(indexes)
 }
 
@@ -62,7 +62,7 @@ pub async fn search(query: String, user: &CurrentUser, db: &DbConn) -> Result<Se
             .column(watchlist::Column::MediaId).from(Watchlist).to_owned()))
         .all(db).await?;
 
-    let indexes = services::media::build_media_indexes(media_w_titles);
+    let indexes = services::media::build_media_indexes(media_w_titles, !res.custom_sort);
 
     Ok(SearchResults {
         indexes,

@@ -33,19 +33,23 @@ pub struct TranspilationError {
 pub struct TranspilationResult {
     pub query: SelectTwo<media::Entity, titles::Entity>,
     pub name_search: String,
-    pub is_primitive: bool
+    pub is_primitive: bool,
+    pub custom_sort: bool
 }
 
 pub fn transpile(query: String, user_id: i32, media_type: Option<MediaType>)
                  -> Result<TranspilationResult, Vec<TranspilationError>> {
     let q = parse(query);
-    if q.lexing_errs.is_some() || q.parsing_err.is_some() {
+    if q.lexing_errs.is_some() || q.parsing_errs.is_some() {
         let mut errs = Vec::new();
         if let Some(lexing_errs) = q.lexing_errs {
             errs = lexing_errs.iter().map(|e| { e.into() }).collect();
         }
-        if let Some(parsing_err) = q.parsing_err {
-            errs.push(parsing_err.into());
+        if let Some(parsing_errs) = q.parsing_errs {
+            let es = parsing_errs.iter().map(|e| e.into());
+            for err in es {
+                errs.push(err)
+            }
         }
         return Err(errs)
     }

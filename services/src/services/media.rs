@@ -27,7 +27,7 @@ pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, use
 pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id)).find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true)).order_by_asc(titles::Column::Title).all(db).await?;
-    let indexes = build_media_indexes(media_w_titles);
+    let indexes = build_media_indexes(media_w_titles, true);
     Ok(indexes)
 }
 
@@ -74,7 +74,7 @@ pub async fn search(query: String, committed: bool, media_type: Option<MediaType
         }).collect();
     } else { external = Vec::new(); }
 
-    let indexes = build_media_indexes(media_w_titles);
+    let indexes = build_media_indexes(media_w_titles, !res.custom_sort);
 
     Ok(SearchResults {
         indexes,
@@ -179,19 +179,21 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
 }
 
 
-pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>) -> Vec<MediaIndex> {
+pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>, sort: bool) -> Vec<MediaIndex> {
     let mut indexes = Vec::with_capacity(media_w_titles.len());
     for m in media_w_titles {
         indexes.push(build_media_index(m));
     }
 
-    indexes.sort_by(|x, y| {
-        let t1l = x.title.to_lowercase();
-        let t1 = t1l.trim_start_matches("the ");
-        let t2l = y.title.to_lowercase();
-        let t2 = t2l.trim_start_matches("the ");
-        t1.cmp(t2)
-    });
+    if sort {
+        indexes.sort_by(|x, y| {
+            let t1l = x.title.to_lowercase();
+            let t1 = t1l.trim_start_matches("the ");
+            let t2l = y.title.to_lowercase();
+            let t2 = t2l.trim_start_matches("the ");
+            t1.cmp(t2)
+        });
+    }
 
     indexes
 }
