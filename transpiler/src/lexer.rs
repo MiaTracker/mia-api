@@ -120,7 +120,10 @@ impl Lexer<'_> {
             self.advance();
         }
 
-        if self.at_end() { self.error("Unterminated string.") }
+        if self.at_end() {
+            self.error("Unterminated string.");
+            return;
+        }
 
         self.advance();
 

@@ -1,7 +1,7 @@
-use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder};
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::{Alias, BinOper, Query, SelectStatement, SimpleExpr};
-use entities::{logs, media, titles};
+use sea_orm::sea_query::{Alias, BinOper, Func, Query, SelectStatement, SimpleExpr};
+use entities::{genres, logs, media, media_genres, media_tags, sources, tags, titles};
 use entities::prelude::{Media, Titles};
 use sea_orm::prelude::Expr;
 use entities::sea_orm_active_enums::MediaType;
@@ -205,8 +205,8 @@ fn ternary_expr(expr: TernaryExpr) -> Result<SimpleExpr, ConstructionError> {
         return Err(ConstructionError::from("Ternary expression should not check against Null!"))
     }
 
-    Ok(expression(&expr.identifier, op_inv, expr.left_literal))
-        .and(expression(&expr.identifier, expr.right_operator, expr.right_literal))
+    Ok(expression(&expr.identifier, op_inv, expr.left_literal)?
+        .and(expression(&expr.identifier, expr.right_operator, expr.right_literal)?))
 }
 
 fn logical_expr(expr: LogicalExpr) -> Result<SimpleExpr, ConstructionError> {
@@ -222,10 +222,15 @@ fn expression(target: &String, op: ComparisonOperator, literal: Literal) -> Resu
     Ok(
         Expr::col((media::Entity, media::Column::Id)).in_subquery(
             match target.as_str() {
-                "stars" => { stars_target(op, literal)? },
-                "watched" => { watched_target(op, literal)? },
-                "times_watched" => { times_watched_target(op, literal)? },
-                "type" => { media_type_target(op, literal)? },
+                "stars" => { stars_target(op, literal)? }
+                "watched" => { watched_target(op, literal)? }
+                "times_watched" => { times_watched_target(op, literal)? }
+                "type" => { media_type_target(op, literal)? }
+                "has_source" => { has_source_target(op, literal)? }
+                "number_of_sources" => { number_of_sources_target(op, literal)? }
+                "has_source_with_name" => { has_source_with_name_target(op, literal)? }
+                "has_tag" => { has_tag_target(op, literal)? }
+                "has_genre" => { has_genre_target(op, literal)? }
                 t => { return Err(ConstructionError::from(format!("Unknown target '{}'", t))) }
             }
         )
@@ -267,7 +272,7 @@ fn watched_sort_target() -> SelectStatement {
         .expr_as(Expr::col((Alias::new("ord_logs"), logs::Column::Id)).count().binary(BinOper::GreaterThan, 0), Alias::new("count"))
         .from_as(media::Entity, Alias::new("ord_media"))
         .join_as(JoinType::LeftJoin, logs::Entity, Alias::new("ord_logs"), Expr::col((Alias::new("ord_logs"), logs::Column::MediaId)).equals((Alias::new("ord_media"), media::Column::Id)))
-        .and_where(Expr::col((Alias::new("ord_media"), logs::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
         .group_by_col((Alias::new("ord_logs"), logs::Column::MediaId))
         .to_owned()
 }
@@ -289,7 +294,7 @@ fn times_watched_sort_target() -> SelectStatement {
         .expr_as(Expr::col((Alias::new("ord_logs"), logs::Column::Id)).count(), Alias::new("count"))
         .from_as(media::Entity, Alias::new("ord_media"))
         .join_as(JoinType::LeftJoin, logs::Entity, Alias::new("ord_logs"), Expr::col((Alias::new("ord_logs"), logs::Column::MediaId)).equals((Alias::new("ord_media"), media::Column::Id)))
-        .and_where(Expr::col((Alias::new("ord_media"), logs::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
         .group_by_col((Alias::new("ord_logs"), logs::Column::MediaId))
         .to_owned()
 }
@@ -324,6 +329,82 @@ fn media_type_sort_target() -> SelectStatement {
         .to_owned()
 }
 
+fn number_of_sources_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .left_join(sources::Entity, Expr::col((sources::Entity, sources::Column::MediaId)).equals((media::Entity, media::Column::Id)))
+            .group_by_col((media::Entity, media::Column::Id))
+            .and_having(Expr::col((sources::Entity, sources::Column::Id)).count().binary(operator(op), literal.to_value::<i32>()?))
+            .to_owned()
+    )
+}
+
+fn number_of_sources_sort_target() -> SelectStatement {
+    Query::select()
+        .expr_as(Expr::col((Alias::new("ord_sources"), sources::Column::Id)).count(), Alias::new("count"))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .join_as(JoinType::LeftJoin, sources::Entity, Alias::new("ord_sources"), Expr::col((Alias::new("ord_sources"), sources::Column::MediaId)).equals((Alias::new("ord_media"), media::Column::Id)))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .group_by_col((Alias::new("ord_sources"), sources::Column::MediaId))
+        .to_owned()
+}
+
+fn has_source_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .left_join(sources::Entity, Expr::col((sources::Entity, sources::Column::MediaId)).equals((media::Entity, media::Column::Id)))
+            .group_by_col((media::Entity, media::Column::Id))
+            .and_having(Expr::col((sources::Entity, sources::Column::Id)).count().binary(BinOper::GreaterThan, 0).binary(operator(op), literal.to_value::<bool>()?))
+            .to_owned()
+    )
+}
+
+fn has_source_sort_target() -> SelectStatement {
+    Query::select()
+        .expr_as(Expr::col((Alias::new("ord_sources"), sources::Column::Id)).count().binary(BinOper::GreaterThan, 0), Alias::new("count"))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .join_as(JoinType::LeftJoin, sources::Entity, Alias::new("ord_sources"), Expr::col((Alias::new("ord_sources"), sources::Column::MediaId)).equals((Alias::new("ord_media"), media::Column::Id)))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .group_by_col((Alias::new("ord_sources"), sources::Column::MediaId))
+        .to_owned()
+}
+
+fn has_source_with_name_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    Ok(
+        Query::select()
+            .columns([(sources::Entity, sources::Column::MediaId)])
+            .from(sources::Entity)
+            .and_where(Expr::expr(Func::lower(Expr::col((sources::Entity, sources::Column::Name)))).binary(operator(op), literal.to_value::<String>()?.map(|s| s.to_lowercase())))
+            .to_owned()
+    )
+}
+
+fn has_tag_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    Ok(
+        Query::select()
+            .columns([(media_tags::Entity, media_tags::Column::MediaId)])
+            .from(media_tags::Entity)
+            .inner_join(tags::Entity, Expr::col((tags::Entity, tags::Column::Id)).equals((media_tags::Entity, media_tags::Column::TagId)))
+            .and_where(Expr::expr(Func::lower(Expr::col((tags::Entity, tags::Column::Name)))).binary(operator(op), literal.to_value::<String>()?.map(|s| s.to_lowercase())))
+            .to_owned()
+    )
+}
+
+fn has_genre_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    Ok(
+        Query::select()
+            .columns([(media_genres::Entity, media_genres::Column::MediaId)])
+            .from(media_genres::Entity)
+            .inner_join(genres::Entity, Expr::col((genres::Entity, genres::Column::Id)).equals((media_genres::Entity, media_genres::Column::GenreId)))
+            .and_where(Expr::expr(Func::lower(Expr::col((genres::Entity, genres::Column::Name)))).binary(operator(op), literal.to_value::<String>()?.map(|s| s.to_lowercase())))
+            .to_owned()
+    )
+}
+
 fn operator(operator: ComparisonOperator) -> BinOper {
     match operator {
         ComparisonOperator::Equal => { BinOper::Equal }
@@ -342,6 +423,8 @@ fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
             "watched" => { watched_sort_target() },
             "times_watched" => { times_watched_sort_target() },
             "type" => { media_type_sort_target() },
+            "has_source" => { has_source_sort_target() },
+            "number_of_sources" => { number_of_sources_sort_target() }
             t => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", t))) }
         }.into_sub_query_statement()
     )))
