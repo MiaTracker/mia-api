@@ -111,7 +111,7 @@ impl Lexer<'_> {
     }
 
     fn peek_next(&self) -> char {
-        if self.current + 1 > self.source.len() { return '\0'; }
+        if self.current + 2 > self.source.len() { return '\0'; }
         self.source.chars().nth(self.current + 1).unwrap()
     }
 
