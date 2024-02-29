@@ -165,6 +165,8 @@ pub async fn delete(media_id: i32, log_id: i32, media_type: MediaType, user: &Cu
 
     log.delete(db).await?;
 
+    update_media_rating(media, &db).await?;
+
     tran.commit().await?;
 
     Ok(())
@@ -188,13 +190,13 @@ pub async fn update_media_rating(media: media::Model, db: &DbConn) -> Result<(),
 
     let avg;
     if let Some(sel) = sel {
-        avg = sel.sum / sel.count as f32;
+        avg = Some(sel.sum / sel.count as f32);
     } else {
-        avg = 0f32;
+        avg = None;
     }
 
     let mut am: media::ActiveModel = media.into();
-    am.stars = Set(Some(avg));
+    am.stars = Set(avg);
     am.update(db).await?;
 
     Ok(())
