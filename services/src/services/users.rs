@@ -3,12 +3,14 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use fancy_regex::Regex;
 use jsonwebtoken::{encode, EncodingKey, Header};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbBackend, DbConn, EntityTrait, FromQueryResult, IntoActiveModel as SORMIntoActiveModel, JsonValue, ModelTrait, QueryFilter, Statement};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SORMIntoActiveModel, ModelTrait, QueryFilter};
 use sea_orm::ActiveValue::Set;
 use uuid::Uuid;
 use entities::prelude::{AppTokens, Users};
 use entities::{app_tokens, users};
 use once_cell::sync::Lazy;
+use sea_orm::prelude::Expr;
+use sea_orm::sea_query::Func;
 use views::users::{CurrentUser, PasswordChange, TokenClaims, TokenType, UserIndex, UserLogin, UserProfile, UserRegistration, UserToken};
 use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
@@ -48,28 +50,16 @@ pub async fn register(user: &UserRegistration, db: &DbConn) -> Result<(), SrvErr
         violations.push(RuleViolation::SignUpEmailInvalid);
     }
 
-    let result = JsonValue::find_by_statement(Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        r#"SELECT "users"."id" FROM "users" WHERE LOWER("users"."email") = $1;"#,
-        [email_lower.into()]
-    )).one(db).await;
-    match result {
-        Ok(found) => {
-            if found.is_some() {
-                violations.push(RuleViolation::SignUpAccountWithThisEmailAlreadyExists);
-            }
-        }
-        Err(err) => { return Err(SrvErr::DB(err)); }
+    let result = Users::find().filter(Expr::expr(Func::lower(
+        Expr::col((users::Entity, users::Column::Email)))).eq(email_lower))
+        .one(db).await?;
+    if result.is_some() {
+        violations.push(RuleViolation::SignUpAccountWithThisEmailAlreadyExists);
     }
 
-    let result = Users::find().filter(users::Column::Username.eq(user.username.clone())).one(db).await;
-    match result {
-        Ok(found) => {
-            if found.is_some() {
-                violations.push(RuleViolation::SignUpUsernameAlreadyTaken);
-            }
-        }
-        Err(err) => { return Err(SrvErr::DB(err)); }
+    let result = Users::find().filter(users::Column::Username.eq(user.username.clone())).one(db).await?;
+    if result.is_some() {
+        violations.push(RuleViolation::SignUpUsernameAlreadyTaken);
     }
 
     if user.password != user.password_repeat {
