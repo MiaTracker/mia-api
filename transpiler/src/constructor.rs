@@ -5,6 +5,7 @@ use entities::{genres, logs, media, media_genres, media_tags, sources, tags, tit
 use entities::prelude::{Media, Titles};
 use sea_orm::prelude::Expr;
 use entities::sea_orm_active_enums::MediaType;
+use views::media::SearchQuery;
 use crate::{ErrorSource, parser, TranspilationError, TranspilationResult};
 use crate::parser::{BinaryExpr, ComparisonOperator, Literal, LogicalExpr, LogicalOperator, SortDirection, TernaryExpr};
 
@@ -124,7 +125,7 @@ impl FromLiteral for MediaType {
     }
 }
 
-pub fn construct(query: parser::Query, user_id: i32, media_type: Option<MediaType>) -> Result<TranspilationResult, ConstructionError> {
+pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_type: Option<MediaType>) -> Result<TranspilationResult, ConstructionError> {
     let mut primitive = true;
 
     let mut select = Media::find()
@@ -166,12 +167,46 @@ pub fn construct(query: parser::Query, user_id: i32, media_type: Option<MediaTyp
         select = select.filter(build_expr(expr)?);
     }
 
+    let (naive_expr, prim) = build_naive_filter(search)?;
+    select = select.filter(naive_expr);
+    primitive &= prim;
+
     Ok(TranspilationResult {
         query: select,
         is_primitive: primitive,
         name_search: query.search,
         custom_sort
     })
+}
+
+fn build_naive_filter(search: SearchQuery) -> Result<(SimpleExpr, bool), ConstructionError> {
+    let mut primitive = true;
+
+    let mut expr = Expr::val(1).eq(1);
+    if let Some(genres) = search.genres {
+        for genre in genres {
+            expr = expr.and(Expr::col((media::Entity, media::Column::Id)).in_subquery(
+                has_genre_target(ComparisonOperator::Equal, Literal::String(genre))?)
+            );
+            primitive = false;
+        }
+    }
+
+    if search.only_watched {
+        expr = expr.and(Expr::col((media::Entity, media::Column::Id)).in_subquery(
+            watched_target(ComparisonOperator::Equal, Literal::True)?)
+        );
+        primitive = false;
+    }
+
+    if let Some(min_stars) = search.min_stars {
+        expr = expr.and(Expr::col((media::Entity, media::Column::Id)).in_subquery(
+            stars_target(ComparisonOperator::GreaterEqual, Literal::Float(min_stars))?)
+        );
+        primitive = false;
+    }
+
+    Ok((expr, primitive))
 }
 
 fn build_expr(expr: parser::Expr) -> Result<SimpleExpr, ConstructionError> {

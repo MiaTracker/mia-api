@@ -2,10 +2,19 @@ use serde::{Deserialize, Serialize};
 use crate::media::{MediaIndex, MediaType};
 
 #[derive(Deserialize)]
-pub struct MediaSearchQueryParams {
+pub struct SearchParams {
+    pub committed: bool
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
     pub query: String,
     #[serde(default)]
-    pub committed: bool
+    pub genres: Option<Vec<String>>,
+    #[serde(default)]
+    pub only_watched: bool,
+    #[serde(default)]
+    pub min_stars: Option<f32>,
 }
 
 #[derive(Serialize)]

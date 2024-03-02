@@ -3,7 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
-use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSearchQueryParams, MediaSourceCreate, MediaSourceDelete, MediaType};
+use views::media::{MediaCreateParams, MediaDeletePathParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams};
 use views::movies::{MovieDetails, MovieMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
@@ -30,8 +30,9 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     result.to_response(StatusCode::OK)
 }
 
-pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaSearchQueryParams>) -> impl IntoResponse {
-    let result = services::media::search(params.query, params.committed, MaybeRouteType::Movies.into(), &user, &state.conn).await;
+pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                    Query(params): Query<SearchParams>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
+    let result = services::media::search(search, params.committed, MaybeRouteType::Movies.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 

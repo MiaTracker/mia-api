@@ -150,7 +150,7 @@ pub async fn query_user_by_uuid(user_id: Uuid, db: &DbConn) -> Result<Option<Cur
     match users::Entity::find().filter(users::Column::Uuid.eq(user_id)).one(db).await {
         Ok(opt) => {
             match opt {
-                None => { Ok(None)}
+                None => { Ok(None) }
                 Some(user) => { Ok(Some(CurrentUser::from(user))) }
             }
         }

@@ -2,6 +2,8 @@ use std::fmt::{Display, Formatter};
 use sea_orm::SelectTwo;
 use entities::{media, titles};
 use entities::sea_orm_active_enums::MediaType;
+use views::media::SearchQuery;
+use views::users::CurrentUser;
 use crate::constructor::construct;
 use crate::parser::parse;
 
@@ -37,9 +39,9 @@ pub struct TranspilationResult {
     pub custom_sort: bool
 }
 
-pub fn transpile(query: String, user_id: i32, media_type: Option<MediaType>)
+pub fn transpile(search: SearchQuery, user: &CurrentUser, media_type: Option<MediaType>)
                  -> Result<TranspilationResult, Vec<TranspilationError>> {
-    let q = parse(query);
+    let q = parse(search.query.clone());
     if q.lexing_errs.is_some() || q.parsing_errs.is_some() {
         let mut errs = Vec::new();
         if let Some(lexing_errs) = q.lexing_errs {
@@ -54,7 +56,7 @@ pub fn transpile(query: String, user_id: i32, media_type: Option<MediaType>)
         return Err(errs)
     }
 
-    match construct(q, user_id, media_type) {
+    match construct(q, search, user.id, media_type) {
         Ok(s) => { Ok(s) }
         Err(err) => { Err(vec![err.into()]) }
     }

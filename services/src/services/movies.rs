@@ -216,7 +216,7 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
     if media.is_none() {
         return Err(SrvErr::NotFound);
     }
-    let media = media.unwrap();
+let media = media.unwrap();
 
     let mut rule_violations = Vec::new();
 

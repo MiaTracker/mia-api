@@ -6,7 +6,7 @@ use sea_orm::QueryFilter;
 use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
 use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
 use integrations::tmdb::views::MultiResult;
-use views::media::{MediaIndex, MediaSourceCreate, MediaType, SearchResults};
+use views::media::{MediaIndex, MediaSourceCreate, MediaType, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use crate::infrastructure::traits::IntoView;
@@ -31,8 +31,8 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
     Ok(indexes)
 }
 
-pub async fn search(query: String, committed: bool, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
-    let res = transpiler::transpile(query, user.id, media_type.map(|m| { m.into() }));
+pub async fn search(query: SearchQuery, committed: bool, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
+    let res = transpiler::transpile(query, user, media_type.map(|m| { m.into() }));
 
     if res.is_err() {
         return Ok(SearchResults {

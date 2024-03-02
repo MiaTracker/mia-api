@@ -1,9 +1,10 @@
 use axum::{Extension, Json};
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use views::media::SearchQuery;
 use views::users::CurrentUser;
-use views::watchlist::{WatchlistParams, WatchlistSearchQueryParams};
+use views::watchlist::WatchlistParams;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 pub async fn add(state: State<AppState>, Extension(user): Extension<CurrentUser>,
@@ -20,8 +21,8 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     result.to_response(StatusCode::OK)
 }
 
-pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<WatchlistSearchQueryParams>) -> impl IntoResponse {
-    let result = services::watchlist::search(params.query, &user, &state.conn).await;
+pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
+    let result = services::watchlist::search(search, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 

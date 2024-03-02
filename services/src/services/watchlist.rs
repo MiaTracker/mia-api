@@ -2,7 +2,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveMode
 use sea_orm::sea_query::Query;
 use entities::{media, titles, watchlist};
 use entities::prelude::{Media, Titles, Watchlist};
-use views::media::{MediaIndex, SearchResults};
+use views::media::{MediaIndex, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use crate::services;
@@ -47,8 +47,8 @@ pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, S
     Ok(indexes)
 }
 
-pub async fn search(query: String, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
-    let res = transpiler::transpile(query, user.id, None);
+pub async fn search(query: SearchQuery, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
+    let res = transpiler::transpile(query, user, None);
     if res.is_err() {
         return Ok(SearchResults {
             indexes: vec![],

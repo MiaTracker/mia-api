@@ -1,9 +1,9 @@
-use axum::Extension;
+use axum::{Extension, Json};
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::MaybeRouteType;
-use views::media::MediaSearchQueryParams;
+use views::media::{SearchParams, SearchQuery};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
@@ -12,7 +12,8 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     result.to_response(StatusCode::OK)
 }
 
-pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaSearchQueryParams>) -> impl IntoResponse {
-    let result = services::media::search(params.query, params.committed, MaybeRouteType::All.into(), &user, &state.conn).await;
+pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                    Query(params): Query<SearchParams>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
+    let result = services::media::search(search, params.committed, MaybeRouteType::All.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
