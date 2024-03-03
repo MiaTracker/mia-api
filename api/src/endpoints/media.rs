@@ -17,3 +17,8 @@ pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUs
     let result = services::media::search(search, params.committed, MaybeRouteType::All.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
+
+pub async fn genres(state: State<AppState>, Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
+    let result = services::genres::index(None, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}

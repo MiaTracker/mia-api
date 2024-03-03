@@ -1,7 +1,7 @@
 use cruet::Inflector;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait};
 use entities::{genres, media, media_genres, sea_orm_active_enums};
-use entities::prelude::{Genres, MediaGenres};
+use entities::prelude::{Genres, Media, MediaGenres};
 use views::genres::GenreCreate;
 use views::media::MediaType;
 use views::users::CurrentUser;
@@ -23,7 +23,8 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
         return Ok(false);
     }
 
-    let existing_db = genres::Entity::find().filter(genres::Column::Name.eq(&name)).one(db).await?;
+    let existing_db = genres::Entity::find().filter(genres::Column::Name.eq(&name))
+        .filter(genres::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
 
     let tran = db.begin().await?;
 
@@ -57,6 +58,19 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
 
     tran.commit().await?;
     Ok(true)
+}
+
+pub async fn index(media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<Vec<String>, SrvErr> {
+    let mut select = Genres::find().distinct().inner_join(Media).filter(media::Column::UserId.eq(user.id));
+    if let Some(media_type) = media_type {
+        select = select.filter(genres::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
+            .filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()));
+    }
+    let genres = select.all(db).await?.iter().map(|m| {
+        m.name.clone()
+    }).collect();
+
+    Ok(genres)
 }
 
 pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {

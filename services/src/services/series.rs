@@ -58,7 +58,8 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
     }
 
     for genre in &tmdb_series.genres {
-        let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id)).one(db).await?;
+        let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
+            .filter(genres::Column::Type.eq(MediaType::Series)).one(db).await?;
         if existing.is_none() {
             return Err(SrvErr::MasterdataOutdated);
         }

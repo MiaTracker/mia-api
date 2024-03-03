@@ -36,6 +36,11 @@ pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUs
     result.to_response(StatusCode::OK)
 }
 
+pub async fn genres(state: State<AppState>, Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
+    let result = services::genres::index(Some(MediaType::Movie), &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
 pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
     let result = services::movies::details(movie_id, &user, &state.conn).await;
     result.map_to_response(|movie: &Option<MovieDetails>| {
