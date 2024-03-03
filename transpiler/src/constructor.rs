@@ -5,7 +5,7 @@ use entities::{genres, logs, media, media_genres, media_tags, sources, tags, tit
 use entities::prelude::{Media, Titles};
 use sea_orm::prelude::Expr;
 use entities::sea_orm_active_enums::MediaType;
-use views::media::SearchQuery;
+use views::media::{SearchQuery, SortTarget};
 use crate::{ErrorSource, parser, TranspilationError, TranspilationResult};
 use crate::parser::{BinaryExpr, ComparisonOperator, Literal, LogicalExpr, LogicalOperator, SortDirection, TernaryExpr};
 
@@ -133,7 +133,7 @@ pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_
         .find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true));
 
-    let custom_sort;
+    let mut custom_sort;
     if let Some(sort_target) = query.sort_target {
         let dir = match sort_target.direction {
             None => { Order::Asc }
@@ -150,6 +150,17 @@ pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_
     } else {
         custom_sort = false;
     }
+
+    let (naive_expr, sort_expr, prim) = build_naive_search(search)?;
+    select = select.filter(naive_expr);
+    primitive &= prim;
+    if !custom_sort {
+        if let Some(sort_expr) = sort_expr {
+            select = select.order_by_desc(sort_expr);
+            custom_sort = true;
+        }
+    }
+
     select = select.order_by_asc(Expr::col((titles::Entity, titles::Column::Title)));
 
     if !query.search.is_empty() {
@@ -167,10 +178,6 @@ pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_
         select = select.filter(build_expr(expr)?);
     }
 
-    let (naive_expr, prim) = build_naive_filter(search)?;
-    select = select.filter(naive_expr);
-    primitive &= prim;
-
     Ok(TranspilationResult {
         query: select,
         is_primitive: primitive,
@@ -179,7 +186,7 @@ pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_
     })
 }
 
-fn build_naive_filter(search: SearchQuery) -> Result<(SimpleExpr, bool), ConstructionError> {
+fn build_naive_search(search: SearchQuery) -> Result<(SimpleExpr, Option<SimpleExpr>, bool), ConstructionError> {
     let mut primitive = true;
 
     let mut expr = Expr::val(1).eq(1);
@@ -206,7 +213,14 @@ fn build_naive_filter(search: SearchQuery) -> Result<(SimpleExpr, bool), Constru
         primitive = false;
     }
 
-    Ok((expr, primitive))
+    let sort_expr = match search.sort_by {
+        SortTarget::Title => { None }
+        SortTarget::Stars => { Some(stars_sort_target()) }
+        SortTarget::TimesWatched => { Some(times_watched_sort_target()) }
+    }.and_then(|e| Some(SimpleExpr::SubQuery(None, Box::new(e.into_sub_query_statement()))));
+
+
+    Ok((expr, sort_expr, primitive))
 }
 
 fn build_expr(expr: parser::Expr) -> Result<SimpleExpr, ConstructionError> {
