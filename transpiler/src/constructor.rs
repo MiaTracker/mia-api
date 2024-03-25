@@ -1,7 +1,7 @@
 use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder};
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::{Alias, BinOper, Func, Query, SelectStatement, SimpleExpr};
-use entities::{genres, logs, media, media_genres, media_tags, sources, tags, titles};
+use sea_orm::sea_query::{Alias, BinOper, Cond, Func, Query, SelectStatement, SimpleExpr};
+use entities::{genres, languages, logs, media, media_genres, media_tags, sources, tags, titles};
 use entities::prelude::{Media, Titles};
 use sea_orm::prelude::Expr;
 use entities::sea_orm_active_enums::MediaType;
@@ -280,6 +280,7 @@ fn expression(target: &String, op: ComparisonOperator, literal: Literal) -> Resu
                 "has_source_with_name" => { has_source_with_name_target(op, literal)? }
                 "has_tag" => { has_tag_target(op, literal)? }
                 "has_genre" => { has_genre_target(op, literal)? }
+                "language" => { language_target(op, literal)? }
                 t => { return Err(ConstructionError::from(format!("Unknown target '{}'", t))) }
             }
         )
@@ -450,6 +451,24 @@ fn has_genre_target(op: ComparisonOperator, literal: Literal) -> Result<SelectSt
             .from(media_genres::Entity)
             .inner_join(genres::Entity, Expr::col((genres::Entity, genres::Column::Id)).equals((media_genres::Entity, media_genres::Column::GenreId)))
             .and_where(Expr::expr(Func::lower(Expr::col((genres::Entity, genres::Column::Name)))).binary(operator(op), literal.to_value::<String>()?.map(|s| s.to_lowercase())))
+            .to_owned()
+    )
+}
+
+fn language_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    let name = literal.to_value::<String>()?.map(|s| s.to_lowercase());
+    let operator = operator(op);
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .inner_join(languages::Entity, Expr::col((languages::Entity, languages::Column::Iso6391)).equals((media::Entity, media::Column::OriginalLanguage)))
+            .cond_where(
+                Cond::any()
+                    .add(Expr::expr(Func::lower(Expr::col((languages::Entity, languages::Column::EnglishName)))).binary(operator, name.clone()))
+                    .add(Expr::expr(Func::lower(Expr::col((languages::Entity, languages::Column::Name)))).binary(operator, name.clone()))
+                    .add(Expr::expr(Func::lower(Expr::col((languages::Entity, languages::Column::Iso6391)))).binary(operator, name))
+            )
             .to_owned()
     )
 }
