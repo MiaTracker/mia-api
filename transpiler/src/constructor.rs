@@ -166,7 +166,11 @@ pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_
     if !query.search.is_empty() {
         select = select.filter(media::Column::Id.in_subquery(Query::select().distinct()
             .column(titles::Column::MediaId).from(titles::Entity)
-            .cond_where(Expr::col(titles::Column::Title).ilike(format!("{}%", query.search))).to_owned()))
+            .cond_where(Expr::col(titles::Column::Title).ilike(format!("{}%", query.search))
+                .or(Expr::col(titles::Column::Title).ilike(format!("the {}%", query.search)))
+                .or(Expr::col(titles::Column::Title).ilike(format!("a {}%", query.search))))
+            .to_owned())
+        )
     }
 
     if let Some(media_type) = media_type {

@@ -188,9 +188,18 @@ pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titl
     if sort {
         indexes.sort_by(|x, y| {
             let t1l = x.title.to_lowercase();
-            let t1 = t1l.trim_start_matches("the ");
+            let t1 = if t1l.starts_with("the ") {
+                t1l.trim_start_matches("the ")
+            } else if t1l.starts_with("a ") {
+                t1l.trim_start_matches("a ")
+            } else { t1l.as_str() };
+
             let t2l = y.title.to_lowercase();
-            let t2 = t2l.trim_start_matches("the ");
+            let t2 = if t2l.starts_with("the ") {
+                t2l.trim_start_matches("the ")
+            } else if t2l.starts_with("a ") {
+                t2l.trim_start_matches("a ")
+            } else { t2l.as_str() };
             t1.cmp(t2)
         });
     }
