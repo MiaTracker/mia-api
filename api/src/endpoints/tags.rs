@@ -8,7 +8,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                               Path(params): Path<TagCreateParams>, Json(tag): Json<TagCreate>) -> impl IntoResponse {
-    let result = services::tags::create(params.media_id, &tag, params.route_type.into(), &user, &state.conn).await;
+    let result = services::tags::create(params.media_id, tag, params.route_type.into(), &user, &state.conn).await;
     result.map_to_status(|&created| {
         if created { StatusCode::CREATED }
         else { StatusCode::OK }

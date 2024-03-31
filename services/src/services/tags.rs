@@ -8,7 +8,7 @@ use views::tags::TagCreate;
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 
-pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
+pub async fn create(media_id: i32, tag: TagCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<bool, SrvErr> {
     let media = media::Entity::find_by_id(media_id).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
         .filter(media::Column::UserId.eq(user.id)).one(db).await?;
 
@@ -17,7 +17,9 @@ pub async fn create(media_id: i32, tag: &TagCreate, media_type: MediaType, user:
     }
     let media = media.unwrap();
 
-    let name = tag.name.to_title_case();
+    let name = if tag.name.chars().any(|c| c.is_lowercase()) {
+        tag.name.to_title_case()
+    } else { tag.name };
 
     let existing = media.find_related(Tags).filter(tags::Column::Name.eq(&name)).one(db).await?;
     if existing.is_some() {
