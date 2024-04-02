@@ -189,14 +189,10 @@ pub async fn metadata(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
 
     let metadata = MovieMetadata {
         id: movie.id,
-        backdrop_path: db_media.backdrop_path,
         homepage: db_media.homepage,
-        tmdb_id: db_media.tmdb_id,
         imdb_id: db_media.imdb_id,
         title,
         overview: db_media.overview,
-        poster_path: db_media.poster_path,
-        tmdb_vote_average: db_media.tmdb_vote_average,
         original_language: db_media.original_language,
         release_date: movie.release_date,
         runtime: movie.runtime,
@@ -216,7 +212,7 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
     if media.is_none() {
         return Err(SrvErr::NotFound);
     }
-let media = media.unwrap();
+    let media = media.unwrap();
 
     let mut rule_violations = Vec::new();
 
@@ -224,12 +220,6 @@ let media = media.unwrap();
         let found = Languages::find_by_id(metadata.original_language.as_ref().unwrap()).count(db).await?;
         if found == 0 {
             rule_violations.push(RuleViolation::MediaInvalidOriginalLanguage);
-        }
-    }
-
-    if let Some(avg) = metadata.tmdb_vote_average {
-        if avg > 10.0 || avg < 0.0 {
-            rule_violations.push(RuleViolation::MediaTmdbVoteAverageOutOfBounds);
         }
     }
 

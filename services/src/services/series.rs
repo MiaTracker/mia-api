@@ -208,14 +208,10 @@ pub async fn metadata(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result
 
     let metadata = SeriesMetadata {
         id: series.id,
-        backdrop_path: db_media.backdrop_path,
         homepage: db_media.homepage,
-        tmdb_id: db_media.tmdb_id,
         imdb_id: db_media.imdb_id,
         title,
         overview: db_media.overview,
-        poster_path: db_media.poster_path,
-        tmdb_vote_average: db_media.tmdb_vote_average,
         original_language: db_media.original_language,
         first_air_date: series.first_air_date,
         number_of_episodes: series.number_of_episodes,
@@ -245,12 +241,6 @@ pub async fn update(series_id: i32, metadata: SeriesMetadata, user: &CurrentUser
         let found = Languages::find_by_id(metadata.original_language.as_ref().unwrap()).count(db).await?;
         if found == 0 {
             rule_violations.push(RuleViolation::MediaInvalidOriginalLanguage);
-        }
-    }
-
-    if let Some(avg) = metadata.tmdb_vote_average {
-        if avg > 10.0 || avg < 0.0 {
-            rule_violations.push(RuleViolation::MediaTmdbVoteAverageOutOfBounds);
         }
     }
 
