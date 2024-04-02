@@ -20,3 +20,8 @@ pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUs
     let result = services::genres::delete(params.media_id, params.genre_id, params.route_type.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
+
+pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
+    let result = services::genres::index(None, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
