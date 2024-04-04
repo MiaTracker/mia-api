@@ -21,8 +21,11 @@ pub enum RuleViolation {
 
     MovieNegativeRuntime,
 
+    SourceNameAlreadyExists,
+
     LogRatingOutOfBounds,
 
+    AppTokenNameEmpty,
     AppTokenNameAlreadyExists,
 
     PasswordChangeOldPasswordEmpty,

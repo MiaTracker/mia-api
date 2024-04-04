@@ -9,6 +9,10 @@ use views::users::{CurrentUser, TokenClaims, TokenType};
 use crate::infrastructure::{RuleViolation, SrvErr};
 
 pub async fn generate(name: String, jwt_secret: &String, user: &CurrentUser, db: &DbConn) -> Result<AppToken, SrvErr> {
+    if name.is_empty() {
+        return Err(SrvErr::RuleViolation(vec![RuleViolation::AppTokenNameEmpty]))
+    }
+
     let existing = AppTokens::find().filter(app_tokens::Column::UserId.eq(user.id))
         .filter(app_tokens::Column::Name.eq(&name)).count(db).await? != 0;
 

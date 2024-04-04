@@ -4,7 +4,7 @@ use entities::prelude::{Media, Sources};
 use views::media::MediaType;
 use views::sources::{Source, SourceCreate, SourceUpdate};
 use views::users::CurrentUser;
-use crate::infrastructure::SrvErr;
+use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::logs::update_media_rating;
 
 pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
@@ -19,7 +19,7 @@ pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType,
     let source_exists = media.find_related(Sources).filter(sources::Column::Name.eq(&source.name)).count(db).await? >= 1;
 
     if source_exists {
-        return Err(SrvErr::Conflict("A source with this name already exists.".to_string()));
+        return Err(SrvErr::RuleViolation(vec![RuleViolation::SourceNameAlreadyExists]));
     }
 
 
@@ -94,7 +94,7 @@ pub async fn update(media_id: i32, source_id: i32, source: &SourceUpdate, media_
 
     let name_conflict = media.find_related(Sources).filter(sources::Column::Name.eq(&source.name)).filter(sources::Column::Id.ne(source_id)).count(db).await? != 0;
     if name_conflict {
-        return Err(SrvErr::Conflict("A source with this name already exists.".to_string()));
+        return Err(SrvErr::RuleViolation(vec![RuleViolation::SourceNameAlreadyExists]));
     }
 
     let mut model: sources::ActiveModel = model.unwrap().into();
