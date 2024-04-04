@@ -78,7 +78,7 @@ pub async fn stats(user: &CurrentUser, db: &DbConn) -> Result<Stats, SrvErr> {
             .column(genres::Column::Name)
             .column_as(Expr::col((media::Entity, media::Column::Id)).count(), "count")
             .filter(media::Column::UserId.eq(user.id))
-            .group_by(genres::Column::Id)
+            .group_by(genres::Column::Name)
             .order_by_desc(Expr::col((media::Entity, media::Column::Id)).count())
             .into_model::<ComparativeStats>()
             .all(db).await?;
