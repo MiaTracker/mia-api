@@ -53,23 +53,23 @@ pub async fn stats(user: &CurrentUser, db: &DbConn) -> Result<Stats, SrvErr> {
     let watched_movie_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Movie))
         .inner_join(Logs)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
     let watched_series_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series))
         .inner_join(Logs)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
 
     let rated_movie_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Movie))
         .inner_join(Logs)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(media::Column::Stars).order_by_desc(logs::Column::Id.count()).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
     let rated_series_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series))
         .inner_join(Logs)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(media::Column::Stars).order_by_desc(logs::Column::Id.count()).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
 
     let genres_future = async {
