@@ -1,16 +1,23 @@
+use std::cmp::Ordering;
 use std::env;
-use sea_orm::{ColumnTrait, DbConn, EntityTrait, ModelTrait, PaginatorTrait, QueryOrder, TransactionTrait};
+
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, TransactionTrait};
+use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::Query;
 use sea_orm::QueryFilter;
-use entities::{genres, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
-use entities::prelude::{Genres, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
+use sea_orm::sea_query::Query;
+
+use entities::{genres, languages, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
+use entities::prelude::{Genres, Languages, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
+use integrations::tmdb;
 use integrations::tmdb::views::MultiResult;
+use views::images::{Image, Images, ImagesUpdate};
 use views::media::{MediaIndex, MediaSourceCreate, MediaType, SearchQuery, SearchResults};
 use views::users::CurrentUser;
+
+use crate::{movies, series, sources};
 use crate::infrastructure::SrvErr;
 use crate::infrastructure::traits::IntoView;
-use crate::{movies, series, sources};
 use crate::sources::delete_from_media;
 
 pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
@@ -94,6 +101,95 @@ pub async fn on_watchlist(media_id: i32, media_type: MediaType, user: &CurrentUs
     let on_watchlist = watchlist::Entity::find().filter(watchlist::Column::MediaId.eq(media_id)).count(db).await? > 0;
     Ok(on_watchlist)
 }
+
+pub async fn images(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<Images, SrvErr> {
+    let media = Media::find().filter(media::Column::Id.eq(media_id))
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
+
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
+
+    let tmdb_images = if let Some(tmdb_id) = media.tmdb_id {
+        if media_type == MediaType::Movie {
+            tmdb::services::movies::images(tmdb_id, &media.original_language).await?
+        } else {
+            tmdb::services::series::images(tmdb_id, &media.original_language).await?
+        }
+    } else {
+        return Ok(Images {
+            backdrops: vec![],
+            posters: vec![],
+        })
+    };
+
+    let lang_codes = tmdb_images.backdrops.iter().filter_map(|x| x.iso_639_1.as_ref())
+        .chain(tmdb_images.posters.iter().filter_map(|x| x.iso_639_1.as_ref()));
+
+    let languages = Languages::find().filter(languages::Column::Iso6391.is_in(lang_codes)).all(db).await?;
+
+    let mut images = Images {
+        backdrops: tmdb_images.backdrops.into_iter().map(|x| {
+            Image {
+                language: x.iso_639_1.map(|z| languages.iter().find(|y| y.iso6391 == z).map(|l| l.english_name.clone())).flatten(),
+                width: x.width,
+                height: x.height,
+                current: media.backdrop_path.as_ref().is_some_and(|p| p == &x.file_path),
+                file_path: x.file_path,
+            }
+        }).collect(),
+        posters: tmdb_images.posters.into_iter().map(|x| {
+            Image {
+                language: x.iso_639_1.map(|z| languages.iter().find(|y| y.iso6391 == z).map(|l| l.english_name.clone())).flatten(),
+                width: x.width,
+                height: x.height,
+                current: media.poster_path.as_ref().is_some_and(|p| p == &x.file_path),
+                file_path: x.file_path,
+            }
+        }).collect(),
+    };
+
+    images.backdrops.sort_by(|y, x| {
+        if x.current != y.current {
+            if x.current { Ordering::Greater }
+            else { Ordering::Less }
+        } else {
+            (x.width * x.height).cmp(&(y.width * y.height))
+        }
+    });
+    images.posters.sort_by(|y, x| {
+        if x.current != y.current {
+            if x.current { Ordering::Greater }
+            else { Ordering::Less }
+        } else {
+            (x.width * x.height).cmp(&(y.width * y.height))
+        }
+    });
+
+    Ok(images)
+}
+
+pub async fn update_images(media_id: i32, media_type: MediaType, images: ImagesUpdate, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    let media = Media::find().filter(media::Column::Id.eq(media_id))
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
+
+    if media.is_none() {
+        return Err(SrvErr::NotFound);
+    }
+    let media = media.unwrap();
+
+    let mut am = media.into_active_model();
+    if let Some(backdrop) = images.backdrop_path {
+        am.backdrop_path = Set(Some(backdrop));
+    }
+    if let Some(poster) = images.poster_path {
+        am.poster_path = Set(Some(poster));
+    }
+    am.update(db).await?;
+    Ok(())
+}
+
 
 pub async fn delete_w_source(tmdb_id: i32, source_name: String, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let media = media::Entity::find().filter(media::Column::UserId.eq(user.id))

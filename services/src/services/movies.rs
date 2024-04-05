@@ -1,6 +1,8 @@
 use std::env;
+
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait};
 use sea_orm::ActiveValue::Set;
+
 use entities::{genres, media, media_genres, movies, titles};
 use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles, Watchlist};
 use entities::sea_orm_active_enums::MediaType;
@@ -14,9 +16,10 @@ use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
+
 use crate::infrastructure::{RuleViolation, SrvErr};
-use crate::services;
 use crate::infrastructure::traits::IntoActiveModel;
+use crate::services;
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))

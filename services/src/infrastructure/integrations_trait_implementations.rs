@@ -1,10 +1,13 @@
 use std::env;
+
 use chrono::NaiveDate;
 use sea_orm::{NotSet, Set};
+
 use entities::{genres, languages, media, movies, seasons, series};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeriesDetails};
 use views::media::ExternalIndex;
+
 use crate::infrastructure::traits::{IntoActiveModel, IntoView};
 
 impl IntoActiveModel<media::ActiveModel> for &MovieDetails {

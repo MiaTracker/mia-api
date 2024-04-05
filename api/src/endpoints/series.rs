@@ -3,6 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
+use views::images::ImagesUpdate;
 use views::media::{MediaCreateParams, MediaDeletePathParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams};
 use views::series::{SeriesDetails, SeriesMetadata};
 use views::users::CurrentUser;
@@ -64,6 +65,17 @@ pub async fn on_watchlist(state: State<AppState>, Extension(user): Extension<Cur
 
 pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>, Json(metadata): Json<SeriesMetadata>) -> impl IntoResponse {
     let result = services::series::update(series_id, metadata, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+pub async fn images(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
+    let result = services::media::images(series_id, MediaType::Series, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+pub async fn update_images(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                           Path(series_id): Path<i32>, Json(json): Json<ImagesUpdate>) -> impl IntoResponse {
+    let result = services::media::update_images(series_id, MediaType::Series, json, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
