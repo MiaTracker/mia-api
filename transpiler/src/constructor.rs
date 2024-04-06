@@ -1,11 +1,11 @@
-use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Alias, BinOper, Cond, Func, Query, SelectStatement, SimpleExpr};
-use entities::{genres, languages, logs, media, media_genres, media_tags, sources, tags, titles};
+use entities::{functions, genres, languages, logs, media, media_genres, media_tags, sources, tags, titles};
 use entities::prelude::{Media, Titles};
 use sea_orm::prelude::Expr;
 use entities::sea_orm_active_enums::MediaType;
-use views::media::{SearchQuery, SortTarget};
+use views::media::{PageReq, SearchQuery, SortTarget};
 use crate::{ErrorSource, parser, TranspilationError, TranspilationResult};
 use crate::parser::{BinaryExpr, ComparisonOperator, Literal, LogicalExpr, LogicalOperator, SortDirection, TernaryExpr};
 
@@ -125,13 +125,14 @@ impl FromLiteral for MediaType {
     }
 }
 
-pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_type: Option<MediaType>) -> Result<TranspilationResult, ConstructionError> {
+pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, user_id: i32, media_type: Option<MediaType>) -> Result<TranspilationResult, ConstructionError> {
     let mut primitive = true;
 
     let mut select = Media::find()
         .filter(media::Column::UserId.eq(user_id))
         .find_also_related(Titles)
-        .filter(titles::Column::Primary.eq(true));
+        .filter(titles::Column::Primary.eq(true))
+        .offset(page_req.offset).limit(page_req.limit);
 
     let mut custom_sort;
     if let Some(sort_target) = query.sort_target {
@@ -160,6 +161,9 @@ pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_
             custom_sort = true;
         }
     }
+    if !custom_sort {
+        select = select.order_by_asc(functions::default_media_sort())
+    }
 
     select = select.order_by_asc(Expr::col((titles::Entity, titles::Column::Title)));
 
@@ -185,8 +189,7 @@ pub fn construct(query: parser::Query, search: SearchQuery, user_id: i32, media_
     Ok(TranspilationResult {
         query: select,
         is_primitive: primitive,
-        name_search: query.search,
-        custom_sort
+        name_search: query.search
     })
 }
 

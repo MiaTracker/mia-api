@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use sea_orm::SelectTwo;
 use entities::{media, titles};
 use entities::sea_orm_active_enums::MediaType;
-use views::media::SearchQuery;
+use views::media::{PageReq, SearchQuery};
 use views::users::CurrentUser;
 use crate::constructor::construct;
 use crate::parser::parse;
@@ -35,11 +35,10 @@ pub struct TranspilationError {
 pub struct TranspilationResult {
     pub query: SelectTwo<media::Entity, titles::Entity>,
     pub name_search: String,
-    pub is_primitive: bool,
-    pub custom_sort: bool
+    pub is_primitive: bool
 }
 
-pub fn transpile(search: SearchQuery, user: &CurrentUser, media_type: Option<MediaType>)
+pub fn transpile(search: SearchQuery, page_req: PageReq, user: &CurrentUser, media_type: Option<MediaType>)
                  -> Result<TranspilationResult, Vec<TranspilationError>> {
     let q = parse(search.query.clone());
     if q.lexing_errs.is_some() || q.parsing_errs.is_some() {
@@ -56,7 +55,7 @@ pub fn transpile(search: SearchQuery, user: &CurrentUser, media_type: Option<Med
         return Err(errs)
     }
 
-    match construct(q, search, user.id, media_type) {
+    match construct(q, search, page_req, user.id, media_type) {
         Ok(s) => { Ok(s) }
         Err(err) => { Err(vec![err.into()]) }
     }

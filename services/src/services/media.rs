@@ -1,18 +1,18 @@
 use std::cmp::Ordering;
 use std::env;
 
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::Expr;
 use sea_orm::QueryFilter;
 use sea_orm::sea_query::Query;
 
-use entities::{genres, languages, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
+use entities::{functions, genres, languages, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
 use entities::prelude::{Genres, Languages, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
 use integrations::tmdb;
 use integrations::tmdb::views::MultiResult;
 use views::images::{Image, Images, ImagesUpdate};
-use views::media::{MediaIndex, MediaSourceCreate, MediaType, SearchQuery, SearchResults};
+use views::media::{MediaIndex, MediaSourceCreate, MediaType, PageReq, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 
 use crate::{movies, series, sources};
@@ -31,15 +31,18 @@ pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, use
     Ok((created, id))
 }
 
-pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
+pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id)).find_also_related(Titles)
-        .filter(titles::Column::Primary.eq(true)).order_by_asc(titles::Column::Title).all(db).await?;
-    let indexes = build_media_indexes(media_w_titles, true);
+        .filter(titles::Column::Primary.eq(true))
+        .order_by_asc(functions::default_media_sort())
+        .offset(page_req.offset).limit(page_req.limit).all(db).await?;
+    let indexes = build_media_indexes(media_w_titles);
     Ok(indexes)
 }
 
-pub async fn search(query: SearchQuery, committed: bool, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
-    let res = transpiler::transpile(query, user, media_type.map(|m| { m.into() }));
+pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
+    let limit = page_req.limit;
+    let res = transpiler::transpile(query, page_req, user, media_type.map(|m| { m.into() }));
 
     if res.is_err() {
         return Ok(SearchResults {
@@ -49,20 +52,31 @@ pub async fn search(query: SearchQuery, committed: bool, media_type: Option<Medi
         })
     }
     let res = res.ok().unwrap();
+    let media_w_titles = res.query.all(db).await?;
 
     let external_t;
+    let mut external_limit = 0;
     if res.is_primitive && (res.name_search.len() > 3 || committed) {
-        external_t = Some(integrations::tmdb::services::search::multi(res.name_search));
+        if let Some(l) = limit {
+            if (l as usize) > media_w_titles.len() {
+                external_limit = (l as usize) - media_w_titles.len();
+            }
+        } else {
+            external_limit = usize::MAX;
+        }
+        if external_limit > 0 {
+            external_t = Some(integrations::tmdb::services::search::multi(res.name_search));
+        } else { external_t = None }
     } else { external_t = None }
-    let media_w_titles = res.query.all(db).await?;
 
     let external;
     if let Some(future) = external_t {
         external = future.await?.results.iter().filter_map(|r| {
+            if external_limit == 0 { return None; }
             match r {
                 MultiResult::Movie(movie) => {
                     if media_w_titles.iter().find(|x| {
-                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { true }
+                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { external_limit -= 1; true }
                         else { false }
                     }).is_some() { return None }
                     if media_type.is_none() || media_type == Some(MediaType::Movie) { Some(movie.into_view()) }
@@ -70,7 +84,7 @@ pub async fn search(query: SearchQuery, committed: bool, media_type: Option<Medi
                 }
                 MultiResult::Tv(tv) => {
                     if media_w_titles.iter().find(|x| {
-                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { true }
+                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { external_limit -= 1; true }
                         else { false }
                     }).is_some() { return None }
                     if media_type.is_none() || media_type == Some(MediaType::Series) { Some(tv.into_view()) }
@@ -81,7 +95,7 @@ pub async fn search(query: SearchQuery, committed: bool, media_type: Option<Medi
         }).collect();
     } else { external = Vec::new(); }
 
-    let indexes = build_media_indexes(media_w_titles, !res.custom_sort);
+    let indexes = build_media_indexes(media_w_titles);
 
     Ok(SearchResults {
         indexes,
@@ -275,29 +289,10 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
 }
 
 
-pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>, sort: bool) -> Vec<MediaIndex> {
+pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>) -> Vec<MediaIndex> {
     let mut indexes = Vec::with_capacity(media_w_titles.len());
     for m in media_w_titles {
         indexes.push(build_media_index(m));
-    }
-
-    if sort {
-        indexes.sort_by(|x, y| {
-            let t1l = x.title.to_lowercase();
-            let t1 = if t1l.starts_with("the ") {
-                t1l.trim_start_matches("the ")
-            } else if t1l.starts_with("a ") {
-                t1l.trim_start_matches("a ")
-            } else { t1l.as_str() };
-
-            let t2l = y.title.to_lowercase();
-            let t2 = if t2l.starts_with("the ") {
-                t2l.trim_start_matches("the ")
-            } else if t2l.starts_with("a ") {
-                t2l.trim_start_matches("a ")
-            } else { t2l.as_str() };
-            t1.cmp(t2)
-        });
     }
 
     indexes

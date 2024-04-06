@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
 use views::images::ImagesUpdate;
-use views::media::{MediaCreateParams, MediaDeletePathParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams};
+use views::media::{MediaCreateParams, MediaDeletePathParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams, PageReq};
 use views::series::{SeriesDetails, SeriesMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
@@ -26,15 +26,15 @@ pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<
     })
 }
 
-pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
-    let result = services::series::index(&user, &state.conn).await;
+pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<PageReq>) -> impl IntoResponse {
+    let result = services::series::index(params, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 
 }
 
 pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                     Query(params): Query<SearchParams>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
-    let result = services::media::search(search, params.committed, MaybeRouteType::Series.into(), &user, &state.conn).await;
+    let result = services::media::search(search, params.committed, params.into(), MaybeRouteType::Series.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 

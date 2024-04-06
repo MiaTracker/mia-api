@@ -1,9 +1,22 @@
 use serde::{Deserialize, Serialize};
-use crate::media::{MediaIndex, MediaType};
+use crate::media::{MediaIndex, MediaType, PageReq};
 
 #[derive(Deserialize)]
 pub struct SearchParams {
-    pub committed: bool
+    pub committed: bool,
+    #[serde(default)]
+    pub offset: Option<u64>,
+    #[serde(default)]
+    pub limit: Option<u64>
+}
+
+impl Into<PageReq> for SearchParams {
+    fn into(self) -> PageReq {
+        PageReq {
+            offset: self.offset,
+            limit: self.limit,
+        }
+    }
 }
 
 #[derive(Deserialize)]

@@ -1,7 +1,7 @@
 use std::env;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder};
-use entities::{genres, media, media_genres, seasons, series, titles};
+use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder, QuerySelect};
+use entities::{functions, genres, media, media_genres, seasons, series, titles};
 use integrations::tmdb::views::{Season, SeriesTitle};
 use views::users::CurrentUser;
 use crate::infrastructure::{constants, RuleViolation, SrvErr};
@@ -10,7 +10,7 @@ use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::languages::Language;
 use views::logs::Log;
-use views::media::MediaIndex;
+use views::media::{MediaIndex, PageReq};
 use views::series::SeriesMetadata;
 use views::sources::Source;
 use views::tags::Tag;
@@ -104,11 +104,12 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
     Ok((true, inserted_media.id))
 }
 
-pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
+pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series)).find_also_related(Titles)
-        .filter(titles::Column::Primary.eq(true)).order_by_asc(titles::Column::Title).all(db).await?;
-    let indexes = services::media::build_media_indexes(media_w_titles, true);
+        .filter(titles::Column::Primary.eq(true)).order_by_asc(functions::default_media_sort())
+        .offset(page_req.offset).limit(page_req.limit).all(db).await?;
+    let indexes = services::media::build_media_indexes(media_w_titles);
     Ok(indexes)
 }
 

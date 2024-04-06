@@ -1,5 +1,13 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use crate::media::MediaType;
+
+#[derive(Deserialize)]
+pub struct PageReq {
+    #[serde(default)]
+    pub offset: Option<u64>,
+    #[serde(default)]
+    pub limit: Option<u64>
+}
 
 #[derive(Serialize)]
 pub struct MediaIndex {

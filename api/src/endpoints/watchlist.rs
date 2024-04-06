@@ -1,10 +1,12 @@
 use axum::{Extension, Json};
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use views::media::SearchQuery;
+
+use views::media::{PageReq, SearchQuery};
 use views::users::CurrentUser;
 use views::watchlist::WatchlistParams;
+
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 pub async fn add(state: State<AppState>, Extension(user): Extension<CurrentUser>,
@@ -16,13 +18,13 @@ pub async fn add(state: State<AppState>, Extension(user): Extension<CurrentUser>
     })
 }
 
-pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
-    let result = services::watchlist::index(&user, &state.conn).await;
+pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<PageReq>) -> impl IntoResponse {
+    let result = services::watchlist::index(params, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
-pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
-    let result = services::watchlist::search(search, &user, &state.conn).await;
+pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<PageReq>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
+    let result = services::watchlist::search(search, params, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 

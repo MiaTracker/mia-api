@@ -1,8 +1,8 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set};
 use sea_orm::sea_query::Query;
-use entities::{media, titles, watchlist};
+use entities::{functions, media, titles, watchlist};
 use entities::prelude::{Media, Titles, Watchlist};
-use views::media::{MediaIndex, SearchQuery, SearchResults};
+use views::media::{MediaIndex, PageReq, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
 use crate::services;
@@ -36,19 +36,19 @@ pub async fn add(media_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool,
     Ok(true)
 }
 
-pub async fn index(user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
+pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media_w_titles = Media::find().right_join(Watchlist)
         .filter(media::Column::UserId.eq(user.id))
         .find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true))
-        .order_by_asc(titles::Column::Title)
-        .all(db).await?;
-    let indexes = services::media::build_media_indexes(media_w_titles, true);
+        .order_by_asc(functions::default_media_sort())
+        .offset(page_req.offset).limit(page_req.limit).all(db).await?;
+    let indexes = services::media::build_media_indexes(media_w_titles);
     Ok(indexes)
 }
 
-pub async fn search(query: SearchQuery, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
-    let res = transpiler::transpile(query, user, None);
+pub async fn search(query: SearchQuery, page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {
+    let res = transpiler::transpile(query, page_req, user, None);
     if res.is_err() {
         return Ok(SearchResults {
             indexes: vec![],
@@ -62,7 +62,7 @@ pub async fn search(query: SearchQuery, user: &CurrentUser, db: &DbConn) -> Resu
             .column(watchlist::Column::MediaId).from(Watchlist).to_owned()))
         .all(db).await?;
 
-    let indexes = services::media::build_media_indexes(media_w_titles, !res.custom_sort);
+    let indexes = services::media::build_media_indexes(media_w_titles);
 
     Ok(SearchResults {
         indexes,
