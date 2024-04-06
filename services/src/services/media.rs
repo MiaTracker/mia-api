@@ -76,18 +76,18 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
             match r {
                 MultiResult::Movie(movie) => {
                     if media_w_titles.iter().find(|x| {
-                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { external_limit -= 1; true }
+                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { true }
                         else { false }
                     }).is_some() { return None }
-                    if media_type.is_none() || media_type == Some(MediaType::Movie) { Some(movie.into_view()) }
+                    if media_type.is_none() || media_type == Some(MediaType::Movie) { external_limit -= 1; Some(movie.into_view()) }
                     else { None }
                 }
                 MultiResult::Tv(tv) => {
                     if media_w_titles.iter().find(|x| {
-                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { external_limit -= 1; true }
+                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { true }
                         else { false }
                     }).is_some() { return None }
-                    if media_type.is_none() || media_type == Some(MediaType::Series) { Some(tv.into_view()) }
+                    if media_type.is_none() || media_type == Some(MediaType::Series) { external_limit -= 1; Some(tv.into_view()) }
                     else { None }
                 }
                 MultiResult::Person(_) => { None }
