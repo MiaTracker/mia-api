@@ -16,7 +16,9 @@ pub enum MultiResult {
     #[serde(rename = "tv")]
     Tv(MultiTvResult),
     #[serde(rename = "person")]
-    Person(MultiPersonResult)
+    Person(MultiPersonResult),
+    #[serde(rename = "collection")]
+    Collection(MultiCollectionResult)
 }
 
 #[derive(Deserialize)]
@@ -85,4 +87,16 @@ pub enum MultiResultMediaType {
     Tv,
     #[serde(rename = "person")]
     Person,
+}
+
+#[derive(Deserialize)]
+pub struct MultiCollectionResult {
+    pub adult: Option<bool>,
+    pub backdrop_path: Option<String>,
+    pub id: i32,
+    pub title: Option<String>,
+    pub original_language: Option<String>,
+    pub original_title: Option<String>,
+    pub overview: Option<String>,
+    pub poster_path: Option<String>,
 }

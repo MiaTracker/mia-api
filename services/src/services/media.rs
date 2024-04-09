@@ -91,6 +91,7 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
                     else { None }
                 }
                 MultiResult::Person(_) => { None }
+                MultiResult::Collection(_) => { None }
             }
         }).collect();
     } else { external = Vec::new(); }
