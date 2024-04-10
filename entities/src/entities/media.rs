@@ -27,10 +27,6 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::credits::Entity")]
-    Credits,
-    #[sea_orm(has_many = "super::images::Entity")]
-    Images,
     #[sea_orm(
         belongs_to = "super::languages::Entity",
         from = "Column::OriginalLanguage",
@@ -63,18 +59,6 @@ pub enum Relation {
     Users,
     #[sea_orm(has_many = "super::watchlist::Entity")]
     Watchlist,
-}
-
-impl Related<super::credits::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Credits.def()
-    }
-}
-
-impl Related<super::images::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Images.def()
-    }
 }
 
 impl Related<super::languages::Entity> for Entity {

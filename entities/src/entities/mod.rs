@@ -3,17 +3,13 @@
 pub mod prelude;
 
 pub mod app_tokens;
-pub mod credits;
-pub mod episodes;
 pub mod genres;
-pub mod images;
 pub mod languages;
 pub mod logs;
 pub mod media;
 pub mod media_genres;
 pub mod media_tags;
 pub mod movies;
-pub mod people;
 pub mod sea_orm_active_enums;
 pub mod seasons;
 pub mod series;

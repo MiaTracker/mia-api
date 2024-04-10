@@ -89,13 +89,6 @@ enum CreditsType {
 }
 
 #[derive(DeriveIden)]
-enum SeriesWatchlist {
-    Table,
-    Id,
-    SeasonNumber
-}
-
-#[derive(DeriveIden)]
 enum Credits {
     Table,
     MediaId,

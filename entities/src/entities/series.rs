@@ -24,11 +24,19 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Media,
+    #[sea_orm(has_many = "super::seasons::Entity")]
+    Seasons,
 }
 
 impl Related<super::media::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Media.def()
+    }
+}
+
+impl Related<super::seasons::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Seasons.def()
     }
 }
 
