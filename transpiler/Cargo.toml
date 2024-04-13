@@ -9,3 +9,4 @@ edition = "2021"
 entities = { path = "../entities" }
 views = { path = "../views" }
 sea-orm = { version = "0.12.2", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+cruet = "0.14.0"

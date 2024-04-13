@@ -1,9 +1,10 @@
-use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
+use cruet::Inflector;
+use sea_orm::{ColumnTrait, Condition, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::{Alias, BinOper, Cond, Func, Query, SelectStatement, SimpleExpr, UnionType};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 
-use entities::{functions, genres, languages, logs, media, media_genres, media_tags, movies, series, sources, tags, titles};
+use entities::{functions, genres, languages, logs, media, media_genres, media_tags, movies, series, sources, tags, titles, watchlist};
 use entities::functions::DatePart;
 use entities::prelude::{Media, Titles};
 use entities::sea_orm_active_enums::MediaType;
@@ -234,7 +235,7 @@ fn try_get_external_val_bin_expr(expr: &parser::Expr, id: Option<i32>, t: Option
     match expr {
         parser::Expr::Binary(b) => {
             if b.operator != ComparisonOperator::Equal { return None; }
-            let lower = b.identifier.to_lowercase();
+            let lower = b.identifier.to_snake_case();
             if lower == "tmdb_id" {
                 if id.is_none() {
                     if let Ok(num) = b.literal.clone().to_value::<i32>() {
@@ -357,7 +358,7 @@ fn expression(tar: &String, op: ComparisonOperator, literal: Literal) -> Result<
 }
 
 fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
-    match target.to_lowercase().as_str() {
+    match target.to_snake_case().as_str() {
         "stars" => { stars_target(op, literal) }
         "watched" => { watched_target(op, literal) }
         "times_watched" => { times_watched_target(op, literal) }
@@ -371,6 +372,7 @@ fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<S
         "id" => { id_target(op, literal) }
         "tmdb_id" => { tmdb_id_target(op, literal) }
         "year" => { year_target(op, literal) }
+        "on_watchlist" => { on_watchlist_target(op, literal) }
         _ => { return Err(ConstructionError::from(format!("Unknown target '{}'", target))) }
     }
 }
@@ -597,6 +599,57 @@ fn year_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStateme
     )
 }
 
+fn year_sort_target() -> SelectStatement {
+    Query::select()
+        .expr_as(
+            Func::coalesce([
+                Expr::col((Alias::new("ord_movies"), movies::Column::ReleaseDate)).into(),
+                Expr::col((Alias::new("ord_series"), series::Column::FirstAirDate)).into()
+            ]),
+            Alias::new("count"))
+        .from_as(movies::Entity, Alias::new("ord_movies"))
+        .join_as(JoinType::FullOuterJoin, series::Entity, Alias::new("ord_series"), Expr::col((Alias::new("ord_series"), series::Column::Id)).equals((Alias::new("ord_movies"), movies::Column::Id)))
+        .cond_where(
+            Condition::any()
+                .add(Expr::col((Alias::new("ord_movies"), movies::Column::Id)).equals((media::Entity, media::Column::Id)))
+                .add(Expr::col((Alias::new("ord_series"), series::Column::Id)).equals((media::Entity, media::Column::Id)))
+        )
+        .to_owned()
+}
+
+fn on_watchlist_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    assert_eq!(op);
+    let t = literal.to_value::<bool>()?;
+    if let Some(val) = t {
+        if val {
+            Ok(
+                Query::select()
+                    .columns([(watchlist::Entity, watchlist::Column::MediaId)])
+                    .from(watchlist::Entity)
+                    .to_owned()
+            )
+        } else {
+            Ok(
+                Query::select()
+                    .columns([(media::Entity, media::Column::Id)])
+                    .from(media::Entity)
+                    .cond_where(
+                        Expr::col((media::Entity, media::Column::Id))
+                            .not_in_subquery(
+                                Query::select()
+                                    .columns([(watchlist::Entity, watchlist::Column::MediaId)])
+                                    .from(watchlist::Entity)
+                                    .to_owned()
+                            )
+                    )
+                    .to_owned()
+            )
+        }
+    } else {
+        Err(ConstructionError::from("Cannot compare with null!"))
+    }
+}
+
 fn operator(operator: ComparisonOperator) -> BinOper {
     match operator {
         ComparisonOperator::Equal => { BinOper::Equal }
@@ -610,13 +663,14 @@ fn operator(operator: ComparisonOperator) -> BinOper {
 
 fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
     Ok(SimpleExpr::SubQuery(None, Box::new(
-        match target.to_lowercase().as_str() {
+        match target.to_snake_case().as_str() {
             "stars" => { stars_sort_target() },
             "watched" => { watched_sort_target() },
             "times_watched" => { times_watched_sort_target() },
             "type" => { media_type_sort_target() },
             "has_source" => { has_source_sort_target() },
-            "number_of_sources" => { number_of_sources_sort_target() }
+            "number_of_sources" => { number_of_sources_sort_target() },
+            "year" => { year_sort_target() },
             _ => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", target))) }
         }.into_sub_query_statement()
     )))
