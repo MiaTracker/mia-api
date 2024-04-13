@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 use std::env;
 
-use futures::{FutureExt, TryFutureExt};
+use futures::TryFutureExt;
+use http::StatusCode;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::Expr;
@@ -69,22 +70,42 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
             if let Some(external_id) = res.external_id {
                 match external_id.r#type {
                     MediaType::Movie => {
-                        external_t = Some(
-                            integrations::tmdb::services::movies::details(external_id.tmdb_id).map_ok(|x|
+                        if media_w_titles.iter().any(|y| y.0.tmdb_id == Some(external_id.tmdb_id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
+                            external_t = None;
+                        } else {
+                            let res = integrations::tmdb::services::movies::details(external_id.tmdb_id).map_ok(|x|
                                 if !media_w_titles.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
                                     vec![x.into_view()]
                                 } else { Vec::new() }
-                            ).await?
-                        );
+                            ).await;
+                            match res {
+                                Ok(v) => { external_t = Some(v); },
+                                Err(e) => {
+                                    if e.status_code.is_some() && e.status_code == Some(StatusCode::NOT_FOUND) {
+                                        external_t = None;
+                                    } else { return Err(e.into()); }
+                                }
+                            }
+                        }
                     }
                     MediaType::Series => {
-                        external_t = Some(
-                            integrations::tmdb::services::series::details(external_id.tmdb_id).map_ok(|x|
+                        if media_w_titles.iter().any(|y| y.0.tmdb_id == Some(external_id.tmdb_id) && y.0.r#type == sea_orm_active_enums::MediaType::Series) {
+                            external_t = None;
+                        } else {
+                            let res = integrations::tmdb::services::series::details(external_id.tmdb_id).map_ok(|x|
                                 if !media_w_titles.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Series) {
                                     vec![x.into_view()]
                                 } else { Vec::new() }
-                            ).await?
-                        );
+                            ).await;
+                            match res {
+                                Ok(v) => { external_t = Some(v); },
+                                Err(e) => {
+                                    if e.status_code.is_some() && e.status_code == Some(StatusCode::NOT_FOUND) {
+                                        external_t = None;
+                                    } else { return Err(e.into()); }
+                                }
+                            }
+                        }
                     }
                 }
             } else {

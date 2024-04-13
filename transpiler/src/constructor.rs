@@ -128,11 +128,6 @@ impl FromLiteral for MediaType {
     }
 }
 
-pub struct ExternalFilters {
-    tmdb_id: Option<i32>,
-    year: Option<i32>
-}
-
 pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, user_id: i32, media_type: Option<MediaType>) -> Result<TranspilationResult, ConstructionError> {
     let mut primitive = true;
 

@@ -26,8 +26,6 @@ struct Lexer<'a> {
 }
 
 pub fn scan(source: &str) -> Result<Vec<Token>, Vec<LexingError>> {
-    println!("{}", source.len());
-
 
     let mut d = Lexer {
         source,

@@ -1,12 +1,16 @@
+use reqwest::StatusCode;
+
 #[derive(Debug)]
 pub struct Error {
-    pub message: String
+    pub message: String,
+    pub status_code: Option<StatusCode>
 }
 
 impl From<reqwest::Error> for Error {
     fn from(value: reqwest::Error) -> Self {
         Self {
-            message: value.to_string()
+            message: value.to_string(),
+            status_code: value.status()
         }
     }
 }
@@ -14,7 +18,8 @@ impl From<reqwest::Error> for Error {
 impl From<serde_json::Error> for Error {
     fn from(value: serde_json::Error) -> Self {
         Self {
-            message: value.to_string()
+            message: value.to_string(),
+            status_code: None
         }
     }
 }
@@ -22,7 +27,7 @@ impl From<serde_json::Error> for Error {
 #[macro_export]
 macro_rules! assert_request {
     ($response:expr) => { if $response.status() != reqwest::StatusCode::OK {
-        return Err(crate::infrastructure::Error { message: "Request to integration resource failed.".to_string() })
+        return Err(crate::infrastructure::Error { message: "Request to integration resource failed.".to_string(), status_code: Some($response.status()) })
     }};
 }
 
