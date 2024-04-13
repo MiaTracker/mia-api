@@ -1,12 +1,15 @@
 use sea_orm::{ColumnTrait, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
-use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::{Alias, BinOper, Cond, Func, Query, SelectStatement, SimpleExpr};
-use entities::{functions, genres, languages, logs, media, media_genres, media_tags, sources, tags, titles};
-use entities::prelude::{Media, Titles};
 use sea_orm::prelude::Expr;
+use sea_orm::sea_query::{Alias, BinOper, Cond, Func, Query, SelectStatement, SimpleExpr, UnionType};
+use sea_orm::sea_query::extension::postgres::PgExpr;
+
+use entities::{functions, genres, languages, logs, media, media_genres, media_tags, movies, series, sources, tags, titles};
+use entities::functions::DatePart;
+use entities::prelude::{Media, Titles};
 use entities::sea_orm_active_enums::MediaType;
 use views::media::{PageReq, SearchQuery, SortTarget};
-use crate::{ErrorSource, parser, TranspilationError, TranspilationResult};
+
+use crate::{ErrorSource, ExternalId, parser, TranspilationError, TranspilationResult};
 use crate::parser::{BinaryExpr, ComparisonOperator, Literal, LogicalExpr, LogicalOperator, SortDirection, TernaryExpr};
 
 #[derive(Debug)]
@@ -125,6 +128,11 @@ impl FromLiteral for MediaType {
     }
 }
 
+pub struct ExternalFilters {
+    tmdb_id: Option<i32>,
+    year: Option<i32>
+}
+
 pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, user_id: i32, media_type: Option<MediaType>) -> Result<TranspilationResult, ConstructionError> {
     let mut primitive = true;
 
@@ -163,6 +171,8 @@ pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, u
     }
     if !custom_sort {
         select = select.order_by_asc(functions::default_media_sort())
+    } else {
+        primitive = false;
     }
 
     select = select.order_by_asc(Expr::col((titles::Entity, titles::Column::Title)));
@@ -181,16 +191,71 @@ pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, u
         select = select.filter(media::Column::Type.eq::<MediaType>(media_type.into()));
     }
 
+    let mut external_id: Option<ExternalId> = None;
     if let Some(expr) = query.expr {
-        primitive = false;
+        if primitive {
+            if let Some(id) = try_get_external_id_expr(&expr) {
+                if query.search.is_empty() {
+                    external_id = Some(id);
+                } else { primitive = false; }
+            } else { primitive = false; }
+        } else {
+            primitive = false;
+        }
         select = select.filter(build_expr(expr)?);
     }
 
     Ok(TranspilationResult {
         query: select,
         is_primitive: primitive,
-        name_search: query.search
+        name_search: query.search,
+        external_id
     })
+}
+
+fn try_get_external_id_expr(expr: &parser::Expr) -> Option<ExternalId> {
+    match expr {
+        parser::Expr::Logical(l) => {
+            if l.operator != LogicalOperator::And { return None; }
+            let fr = try_get_external_val_bin_expr(&l.left, None, None)?;
+            if fr.0.is_none() && fr.1.is_none() { return None; }
+            let sr = try_get_external_val_bin_expr(&l.right, fr.0, fr.1)?;
+            if sr.0.is_none() || sr.0.is_none() { return None; }
+            Some(ExternalId { tmdb_id: sr.0.unwrap(), r#type: sr.1.unwrap() })
+        },
+        _ => None
+    }
+}
+
+fn try_get_external_val_bin_expr(expr: &parser::Expr, id: Option<i32>, t: Option<views::media::MediaType>) -> Option<(Option<i32>, Option<views::media::MediaType>)> {
+    match expr {
+        parser::Expr::Binary(b) => {
+            if b.operator != ComparisonOperator::Equal { return None; }
+            let lower = b.identifier.to_lowercase();
+            if lower == "tmdb_id" {
+                if id.is_none() {
+                    if let Ok(num) = b.literal.clone().to_value::<i32>() {
+                        if let Some(tid) = num {
+                            return Some((Some(tid), t));
+                        } else {
+                            return None;
+                        }
+                    } else { return None; }
+                } else { return None; }
+            } else if lower == "type" {
+                if t.is_none() {
+                    if let Ok(typ) = b.literal.clone().to_value::<MediaType>() {
+                        if let Some(tp) = typ {
+                            return Some((id, Some(tp.into())));
+                        } else {
+                            return None;
+                        }
+                    } else { return None; }
+                } else { return None; }
+            } else { None }
+        },
+        _ => None
+    }
 }
 
 fn build_naive_search(search: SearchQuery) -> Result<(SimpleExpr, Option<SimpleExpr>, bool), ConstructionError> {
@@ -277,7 +342,7 @@ fn logical_expr(expr: LogicalExpr) -> Result<SimpleExpr, ConstructionError> {
 fn expression(target: &String, op: ComparisonOperator, literal: Literal) -> Result<SimpleExpr, ConstructionError> {
     Ok(
         Expr::col((media::Entity, media::Column::Id)).in_subquery(
-            match target.as_str() {
+            match target.to_lowercase().as_str() {
                 "stars" => { stars_target(op, literal)? }
                 "watched" => { watched_target(op, literal)? }
                 "times_watched" => { times_watched_target(op, literal)? }
@@ -288,7 +353,10 @@ fn expression(target: &String, op: ComparisonOperator, literal: Literal) -> Resu
                 "has_tag" => { has_tag_target(op, literal)? }
                 "has_genre" => { has_genre_target(op, literal)? }
                 "language" => { language_target(op, literal)? }
-                t => { return Err(ConstructionError::from(format!("Unknown target '{}'", t))) }
+                "id" => { id_target(op, literal)? }
+                "tmdb_id" => { tmdb_id_target(op, literal)? }
+                "year" => { year_target(op, literal)? }
+                _ => { return Err(ConstructionError::from(format!("Unknown target '{}'", target))) }
             }
         )
     )
@@ -480,6 +548,48 @@ fn language_target(op: ComparisonOperator, literal: Literal) -> Result<SelectSta
     )
 }
 
+fn id_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    let id = literal.to_value::<i32>()?;
+    let operator = operator(op);
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .cond_where(Expr::col((media::Entity, media::Column::Id)).binary(operator, id))
+            .to_owned()
+    )
+}
+
+fn tmdb_id_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    let tmdb_id = literal.to_value::<i32>()?;
+    let operator = operator(op);
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .cond_where(Expr::col((media::Entity, media::Column::TmdbId)).binary(operator, tmdb_id))
+            .to_owned()
+    )
+}
+
+fn year_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    let year = literal.to_value::<i32>()?;
+    let operator = operator(op);
+    Ok(
+        Query::select()
+            .columns([(movies::Entity, movies::Column::Id)])
+            .from(movies::Entity)
+            .cond_where(Expr::expr(Func::cust(DatePart).arg("Year").arg(Expr::col((movies::Entity, movies::Column::ReleaseDate)))).binary(operator, year))
+            .union(UnionType::All, Query::select()
+                .columns([(series::Entity, series::Column::Id)])
+                .from(series::Entity)
+                .cond_where(Expr::expr(Func::cust(DatePart).arg("Year").arg(Expr::col((series::Entity, series::Column::FirstAirDate)))).binary(operator, year))
+                .to_owned()
+            )
+            .to_owned()
+    )
+}
+
 fn operator(operator: ComparisonOperator) -> BinOper {
     match operator {
         ComparisonOperator::Equal => { BinOper::Equal }
@@ -493,14 +603,14 @@ fn operator(operator: ComparisonOperator) -> BinOper {
 
 fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
     Ok(SimpleExpr::SubQuery(None, Box::new(
-        match target.as_str() {
+        match target.to_lowercase().as_str() {
             "stars" => { stars_sort_target() },
             "watched" => { watched_sort_target() },
             "times_watched" => { times_watched_sort_target() },
             "type" => { media_type_sort_target() },
             "has_source" => { has_source_sort_target() },
             "number_of_sources" => { number_of_sources_sort_target() }
-            t => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", t))) }
+            _ => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", target))) }
         }.into_sub_query_statement()
     )))
 }

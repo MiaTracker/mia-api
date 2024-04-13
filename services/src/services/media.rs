@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::env;
 
+use futures::{FutureExt, TryFutureExt};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 use sea_orm::prelude::Expr;
@@ -56,7 +57,7 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
 
     let external_t;
     let mut external_limit = 0;
-    if res.is_primitive && (res.name_search.len() > 3 || committed) {
+    if res.is_primitive && (res.name_search.len() > 3 || committed || res.external_id.is_some()) {
         if let Some(l) = limit {
             if (l as usize) > media_w_titles.len() {
                 external_limit = (l as usize) - media_w_titles.len();
@@ -65,35 +66,62 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
             external_limit = usize::MAX;
         }
         if external_limit > 0 {
-            external_t = Some(integrations::tmdb::services::search::multi(res.name_search));
+            if let Some(external_id) = res.external_id {
+                match external_id.r#type {
+                    MediaType::Movie => {
+                        external_t = Some(
+                            integrations::tmdb::services::movies::details(external_id.tmdb_id).map_ok(|x|
+                                if !media_w_titles.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
+                                    vec![x.into_view()]
+                                } else { Vec::new() }
+                            ).await?
+                        );
+                    }
+                    MediaType::Series => {
+                        external_t = Some(
+                            integrations::tmdb::services::series::details(external_id.tmdb_id).map_ok(|x|
+                                if !media_w_titles.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Series) {
+                                    vec![x.into_view()]
+                                } else { Vec::new() }
+                            ).await?
+                        );
+                    }
+                }
+            } else {
+                external_t = Some(
+                    integrations::tmdb::services::search::multi(res.name_search).map_ok(|res| {
+                        res.results.iter().filter_map(|r| {
+                            if external_limit == 0 { return None; }
+                            match r {
+                                MultiResult::Movie(movie) => {
+                                    if media_w_titles.iter().find(|x| {
+                                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { true }
+                                        else { false }
+                                    }).is_some() { return None }
+                                    if media_type.is_none() || media_type == Some(MediaType::Movie) { external_limit -= 1; Some(movie.into_view()) }
+                                    else { None }
+                                }
+                                MultiResult::Tv(tv) => {
+                                    if media_w_titles.iter().find(|x| {
+                                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { true }
+                                        else { false }
+                                    }).is_some() { return None }
+                                    if media_type.is_none() || media_type == Some(MediaType::Series) { external_limit -= 1; Some(tv.into_view()) }
+                                    else { None }
+                                }
+                                MultiResult::Person(_) => { None }
+                                MultiResult::Collection(_) => { None }
+                            }
+                        }).collect()
+                    }).await?
+                );
+            }
         } else { external_t = None }
     } else { external_t = None }
 
     let external;
-    if let Some(future) = external_t {
-        external = future.await?.results.iter().filter_map(|r| {
-            if external_limit == 0 { return None; }
-            match r {
-                MultiResult::Movie(movie) => {
-                    if media_w_titles.iter().find(|x| {
-                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { true }
-                        else { false }
-                    }).is_some() { return None }
-                    if media_type.is_none() || media_type == Some(MediaType::Movie) { external_limit -= 1; Some(movie.into_view()) }
-                    else { None }
-                }
-                MultiResult::Tv(tv) => {
-                    if media_w_titles.iter().find(|x| {
-                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { true }
-                        else { false }
-                    }).is_some() { return None }
-                    if media_type.is_none() || media_type == Some(MediaType::Series) { external_limit -= 1; Some(tv.into_view()) }
-                    else { None }
-                }
-                MultiResult::Person(_) => { None }
-                MultiResult::Collection(_) => { None }
-            }
-        }).collect();
+    if let Some(e) = external_t {
+        external = e;
     } else { external = Vec::new(); }
 
     let indexes = build_media_indexes(media_w_titles);

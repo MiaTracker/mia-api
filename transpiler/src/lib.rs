@@ -35,7 +35,13 @@ pub struct TranspilationError {
 pub struct TranspilationResult {
     pub query: SelectTwo<media::Entity, titles::Entity>,
     pub name_search: String,
+    pub external_id: Option<ExternalId>,
     pub is_primitive: bool
+}
+
+pub struct ExternalId {
+    pub tmdb_id: i32,
+    pub r#type: views::media::MediaType
 }
 
 pub fn transpile(search: SearchQuery, page_req: PageReq, user: &CurrentUser, media_type: Option<MediaType>)

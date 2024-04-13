@@ -82,7 +82,7 @@ pub enum TokenType {
     EOF
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
     False,
     True,
@@ -102,7 +102,7 @@ pub enum ComparisonOperator {
     GreaterEqual
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum LogicalOperator {
     And,
     Or

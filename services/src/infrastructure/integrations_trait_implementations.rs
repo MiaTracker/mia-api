@@ -229,3 +229,25 @@ impl IntoView<ExternalIndex> for &MultiTvResult {
         }
     }
 }
+
+impl IntoView<ExternalIndex> for &MovieDetails {
+    fn into_view(self) -> ExternalIndex {
+        ExternalIndex {
+            external_id: self.id,
+            r#type: views::media::MediaType::Movie,
+            poster_path: self.poster_path.clone(),
+            title: self.title.clone(),
+        }
+    }
+}
+
+impl IntoView<ExternalIndex> for &SeriesDetails {
+    fn into_view(self) -> ExternalIndex {
+        ExternalIndex {
+            external_id: self.id,
+            r#type: views::media::MediaType::Series,
+            poster_path: self.poster_path.clone(),
+            title: self.name.clone(),
+        }
+    }
+}
