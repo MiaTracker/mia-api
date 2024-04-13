@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use crate::{ErrorSource, TranspilationError};
 use crate::lexer::{LexingError, scan};
 
@@ -100,6 +101,19 @@ pub enum ComparisonOperator {
     LessEqual,
     Greater,
     GreaterEqual
+}
+
+impl Display for ComparisonOperator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ComparisonOperator::Equal => { "=" }
+            ComparisonOperator::NotEqual => { "!=" }
+            ComparisonOperator::Less => { "<" }
+            ComparisonOperator::LessEqual => { "<=" }
+            ComparisonOperator::Greater => { ">" }
+            ComparisonOperator::GreaterEqual => { ">=" }
+        })
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
