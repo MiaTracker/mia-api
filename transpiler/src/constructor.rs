@@ -373,6 +373,7 @@ fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<S
         "tmdb_id" => { tmdb_id_target(op, literal) }
         "year" => { year_target(op, literal) }
         "on_watchlist" => { on_watchlist_target(op, literal) }
+        "rated" => { rated_target(op, literal) }
         _ => { return Err(ConstructionError::from(format!("Unknown target '{}'", target))) }
     }
 }
@@ -642,6 +643,32 @@ fn on_watchlist_target(op: ComparisonOperator, literal: Literal) -> Result<Selec
                                     .to_owned()
                             )
                     )
+                    .to_owned()
+            )
+        }
+    } else {
+        Err(ConstructionError::from("Cannot compare with null!"))
+    }
+}
+
+fn rated_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    assert_eq!(op);
+    let t = literal.to_value::<bool>()?;
+    if let Some(val) = t {
+        if val {
+            Ok(
+                Query::select()
+                    .columns([(media::Entity, media::Column::Id)])
+                    .from(media::Entity)
+                    .cond_where(Expr::col((media::Entity, media::Column::Stars)).is_not_null())
+                    .to_owned()
+            )
+        } else {
+            Ok(
+                Query::select()
+                    .columns([(media::Entity, media::Column::Id)])
+                    .from(media::Entity)
+                    .cond_where(Expr::col((media::Entity, media::Column::Stars)).is_null())
                     .to_owned()
             )
         }
