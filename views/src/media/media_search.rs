@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use crate::media::{MediaIndex, MediaType, PageReq};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 pub struct SearchParams {
     pub committed: bool,
     #[serde(default)]
@@ -19,7 +20,7 @@ impl Into<PageReq> for SearchParams {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SearchQuery {
     pub query: String,
     #[serde(default)]
@@ -32,7 +33,7 @@ pub struct SearchQuery {
     pub sort_by: SortTarget
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub enum SortTarget {
     #[serde(rename = "title")]
     Title,
@@ -48,14 +49,14 @@ impl Default for SortTarget {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SearchResults {
     pub indexes: Vec<MediaIndex>,
     pub external: Vec<ExternalIndex>,
     pub query_valid: bool
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ExternalIndex {
     pub external_id: i32,
     pub r#type: MediaType,

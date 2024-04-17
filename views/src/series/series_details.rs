@@ -1,4 +1,5 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 use crate::genres::Genre;
 use crate::languages::Language;
 use crate::logs::Log;
@@ -6,7 +7,7 @@ use crate::sources::Source;
 use crate::tags::Tag;
 use crate::titles::AlternativeTitle;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SeriesDetails {
     pub id: i32,
     pub poster_path: Option<String>,
@@ -14,6 +15,7 @@ pub struct SeriesDetails {
     pub stars: Option<f32>,
     pub title: String,
     pub alternative_titles: Vec<AlternativeTitle>,
+    #[schema(value_type = String, format = Date)]
     pub first_air_date: Option<chrono::NaiveDate>,
     pub number_of_episodes: Option<i32>,
     pub number_of_seasons: Option<i32>,

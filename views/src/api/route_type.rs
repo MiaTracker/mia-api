@@ -1,7 +1,8 @@
 use serde::Deserialize;
+use utoipa::ToSchema;
 use crate::media::MediaType;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub enum RouteType {
     #[serde(rename = "movies")]
     Movies,

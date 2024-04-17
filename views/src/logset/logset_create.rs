@@ -1,9 +1,10 @@
 use chrono::NaiveDate;
 use serde::Deserialize;
+use utoipa::ToSchema;
 use crate::media::MediaType;
 use crate::sources::SourceCreate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct LogsetCreate {
     #[serde(default)]
     pub media_id: Option<i32>,
@@ -14,6 +15,7 @@ pub struct LogsetCreate {
     pub source: Option<String>,
     #[serde(default)]
     pub new_source: Option<SourceCreate>,
+    #[schema(value_type = String, format = Date)]
     pub date: NaiveDate,
     pub stars: Option<f32>,
     pub completed: bool,

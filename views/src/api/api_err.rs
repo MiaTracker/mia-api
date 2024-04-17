@@ -1,15 +1,18 @@
 use std::fmt;
 use std::fmt::Formatter;
+
 use axum_core::response::{IntoResponse, Response};
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 pub struct ApiErr {
     pub errors: Vec<ApiErrView>,
     pub status: StatusCode,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
+#[schema(as = Error)]
 pub struct ApiErrView {
     pub key: String,
     pub debug_message: String

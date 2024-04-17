@@ -2,195 +2,3819 @@ openapi: 3.0.3
 info:
   title: Mia
   description: Movie and TV show tracker
+  license:
+    name: AGPL
+    url: https://www.gnu.org/licenses/agpl-3.0.en.html
   version: 0.1.0
-servers:
-  - url: 'http://localhost:3000'
 paths:
-  /ping:
+  /app_tokens:
     get:
-      summary: Ping
-      description: Test endpoint
+      tags:
+        - crate::endpoints::app_tokens
+      operationId: index
       responses:
-        200:
-          description: OK
-  /masterdata/refresh:
-    post:
-      summary: Refresh masterdata
-      description: Refreshes masterdata
-      responses:
-        200:
-          description: OK
-        500:
-          $ref: "#/components/responses/500"
-  /users/register:
-    post:
-      summary: Registration
-      description: Registers a new user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                email:
-                  type: string
-                username:
-                  type: string
-                password:
-                  type: string
-                password_repeat:
-                  type: string
-      responses:
-        201:
-          description: User successfully registered
-        400:
-          $ref: "#/components/responses/400"
-        500:
-          $ref: "#/components/responses/500"
-
-  /users/login:
-    post:
-      summary: Login
-      description: Generates an authentication token for user with provided credentials
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                username:
-                  type: string
-                password:
-                  type: string
-      responses:
-        200:
-          description: Returns a valid authentication token for user with provided credentials
+        '200':
+          description: All tokens of the user
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                  expiry_date:
-                    type: string
-        400:
-          $ref: "#/components/responses/400"
-        500:
-          $ref: "#/components/responses/500"
-
+                type: array
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AppTokenIndex'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    post:
+      tags:
+        - crate::endpoints::app_tokens
+      operationId: generate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppTokenGenerate'
+        required: true
+      responses:
+        '201':
+          description: New api token was generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppToken'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /app_tokens/{name}:
+    delete:
+      tags:
+        - crate::endpoints::app_tokens
+      operationId: revoke
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Token revoked
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: Token with this name was not found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /configuration/images:
+    get:
+      tags:
+        - crate::endpoints::configuration
+      operationId: images
+      responses:
+        '200':
+          description: Current images configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImagesConfiguration'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /genres:
+    get:
+      tags:
+        - crate::endpoints::genres
+      operationId: index
+      responses:
+        '200':
+          description: All genres of user's media
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /logset:
+    post:
+      tags:
+        - crate::endpoints::logset
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogsetCreate'
+        required: true
+      responses:
+        '201':
+          description: Log created
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
   /media:
     get:
-      summary: Media index
-      description: Retrieves a paginated list of all user's tracked media sorted alphabetically
-      security:
-        - bearerAuth: []
+      tags:
+        - crate::endpoints::media
+      operationId: index
       parameters:
         - name: offset
-          in: query
+          in: path
           required: true
           schema:
             type: integer
+            format: int64
+            nullable: true
+            minimum: 0
         - name: limit
-          in: query
+          in: path
           required: true
           schema:
             type: integer
+            format: int64
+            nullable: true
+            minimum: 0
       responses:
-        200:
-          description: A page of all user's tracked media sorted alphabetically
+        '200':
+          description: All media indexes
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  title:
-                    type: string
-                  poster_path:
-                    oneOf:
-                      - type: string
-                      - type: 'null'
-                  stars:
-                    oneOf:
-                      - type: number
-                        format: float
-                      - type: 'null'
-                  type:
-                    type: string
-                    enum: ["movie", "series"]
-                  episode_count:
-                    oneOf:
-                      - type: integer
-                      - type: 'null'
-        400:
-          $ref: "#/components/responses/400"
-        500:
-          $ref: "#/components/responses/500"
-    post:
-      summary: Media create
-      description: Creates a new media
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaIndex'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
       security:
-        - bearerAuth: [ ]
+        - api_key: []
+  /media/search:
+    get:
+      tags:
+        - crate::endpoints::media
+      operationId: search
       parameters:
-        - name: tmdb_id
-          in: query
+        - name: committed
+          in: path
+          required: true
+          schema:
+            type: boolean
+        - name: offset
+          in: path
           required: true
           schema:
             type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+        - name: limit
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchQuery'
+        required: true
       responses:
-        201:
-          description: Media successfully created
-        400:
-          $ref: "#/components/responses/400"
-        500:
-          $ref: "#/components/responses/500"
+        '200':
+          description: Media indexes matching the search criteria
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies:
+    get:
+      tags:
+        - crate::endpoints::movies
+      operationId: index
+      parameters:
+        - name: offset
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+        - name: limit
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+      responses:
+        '200':
+          description: All movie indexes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaIndex'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    post:
+      tags:
+        - crate::endpoints::movies
+      operationId: create
+      parameters:
+        - name: tmdb_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Movie already exists
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '201':
+          description: Movie created
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/genres:
+    get:
+      tags:
+        - crate::endpoints::movies
+      operationId: genres
+      responses:
+        '200':
+          description: All genres of user's movies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/search:
+    get:
+      tags:
+        - crate::endpoints::movies
+      operationId: search
+      parameters:
+        - name: committed
+          in: path
+          required: true
+          schema:
+            type: boolean
+        - name: offset
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+        - name: limit
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchQuery'
+        required: true
+      responses:
+        '200':
+          description: Movie indexes matching the search criteria
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/source_create:
+    post:
+      tags:
+        - crate::endpoints::movies
+      operationId: create_w_source
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaSourceCreate'
+        required: true
+      responses:
+        '200':
+          description: Movie already exists
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '201':
+          description: Movie created
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/source_delete:
+    post:
+      tags:
+        - crate::endpoints::movies
+      operationId: delete_w_source
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaSourceDelete'
+        required: true
+      responses:
+        '200':
+          description: Movie deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The movie was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/{movie_id}:
+    get:
+      tags:
+        - crate::endpoints::movies
+      operationId: details
+      parameters:
+        - name: movie_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Movie details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieDetails'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The movie was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    delete:
+      tags:
+        - crate::endpoints::movies
+      operationId: delete
+      parameters:
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Movie deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The movie was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/{movie_id}/images:
+    patch:
+      tags:
+        - crate::endpoints::movies
+      operationId: update_images
+      parameters:
+        - name: movie_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImagesUpdate'
+        required: true
+      responses:
+        '200':
+          description: Default movie images changed
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The movie was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/{movie_id}/metadata:
+    get:
+      tags:
+        - crate::endpoints::movies
+      operationId: metadata
+      parameters:
+        - name: movie_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Movie metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieMetadata'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The movie was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    patch:
+      tags:
+        - crate::endpoints::movies
+      operationId: update
+      parameters:
+        - name: movie_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovieMetadata'
+        required: true
+      responses:
+        '200':
+          description: Movie metadata updated
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The movie was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /movies/{movie_id}/on_watchlist:
+    get:
+      tags:
+        - crate::endpoints::movies
+      operationId: on_watchlist
+      parameters:
+        - name: movie_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Weather the movie is currently on watchlist
+          content:
+            text/plain:
+              schema:
+                type: boolean
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The movie was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /ping:
+    get:
+      tags:
+        - crate::endpoints::ping
+      operationId: ping
+      responses:
+        '200':
+          description: Service reachable
+  /series:
+    get:
+      tags:
+        - crate::endpoints::series
+      operationId: index
+      parameters:
+        - name: offset
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+        - name: limit
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+      responses:
+        '200':
+          description: All series indexes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaIndex'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    post:
+      tags:
+        - crate::endpoints::series
+      operationId: create
+      parameters:
+        - name: tmdb_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Series already exists
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '201':
+          description: Series created
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/genres:
+    get:
+      tags:
+        - crate::endpoints::series
+      operationId: genres
+      responses:
+        '200':
+          description: All genres of user's series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/search:
+    get:
+      tags:
+        - crate::endpoints::series
+      operationId: search
+      parameters:
+        - name: committed
+          in: path
+          required: true
+          schema:
+            type: boolean
+        - name: offset
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+        - name: limit
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchQuery'
+        required: true
+      responses:
+        '200':
+          description: Series indexes matching the search criteria
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/source_create:
+    post:
+      tags:
+        - crate::endpoints::series
+      operationId: create_w_source
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaSourceCreate'
+        required: true
+      responses:
+        '200':
+          description: Series already exists
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '201':
+          description: Series created
+          content:
+            text/plain:
+              schema:
+                type: integer
+                format: int32
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/source_delete:
+    post:
+      tags:
+        - crate::endpoints::series
+      operationId: delete_w_source
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaSourceDelete'
+        required: true
+      responses:
+        '200':
+          description: Series deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The series was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/{series_id}:
+    get:
+      tags:
+        - crate::endpoints::series
+      operationId: details
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Series details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeriesDetails'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The series was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    delete:
+      tags:
+        - crate::endpoints::series
+      operationId: delete
+      parameters:
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Series deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The series was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/{series_id}/images:
+    patch:
+      tags:
+        - crate::endpoints::series
+      operationId: update_images
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImagesUpdate'
+        required: true
+      responses:
+        '200':
+          description: Default series images changed
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The series was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/{series_id}/metadata:
+    get:
+      tags:
+        - crate::endpoints::series
+      operationId: metadata
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Series metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeriesMetadata'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The series was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    patch:
+      tags:
+        - crate::endpoints::series
+      operationId: update
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeriesMetadata'
+        required: true
+      responses:
+        '200':
+          description: Series metadata updated
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The series was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /series/{series_id}/on_watchlist:
+    get:
+      tags:
+        - crate::endpoints::series
+      operationId: on_watchlist
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Weather the series is currently on watchlist
+          content:
+            text/plain:
+              schema:
+                type: boolean
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The series was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /statistics:
+    get:
+      tags:
+        - crate::endpoints::statistics
+      operationId: stats
+      responses:
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /users:
+    get:
+      tags:
+        - crate::endpoints::users
+      operationId: index
+      responses:
+        '200':
+          description: User profile data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserIndex'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key:
+            - admin
+  /users/login:
+    post:
+      tags:
+        - crate::endpoints::users
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLogin'
+        required: true
+      responses:
+        '200':
+          description: User logged in successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserToken'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+  /users/password:
+    patch:
+      tags:
+        - crate::endpoints::users
+      operationId: change_password
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+        required: true
+      responses:
+        '200':
+          description: User password changed successfully
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key:
+            - admin
+  /users/profile:
+    get:
+      tags:
+        - crate::endpoints::users
+      operationId: profile
+      responses:
+        '200':
+          description: User profile data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /users/register:
+    post:
+      tags:
+        - crate::endpoints::users
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistration'
+        required: true
+      responses:
+        '201':
+          description: User created
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key:
+            - admin
+  /users/{uuid}:
+    delete:
+      tags:
+        - crate::endpoints::users
+      operationId: delete
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The user was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key:
+            - admin
+  /watchlist:
+    get:
+      tags:
+        - crate::endpoints::watchlist
+      operationId: index
+      parameters:
+        - name: offset
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+        - name: limit
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+      responses:
+        '200':
+          description: All media on watchlist
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaIndex'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /watchlist/add:
+    post:
+      tags:
+        - crate::endpoints::watchlist
+      operationId: add
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WatchlistParams'
+        required: true
+      responses:
+        '200':
+          description: Media already on watchlist
+        '201':
+          description: Media added to watchlist
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The media was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /watchlist/remove:
+    post:
+      tags:
+        - crate::endpoints::watchlist
+      operationId: remove
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WatchlistParams'
+        required: true
+      responses:
+        '200':
+          description: Media successfully removed from watchlist
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The media was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /watchlist/search:
+    post:
+      tags:
+        - crate::endpoints::watchlist
+      operationId: search
+      parameters:
+        - name: offset
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+        - name: limit
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            nullable: true
+            minimum: 0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchQuery'
+        required: true
+      responses:
+        '200':
+          description: Filtered media on watchlist
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaIndex'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/genres:
+    post:
+      tags:
+        - crate::endpoints::genres
+      operationId: create
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppTokenGenerate'
+        required: true
+      responses:
+        '200':
+          description: Genre was already assigned to the media
+        '201':
+          description: Genre was added to the media
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: Media not found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/genres/{genre_id}:
+    delete:
+      tags:
+        - crate::endpoints::genres
+      operationId: delete
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: genre_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Genre was removed from media
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: Media not found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/logs:
+    post:
+      tags:
+        - crate::endpoints::logs
+      operationId: create
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogCreate'
+        required: true
+      responses:
+        '201':
+          description: Log created
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/logs/{log_id}:
+    get:
+      tags:
+        - crate::endpoints::logs
+      operationId: details
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: log_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Log details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Log'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The log was not found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    post:
+      tags:
+        - crate::endpoints::logs
+      operationId: update
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: log_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Log updated
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The log was not found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    delete:
+      tags:
+        - crate::endpoints::logs
+      operationId: delete
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: log_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Log deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The log was not found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/sources:
+    get:
+      tags:
+        - crate::endpoints::sources
+      operationId: index
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: All sources of the media
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Source'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The media was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    post:
+      tags:
+        - crate::endpoints::sources
+      operationId: create
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceCreate'
+        required: true
+      responses:
+        '201':
+          description: Source created
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/sources/{source_id}:
+    get:
+      tags:
+        - crate::endpoints::sources
+      operationId: details
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Source details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The source was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    post:
+      tags:
+        - crate::endpoints::sources
+      operationId: update
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceUpdate'
+        required: true
+      responses:
+        '200':
+          description: Source updated
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The source was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+    delete:
+      tags:
+        - crate::endpoints::sources
+      operationId: delete
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Source deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The source was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/tags:
+    post:
+      tags:
+        - crate::endpoints::tags
+      operationId: create
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagCreate'
+        required: true
+      responses:
+        '200':
+          description: Tag already attached to the media
+        '201':
+          description: Tag created
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/tags/{tag_id}:
+    delete:
+      tags:
+        - crate::endpoints::tags
+      operationId: delete
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: tag_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Tag deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The tag had not been added to the media
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/titles:
+    post:
+      tags:
+        - crate::endpoints::titles
+      operationId: create
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TitleCreate'
+        required: true
+      responses:
+        '201':
+          description: Title created
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/titles/{title_id}:
+    delete:
+      tags:
+        - crate::endpoints::titles
+      operationId: delete
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: title_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Title deleted
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The title was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
+  /{route_type}/{media_id}/titles/{title_id}/primary:
+    post:
+      tags:
+        - crate::endpoints::titles
+      operationId: set_primary
+      parameters:
+        - name: route_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RouteType'
+        - name: media_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: title_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Title set as primary
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '401':
+          description: Authorization token was not provided or is invalid
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+        '404':
+          description: The title was not found
+        '500':
+          description: An internal error occurred while processing the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Error'
+      security:
+        - api_key: []
 components:
-  responses:
-    400:
-      description: Provided parameters violate one or more requirements
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/apiErr"
-    500:
-      description: An unexpected error occurred while processing the request
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/apiErr"
   schemas:
-    apiErr:
-      type: array
-      minItems: 1
-      items:
-        type: object
-        properties:
-          key:
+    AlternativeTitle:
+      type: object
+      required:
+        - id
+        - title
+      properties:
+        id:
+          type: integer
+          format: int32
+        title:
+          type: string
+    AppToken:
+      type: object
+      required:
+        - name
+        - token
+        - generated
+      properties:
+        generated:
+          type: string
+          format: date-time
+        name:
+          type: string
+        token:
+          type: string
+    AppTokenGenerate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    AppTokenIndex:
+      type: object
+      required:
+        - name
+        - generated
+      properties:
+        generated:
+          type: string
+          format: date-time
+        name:
+          type: string
+    AvgRatingStats:
+      type: object
+      properties:
+        movies:
+          type: number
+          format: double
+          nullable: true
+        overall:
+          type: number
+          format: double
+          nullable: true
+        series:
+          type: number
+          format: double
+          nullable: true
+    CategoryStats:
+      type: object
+      properties:
+        movie:
+          allOf:
+            - $ref: '#/components/schemas/MediaIndex'
+          nullable: true
+        series:
+          allOf:
+            - $ref: '#/components/schemas/MediaIndex'
+          nullable: true
+    ComparativeStats:
+      type: object
+      required:
+        - name
+        - count
+      properties:
+        count:
+          type: integer
+          format: int64
+        name:
+          type: string
+    Error:
+      type: object
+      required:
+        - key
+        - debug_message
+      properties:
+        debug_message:
+          type: string
+        key:
+          type: string
+    ExternalIndex:
+      type: object
+      required:
+        - external_id
+        - type
+        - title
+      properties:
+        external_id:
+          type: integer
+          format: int32
+        poster_path:
+          type: string
+          nullable: true
+        title:
+          type: string
+        type:
+          $ref: '#/components/schemas/MediaType'
+    Genre:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+    GenreCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    Image:
+      type: object
+      required:
+        - width
+        - height
+        - file_path
+        - current
+      properties:
+        current:
+          type: boolean
+        file_path:
+          type: string
+        height:
+          type: integer
+          format: int32
+        language:
+          type: string
+          nullable: true
+        width:
+          type: integer
+          format: int32
+    Images:
+      type: object
+      required:
+        - backdrops
+        - posters
+      properties:
+        backdrops:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+        posters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+    ImagesConfiguration:
+      type: object
+      required:
+        - base_url
+        - secure_base_url
+        - backdrop_sizes
+        - logo_sizes
+        - poster_sizes
+        - profile_sizes
+        - still_sizes
+      properties:
+        backdrop_sizes:
+          type: array
+          items:
             type: string
-            enum:
-              - InternalServerError
-              - NoAuthenticationTokenProvided
-              - InvalidAuthenticationToken
-
-              - SignUpEmailEmpty
-              - SignUpUsernameEmpty
-              - SignUpPasswordEmpty
-              - SignUpPasswordRepeatEmpty
-              - SignUpEmailInvalid
-              - SignUpAccountWithThisEmailAlreadyExists
-              - SignUpUsernameAlreadyTaken
-              - SignUpPasswordsDoNotMatch
-              - SignUpPasswordRequirementsNotMet
-
-              - LoginUsernameEmpty
-              - LoginPasswordEmpty
-              - LoginInvalidCredentials
-          debug_message:
+        base_url:
+          type: string
+        logo_sizes:
+          type: array
+          items:
             type: string
+        poster_sizes:
+          type: array
+          items:
+            type: string
+        profile_sizes:
+          type: array
+          items:
+            type: string
+        secure_base_url:
+          type: string
+        still_sizes:
+          type: array
+          items:
+            type: string
+    ImagesUpdate:
+      type: object
+      properties:
+        backdrop_path:
+          type: string
+          nullable: true
+        poster_path:
+          type: string
+          nullable: true
+    Language:
+      type: object
+      required:
+        - iso_639_1
+        - english_name
+        - name
+      properties:
+        english_name:
+          type: string
+        iso_639_1:
+          type: string
+        name:
+          type: string
+    LanguageIndex:
+      type: object
+      required:
+        - iso_639_1
+        - english_name
+      properties:
+        english_name:
+          type: string
+        iso_639_1:
+          type: string
+    Log:
+      type: object
+      required:
+        - id
+        - date
+        - source
+        - completed
+      properties:
+        comment:
+          type: string
+          nullable: true
+        completed:
+          type: boolean
+        date:
+          type: string
+          format: date
+        id:
+          type: integer
+          format: int32
+        source:
+          type: string
+        stars:
+          type: number
+          format: float
+          nullable: true
+    LogCreate:
+      type: object
+      required:
+        - date
+        - completed
+        - source
+      properties:
+        comment:
+          type: string
+          nullable: true
+        completed:
+          type: boolean
+        date:
+          type: string
+          format: date
+        source:
+          type: string
+        stars:
+          type: number
+          format: float
+          nullable: true
+    LogStats:
+      type: object
+      required:
+        - logs
+        - completed
+        - uncompleted
+      properties:
+        completed:
+          type: integer
+          format: int64
+          minimum: 0
+        logs:
+          type: integer
+          format: int64
+          minimum: 0
+        uncompleted:
+          type: integer
+          format: int64
+          minimum: 0
+    LogUpdate:
+      type: object
+      required:
+        - id
+        - date
+        - completed
+        - source
+      properties:
+        comment:
+          type: string
+          nullable: true
+        completed:
+          type: boolean
+        date:
+          type: string
+          format: date
+        id:
+          type: integer
+          format: int32
+        source:
+          type: string
+        stars:
+          type: number
+          format: float
+          nullable: true
+    LogsetCreate:
+      type: object
+      required:
+        - media_type
+        - date
+        - completed
+      properties:
+        comment:
+          type: string
+          nullable: true
+        completed:
+          type: boolean
+        date:
+          type: string
+          format: date
+        external_id:
+          type: integer
+          format: int32
+          nullable: true
+        media_id:
+          type: integer
+          format: int32
+          nullable: true
+        media_type:
+          $ref: '#/components/schemas/MediaType'
+        new_source:
+          allOf:
+            - $ref: '#/components/schemas/SourceCreate'
+          nullable: true
+        remove_from_watchlist:
+          type: boolean
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        stars:
+          type: number
+          format: float
+          nullable: true
+    MediaIndex:
+      type: object
+      required:
+        - id
+        - type
+        - title
+      properties:
+        id:
+          type: integer
+          format: int32
+        poster_path:
+          type: string
+          nullable: true
+        stars:
+          type: number
+          format: float
+          nullable: true
+        title:
+          type: string
+        type:
+          $ref: '#/components/schemas/MediaType'
+    MediaSourceCreate:
+      type: object
+      required:
+        - tmdb_id
+        - source
+      properties:
+        source:
+          $ref: '#/components/schemas/SourceCreate'
+        tmdb_id:
+          type: integer
+          format: int32
+    MediaSourceDelete:
+      type: object
+      required:
+        - tmdb_id
+        - source
+      properties:
+        source:
+          type: string
+        tmdb_id:
+          type: integer
+          format: int32
+    MediaStats:
+      type: object
+      required:
+        - count
+        - movies
+        - series
+      properties:
+        count:
+          type: integer
+          format: int64
+          minimum: 0
+        movies:
+          type: integer
+          format: int64
+          minimum: 0
+        series:
+          type: integer
+          format: int64
+          minimum: 0
+    MediaType:
+      type: string
+      enum:
+        - movie
+        - series
+    MovieDetails:
+      type: object
+      required:
+        - id
+        - title
+        - alternative_titles
+        - release_date
+        - on_watchlist
+        - genres
+        - tags
+        - sources
+        - logs
+      properties:
+        alternative_titles:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlternativeTitle'
+        backdrop_path:
+          type: string
+          nullable: true
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/Genre'
+        id:
+          type: integer
+          format: int32
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Log'
+        on_watchlist:
+          type: boolean
+        original_language:
+          allOf:
+            - $ref: '#/components/schemas/Language'
+          nullable: true
+        overview:
+          type: string
+          nullable: true
+        poster_path:
+          type: string
+          nullable: true
+        release_date:
+          type: string
+          format: date
+        runtime:
+          type: integer
+          format: int32
+          nullable: true
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+        stars:
+          type: number
+          format: float
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        title:
+          type: string
+        tmdb_vote_average:
+          type: number
+          format: float
+          nullable: true
+    MovieMetadata:
+      type: object
+      required:
+        - id
+        - release_date
+      properties:
+        homepage:
+          type: string
+          nullable: true
+        id:
+          type: integer
+          format: int32
+        imdb_id:
+          type: string
+          nullable: true
+        original_language:
+          type: string
+          nullable: true
+        overview:
+          type: string
+          nullable: true
+        release_date:
+          type: string
+          format: date
+        runtime:
+          type: integer
+          format: int32
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+    PasswordChange:
+      type: object
+      required:
+        - old_password
+        - new_password
+        - password_repeat
+      properties:
+        new_password:
+          type: string
+        old_password:
+          type: string
+        password_repeat:
+          type: string
+    RouteType:
+      type: string
+      enum:
+        - movies
+        - series
+    SearchQuery:
+      type: object
+      required:
+        - query
+      properties:
+        genres:
+          type: array
+          items:
+            type: string
+          nullable: true
+        min_stars:
+          type: number
+          format: float
+          nullable: true
+        only_watched:
+          type: boolean
+        query:
+          type: string
+        sort_by:
+          $ref: '#/components/schemas/SortTarget'
+    SearchResults:
+      type: object
+      required:
+        - indexes
+        - external
+        - query_valid
+      properties:
+        external:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalIndex'
+        indexes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaIndex'
+        query_valid:
+          type: boolean
+    SeriesDetails:
+      type: object
+      required:
+        - id
+        - title
+        - alternative_titles
+        - first_air_date
+        - on_watchlist
+        - genres
+        - tags
+        - sources
+        - logs
+      properties:
+        alternative_titles:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlternativeTitle'
+        backdrop_path:
+          type: string
+          nullable: true
+        first_air_date:
+          type: string
+          format: date
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/Genre'
+        id:
+          type: integer
+          format: int32
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Log'
+        number_of_episodes:
+          type: integer
+          format: int32
+          nullable: true
+        number_of_seasons:
+          type: integer
+          format: int32
+          nullable: true
+        on_watchlist:
+          type: boolean
+        original_language:
+          allOf:
+            - $ref: '#/components/schemas/Language'
+          nullable: true
+        overview:
+          type: string
+          nullable: true
+        poster_path:
+          type: string
+          nullable: true
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+        stars:
+          type: number
+          format: float
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        title:
+          type: string
+        tmdb_vote_average:
+          type: number
+          format: float
+          nullable: true
+        type:
+          type: string
+          nullable: true
+    SeriesMetadata:
+      type: object
+      required:
+        - id
+        - first_air_date
+      properties:
+        first_air_date:
+          type: string
+          format: date
+        homepage:
+          type: string
+          nullable: true
+        id:
+          type: integer
+          format: int32
+        imdb_id:
+          type: string
+          nullable: true
+        number_of_episodes:
+          type: integer
+          format: int32
+          nullable: true
+        number_of_seasons:
+          type: integer
+          format: int32
+          nullable: true
+        original_language:
+          type: string
+          nullable: true
+        overview:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+    SortTarget:
+      type: string
+      enum:
+        - title
+        - stars
+        - times_watched
+    Source:
+      type: object
+      required:
+        - id
+        - name
+        - url
+        - type
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/SourceType'
+        url:
+          type: string
+    SourceCreate:
+      type: object
+      required:
+        - name
+        - url
+        - type
+      properties:
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/SourceType'
+        url:
+          type: string
+    SourceType:
+      type: string
+      enum:
+        - torrent
+        - web
+        - jellyfin
+    SourceUpdate:
+      type: object
+      required:
+        - id
+        - name
+        - url
+        - type
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/SourceType'
+        url:
+          type: string
+    Stats:
+      type: object
+      required:
+        - media
+        - logs
+        - genres
+        - languages
+        - most_watched
+        - highest_rated
+        - average_rating
+      properties:
+        average_rating:
+          $ref: '#/components/schemas/AvgRatingStats'
+        genres:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComparativeStats'
+        highest_rated:
+          $ref: '#/components/schemas/CategoryStats'
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComparativeStats'
+        logs:
+          $ref: '#/components/schemas/LogStats'
+        media:
+          $ref: '#/components/schemas/MediaStats'
+        most_watched:
+          $ref: '#/components/schemas/CategoryStats'
+    Tag:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+    TagCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    TitleCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    UserIndex:
+      type: object
+      required:
+        - uuid
+        - username
+        - email
+        - admin
+      properties:
+        admin:
+          type: boolean
+        email:
+          type: string
+        username:
+          type: string
+        uuid:
+          type: string
+    UserLogin:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        password:
+          type: string
+        username:
+          type: string
+    UserProfile:
+      type: object
+      required:
+        - uuid
+        - username
+        - email
+        - admin
+      properties:
+        admin:
+          type: boolean
+        email:
+          type: string
+        username:
+          type: string
+        uuid:
+          type: string
+    UserRegistration:
+      type: object
+      required:
+        - email
+        - username
+        - password
+        - password_repeat
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        password_repeat:
+          type: string
+        username:
+          type: string
+    UserToken:
+      type: object
+      required:
+        - token
+        - expiry_date
+        - admin
+      properties:
+        admin:
+          type: boolean
+        expiry_date:
+          type: string
+          format: date-time
+        token:
+          type: string
+    WatchlistParams:
+      type: object
+      required:
+        - media_id
+      properties:
+        media_id:
+          type: integer
+          format: int32
   securitySchemes:
-    bearerAuth:
+    api_key:
       type: http
       scheme: bearer
       bearerFormat: JWT

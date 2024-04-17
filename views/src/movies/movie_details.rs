@@ -1,4 +1,5 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 use crate::languages::Language;
 use crate::logs::Log;
 use crate::tags::Tag;
@@ -6,7 +7,7 @@ use crate::titles::AlternativeTitle;
 use crate::genres::Genre;
 use crate::sources::Source;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct MovieDetails {
     pub id: i32,
     pub poster_path: Option<String>,
@@ -14,6 +15,7 @@ pub struct MovieDetails {
     pub stars: Option<f32>,
     pub title: String,
     pub alternative_titles: Vec<AlternativeTitle>,
+    #[schema(value_type = String, format = Date)]
     pub release_date: Option<chrono::NaiveDate>,
     pub runtime: Option<i32>,
     pub status: Option<String>,

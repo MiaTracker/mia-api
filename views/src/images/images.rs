@@ -1,12 +1,13 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Images {
     pub backdrops: Vec<Image>,
     pub posters: Vec<Image>
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Image {
     pub language: Option<String>,
     pub width: i32,

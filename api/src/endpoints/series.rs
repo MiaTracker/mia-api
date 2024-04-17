@@ -9,6 +9,19 @@ use views::series::{SeriesDetails, SeriesMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
+#[utoipa::path(
+    post,
+    path = "/series",
+    params(MediaCreateParams),
+    responses(
+        (status = 200, description = "Series already exists", body = i32),
+        (status = 201, description = "Series created", body = i32),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaCreateParams>) -> impl IntoResponse {
     let result = services::series::create(params.tmdb_id, &user, &state.conn).await;
     result.map_to_status_and_result(|&res| {
@@ -17,6 +30,19 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
     })
 }
 
+#[utoipa::path(
+    post,
+    path = "/series/source_create",
+    request_body = MediaSourceCreate,
+    responses(
+        (status = 200, description = "Series already exists", body = i32),
+        (status = 201, description = "Series created", body = i32),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                              Json(json): Json<MediaSourceCreate>) -> impl IntoResponse {
     let result = services::media::create_w_source(json, MediaType::Series, &user, &state.conn).await;
@@ -26,23 +52,73 @@ pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/series",
+    params(PageReq),
+    responses(
+        (status = 200, description = "All series indexes", body = [MediaIndex]),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<PageReq>) -> impl IntoResponse {
     let result = services::series::index(params, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 
 }
 
+#[utoipa::path(
+    get,
+    path = "/series/search",
+    params(SearchParams),
+    request_body = SearchQuery,
+    responses(
+        (status = 200, description = "Series indexes matching the search criteria", body = SearchResults),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                     Query(params): Query<SearchParams>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
     let result = services::media::search(search, params.committed, params.into(), MaybeRouteType::Series.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    get,
+    path = "/series/genres",
+    responses(
+        (status = 200, description = "All genres of user's series", body = [String]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn genres(state: State<AppState>, Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
     let result = services::genres::index(Some(MediaType::Series), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    get,
+    path = "/series/{series_id}",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "Series details", body = SeriesDetails),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
     let result = services::series::details(series_id, &user, &state.conn).await;
     result.map_to_response(|series: &Option<SeriesDetails>| {
@@ -53,37 +129,140 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/series/{series_id}/metadata",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "Series metadata", body = SeriesMetadata),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn metadata(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
     let result = services::series::metadata(series_id, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    get,
+    path = "/series/{series_id}/on_watchlist",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "Weather the series is currently on watchlist", body = bool),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn on_watchlist(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
     let result = services::media::on_watchlist(series_id, MediaType::Series, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    patch,
+    path = "/series/{series_id}/metadata",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    request_body = SeriesMetadata,
+    responses(
+        (status = 200, description = "Series metadata updated"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>, Json(metadata): Json<SeriesMetadata>) -> impl IntoResponse {
     let result = services::series::update(series_id, metadata, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    patch,
+    path = "/series/{series_id}/images",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "All images of the series", body = Images),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn images(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
     let result = services::media::images(series_id, MediaType::Series, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    patch,
+    path = "/series/{series_id}/images",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    request_body = ImagesUpdate,
+    responses(
+        (status = 200, description = "Default series images changed"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn update_images(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                            Path(series_id): Path<i32>, Json(json): Json<ImagesUpdate>) -> impl IntoResponse {
     let result = services::media::update_images(series_id, MediaType::Series, json, &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    delete,
+    path = "/series/{series_id}",
+    params(MediaDeletePathParams),
+    responses(
+        (status = 200, description = "Series deleted"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(path): Path<MediaDeletePathParams>) -> impl IntoResponse {
     let result = services::media::delete(path.media_id, RouteType::Series.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
+#[utoipa::path(
+    post,
+    path = "/series/source_delete",
+    request_body = MediaSourceDelete,
+    responses(
+        (status = 200, description = "Series deleted"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
 pub async fn delete_w_source(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                              Json(json): Json<MediaSourceDelete>) -> impl IntoResponse {
     let result = services::media::delete_w_source(json.tmdb_id, json.source, MediaType::Series, &user, &state.conn).await;

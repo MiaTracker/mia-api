@@ -1,6 +1,7 @@
 use serde::Deserialize;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PasswordChange {
     pub old_password: String,
     pub new_password: String,

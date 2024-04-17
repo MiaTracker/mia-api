@@ -1,7 +1,8 @@
 use serde::Deserialize;
+use utoipa::{IntoParams, ToSchema};
 use crate::api::RouteType;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 pub struct SourceDeleteParams {
     pub route_type: RouteType,
     pub media_id: i32,

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Source {
     pub id: i32,
     pub name: String,
@@ -8,7 +9,7 @@ pub struct Source {
     pub r#type: SourceType
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub enum SourceType {
     #[serde(rename = "torrent")]
     Torrent,

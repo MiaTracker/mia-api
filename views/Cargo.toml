@@ -13,3 +13,4 @@ http = "1.0.0"
 uuid = { version = "1.6.1", features = ["v4"] }
 axum-core = "0.4.2"
 sea-orm = "0.12.12"
+utoipa = "4.2.0"

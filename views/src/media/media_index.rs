@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use crate::media::MediaType;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 pub struct PageReq {
     #[serde(default)]
     pub offset: Option<u64>,
@@ -9,7 +10,7 @@ pub struct PageReq {
     pub limit: Option<u64>
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct MediaIndex {
     pub id: i32,
     pub r#type: MediaType,

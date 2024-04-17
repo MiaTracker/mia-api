@@ -1,7 +1,6 @@
-use axum::http::StatusCode;
 use axum::Router;
 use axum::routing::{delete, get, patch, post};
-use crate::endpoints::{app_tokens, configuration, genres, languages, logs, logset, masterdata, media, movies, series, sources, statistics, tags, titles, users, watchlist};
+use crate::endpoints::{app_tokens, configuration, genres, languages, logs, logset, masterdata, media, movies, ping, series, sources, statistics, tags, titles, users, watchlist};
 use crate::infrastructure::AppState;
 
 
@@ -74,7 +73,7 @@ pub fn build() -> Router<AppState>
 
 pub fn build_anonymous() -> Router<AppState> {
     Router::new()
-        .route("/ping", get(StatusCode::OK))
+        .route("/ping", get(ping::ping))
         .route("/users/login", post(users::login))
 }
 

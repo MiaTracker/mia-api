@@ -4,14 +4,18 @@ mod config;
 mod endpoints;
 mod infrastructure;
 mod middleware;
+mod openapi;
 
-use std::env;
+use std::{env, fs};
 use std::net::SocketAddr;
 use sea_orm::Database;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use crate::config::routes;
 use crate::infrastructure::AppState;
+use crate::openapi::ApiDoc;
 
 pub async fn launch() {
     tracing_subscriber::fmt::init();
@@ -39,7 +43,8 @@ pub async fn launch() {
         .merge(routes::build_bot().layer(auth_serv))
         .merge(routes::build().layer(user_serv))
         .merge(routes::build_anonymous())
-        .layer(cors_serv).with_state(state);
+        .layer(cors_serv).with_state(state)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
     if let Ok(listener) = TcpListener::bind(&addr).await {

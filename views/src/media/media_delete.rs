@@ -1,6 +1,7 @@
 use serde::Deserialize;
+use utoipa::IntoParams;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 pub struct MediaDeletePathParams {
     #[serde(alias = "movie_id")]
     #[serde(alias = "series_id")]

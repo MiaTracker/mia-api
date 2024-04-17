@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct ImagesConfiguration {
     pub base_url: String,
     pub secure_base_url: String,
