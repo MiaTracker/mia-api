@@ -6,7 +6,7 @@ mod infrastructure;
 mod middleware;
 mod openapi;
 
-use std::{env, fs};
+use std::env;
 use std::net::SocketAddr;
 use sea_orm::Database;
 use tokio::net::TcpListener;

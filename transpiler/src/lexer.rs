@@ -86,7 +86,7 @@ impl Lexer<'_> {
     }
 
     fn at_end(&self) -> bool {
-        self.current >= self.source.len()
+        self.current >= self.source.chars().count()
     }
 
     fn advance(&mut self) -> char {
@@ -109,7 +109,7 @@ impl Lexer<'_> {
     }
 
     fn peek_next(&self) -> char {
-        if self.current + 2 > self.source.len() { return '\0'; }
+        if self.current + 2 > self.source.chars().count() { return '\0'; }
         self.source.chars().nth(self.current + 1).unwrap()
     }
 
@@ -125,7 +125,7 @@ impl Lexer<'_> {
 
         self.advance();
 
-        let str = self.source[self.start + 1..self.current - 1].to_string();
+        let str = self.source.chars().skip(self.start + 1).take((self.current - 1) - (self.start + 1)).collect();
         self.add_token(TokenType::String(str))
     }
 
@@ -142,7 +142,7 @@ impl Lexer<'_> {
             float = true;
         }
 
-        let str = &self.source[self.start..self.current];
+        let str: String = self.source.chars().skip(self.start).take(self.current - self.start).collect();
         if float {
             let res = str.parse::<f32>();
             if let Ok(f) = res {
@@ -165,9 +165,9 @@ impl Lexer<'_> {
             self.advance();
         }
 
-        let text = &self.source[self.start..self.current];
+        let text: String = self.source.chars().skip(self.start).take(self.current - self.start).collect();
 
-        let typ = match text {
+        let typ = match text.as_str() {
             "and" => TokenType::And,
             "false" => TokenType::False,
             "null" => TokenType::Null,
@@ -180,8 +180,8 @@ impl Lexer<'_> {
     }
 
     fn add_token(&mut self, typ: TokenType) {
-        let str: &str = &self.source[self.start..self.current];
-        self.tokens.push(Token { typ, lexeme: str.to_string() })
+        let str: String = self.source.chars().skip(self.start).take(self.current - self.start).collect();
+        self.tokens.push(Token { typ, lexeme: str })
     }
 
     fn error(&mut self, message: &str) {
