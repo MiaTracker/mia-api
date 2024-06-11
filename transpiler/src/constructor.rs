@@ -374,6 +374,7 @@ fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<S
         "year" => { year_target(op, literal) }
         "on_watchlist" => { on_watchlist_target(op, literal) }
         "rated" => { rated_target(op, literal) }
+        "tmdb_rating" => { tmdb_rating_target(op, literal) }
         _ => { return Err(ConstructionError::from(format!("Unknown target '{}'", target))) }
     }
 }
@@ -677,6 +678,24 @@ fn rated_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatem
     }
 }
 
+fn tmdb_rating_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    Ok(
+        Query::select()
+            .columns([media::Column::Id])
+            .from(media::Entity)
+            .and_where(Expr::col((media::Entity, media::Column::TmdbVoteAverage)).binary(operator(op), literal.to_value::<f32>()?))
+            .to_owned()
+    )
+}
+
+fn tmdb_rating_sort_target() -> SelectStatement {
+    Query::select()
+        .expr(Expr::col((Alias::new("ord_media"), media::Column::TmdbVoteAverage)).if_null(-1))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .to_owned()
+}
+
 fn operator(operator: ComparisonOperator) -> BinOper {
     match operator {
         ComparisonOperator::Equal => { BinOper::Equal }
@@ -698,6 +717,7 @@ fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
             "has_source" => { has_source_sort_target() },
             "number_of_sources" => { number_of_sources_sort_target() },
             "year" => { year_sort_target() },
+            "tmdb_rating" => { tmdb_rating_sort_target() },
             _ => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", target))) }
         }.into_sub_query_statement()
     )))
