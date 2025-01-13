@@ -68,6 +68,7 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
         crate::endpoints::watchlist::search,
         crate::endpoints::watchlist::remove,
         crate::endpoints::ping::ping,
+        crate::endpoints::masterdata::refresh,
     ),
     components(
         schemas(
