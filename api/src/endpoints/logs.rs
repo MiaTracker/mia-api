@@ -44,7 +44,7 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
 }
 
 #[utoipa::path(
-    post,
+    patch,
     path = "/{route_type}/{media_id}/logs/{log_id}",
     params(LogUpdateParams),
     responses(

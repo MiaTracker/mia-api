@@ -8,6 +8,9 @@ use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::logs::update_media_rating;
 
 pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    
+    //TODO: validate source.name is not blank
+
     let media = media::Entity::find_by_id(media_id).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
         .filter(media::Column::UserId.eq(user.id)).one(db).await?;
 
