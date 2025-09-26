@@ -1,13 +1,13 @@
-use axum::{Extension, Json};
+use crate::infrastructure::{AppState, IntoApiResponse};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum::{Extension, Json};
 use views::api::{MaybeRouteType, RouteType};
-use views::images::ImagesUpdate;
-use views::media::{MediaCreateParams, MediaDeletePathParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams, PageReq};
+use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate};
+use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSourceCreate, MediaSourceDelete, MediaType, PageReq, SearchParams, SearchQuery};
 use views::movies::{MovieDetails, MovieMetadata};
 use views::users::CurrentUser;
-use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     post,
@@ -191,7 +191,91 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
 }
 
 #[utoipa::path(
+    get,
+    path = "/movies/{movie_id}/backdrops",
+    params(
+        ("movie_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "All backdrops of the movie", body = Images),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The movie was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn backdrops(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
+    let result = services::media::backdrops(movie_id, MediaType::Movie, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
     patch,
+    path = "/movies/{movie_id}/backdrops/default",
+    params(
+        ("movie_id" = i32, Path, )
+    ),
+    request_body = ImagesUpdate,
+    responses(
+        (status = 200, description = "Default movie backdrop changed"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The movie was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                           Path(movie_id): Path<i32>, Json(json): Json<BackdropUpdate>) -> impl IntoResponse {
+    let result = services::media::update_backdrop(movie_id, MediaType::Movie, json, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
+    path = "/movies/{movie_id}/posters",
+    params(
+        ("movie_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "All posters of the movie", body = Images),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The movie was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(movie_id): Path<i32>) -> impl IntoResponse {
+    let result = services::media::posters(movie_id, MediaType::Movie, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    patch,
+    path = "/movies/{movie_id}/posters/default",
+    params(
+        ("movie_id" = i32, Path, )
+    ),
+    request_body = ImagesUpdate,
+    responses(
+        (status = 200, description = "Default movie poster changed"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The movie was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn update_poster(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                              Path(movie_id): Path<i32>, Json(json): Json<PosterUpdate>) -> impl IntoResponse {
+    let result = services::media::update_poster(movie_id, MediaType::Movie, json, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
     path = "/movies/{movie_id}/images",
     params(
         ("movie_id" = i32, Path, )

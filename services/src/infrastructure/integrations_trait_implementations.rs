@@ -3,12 +3,13 @@ use std::env;
 use chrono::NaiveDate;
 use sea_orm::{NotSet, Set};
 
-use entities::{genres, languages, media, movies, seasons, series};
 use entities::sea_orm_active_enums::MediaType;
-use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeriesDetails};
+use entities::{genres, languages, media, movies, seasons, series};
+use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeriesDetails, TmdbImage};
+use views::images::Image;
 use views::media::ExternalIndex;
 
-use crate::infrastructure::traits::{IntoActiveModel, IntoView};
+use crate::infrastructure::traits::{IntoActiveModel, IntoImage, IntoView};
 
 impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
     fn into_active_model(self) -> media::ActiveModel {
@@ -248,6 +249,18 @@ impl IntoView<ExternalIndex> for &SeriesDetails {
             r#type: views::media::MediaType::Series,
             poster_path: self.poster_path.clone(),
             title: self.name.clone(),
+        }
+    }
+}
+
+impl IntoImage for &TmdbImage {
+    fn into_image(self, default_path: &Option<String>, languages: &Vec<languages::Model>) -> Image {
+        Image {
+            language: self.iso_639_1.as_ref().map(|z| languages.iter().find(|y| y.iso6391.as_str() == z).map(|l| l.english_name.clone())).flatten(),
+            width: self.width,
+            height: self.height,
+            current: default_path.as_ref().is_some_and(|p| p == self.file_path.as_str()),
+            file_path: self.file_path.clone(),
         }
     }
 }

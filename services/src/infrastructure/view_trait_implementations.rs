@@ -1,13 +1,15 @@
+use std::cmp::Ordering;
 use cruet::Inflector;
 use sea_orm::ActiveValue::Set;
 use sea_orm::NotSet;
 use entities::{logs, media, movies, series, users};
 use entities::sea_orm_active_enums::MediaType::{Movie, Series};
+use views::images::Image;
 use views::logs::LogCreate;
 use views::movies::MovieMetadata;
 use views::series::SeriesMetadata;
 use views::users::UserRegistration;
-use crate::infrastructure::traits::IntoActiveModel;
+use crate::infrastructure::traits::{IntoActiveModel, SortCompare};
 
 impl IntoActiveModel<users::ActiveModel> for &UserRegistration {
     fn into_active_model(self) -> users::ActiveModel {
@@ -98,6 +100,17 @@ impl IntoActiveModel<series::ActiveModel> for &SeriesMetadata {
             number_of_seasons: sea_orm::Set(self.number_of_seasons),
             status: sea_orm::Set(self.status.clone().map(|s| { s.to_title_case() })),
             r#type: sea_orm::Set(self.r#type.clone().map(|t| { t.to_title_case() })),
+        }
+    }
+}
+
+impl SortCompare for Image {
+    fn sort_compare(&self, other: &Self) -> Ordering {
+        if self.current != other.current {
+            if self.current { Ordering::Greater }
+            else { Ordering::Less }
+        } else {
+            (self.width * self.height).cmp(&(other.width * other.height))
         }
     }
 }

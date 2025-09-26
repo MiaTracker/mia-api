@@ -3,7 +3,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
-use views::images::ImagesUpdate;
+use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate};
 use views::media::{MediaCreateParams, MediaDeletePathParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams, PageReq};
 use views::series::{SeriesDetails, SeriesMetadata};
 use views::users::CurrentUser;
@@ -191,7 +191,91 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
 }
 
 #[utoipa::path(
+    get,
+    path = "/series/{series_id}/backdrops",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "All backdrops of the series", body = Images),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn backdrops(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
+    let result = services::media::backdrops(series_id, MediaType::Series, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
     patch,
+    path = "/series/{series_id}/backdrops/default",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    request_body = ImagesUpdate,
+    responses(
+        (status = 200, description = "Default series backdrop changed"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                              Path(series_id): Path<i32>, Json(json): Json<BackdropUpdate>) -> impl IntoResponse {
+    let result = services::media::update_backdrop(series_id, MediaType::Series, json, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
+    path = "/series/{series_id}/posters",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "All posters of the series", body = Images),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
+    let result = services::media::posters(series_id, MediaType::Series, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    patch,
+    path = "/series/{series_id}/posters/default",
+    params(
+        ("series_id" = i32, Path, )
+    ),
+    request_body = ImagesUpdate,
+    responses(
+        (status = 200, description = "Default series poster changed"),
+        (status = 400, description = "The request is invalid", body = [Error]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn update_poster(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                            Path(series_id): Path<i32>, Json(json): Json<PosterUpdate>) -> impl IntoResponse {
+    let result = services::media::update_poster(series_id, MediaType::Series, json, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
     path = "/series/{series_id}/images",
     params(
         ("series_id" = i32, Path, )
