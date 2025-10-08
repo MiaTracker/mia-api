@@ -86,6 +86,8 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
             views::app_tokens::AppTokenGenerate,
             views::app_tokens::AppTokenIndex,
             views::configuration::ImagesConfiguration,
+            views::configuration::ImageSize,
+            views::configuration::ImageSizeDimension,
             views::genres::GenreCreate,
             views::languages::LanguageIndex,
             views::logs::LogCreate,
