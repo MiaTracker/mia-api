@@ -1,7 +1,8 @@
 use std::fmt;
 use std::fmt::Formatter;
-
+use axum_core::body::Body;
 use axum_core::response::{IntoResponse, Response};
+use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -40,6 +41,10 @@ impl IntoResponse for ApiErr {
             Ok(str) => { str }
             Err(err) => { format!("Error serializing ApiErr: {}", err.to_string()) }
         };
-        (self.status, json).into_response()
+        Response::builder()
+            .status(self.status)
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::new(json))
+            .expect("Failed to construct a response")
     }
 }
