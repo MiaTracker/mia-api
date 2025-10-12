@@ -136,6 +136,8 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
             views::users::UserRegistration,
             views::users::UserToken,
             views::watchlist::WatchlistParams,
+            views::ping::PingResponse,
+            views::ping::PingStatus,
         )
     ),
     info(

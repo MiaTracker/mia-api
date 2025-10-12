@@ -1,6 +1,8 @@
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::Json;
 use axum::response::IntoResponse;
+use views::ping::{PingResponse, PingStatus};
 
 use crate::infrastructure::AppState;
 
@@ -12,5 +14,12 @@ use crate::infrastructure::AppState;
     )
 )]
 pub async fn ping(_state: State<AppState>) -> impl IntoResponse {
-    StatusCode::OK.into_response()
+    (
+        StatusCode::OK,
+        Json(
+            PingResponse {
+                status: PingStatus::Up
+            }
+        )
+    ).into_response()
 }
