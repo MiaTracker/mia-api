@@ -9,6 +9,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
+    operation_id = "tags::create",
     path = "/{route_type}/{media_id}/tags",
     params(TagCreateParams),
     request_body = TagCreate,
@@ -32,6 +33,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     delete,
+    operation_id = "tags::delete",
     path = "/{route_type}/{media_id}/tags/{tag_id}",
     params(TagDeleteParams),
     responses(

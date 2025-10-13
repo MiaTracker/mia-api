@@ -1,11 +1,20 @@
+use entities::prelude::{MediaLocks, SeriesLocks};
+use entities::prelude::Watchlist;
+use entities::prelude::Logs;
+use entities::prelude::Sources;
+use entities::prelude::Titles;
+use entities::prelude::Languages;
+use entities::prelude::Media;
+use entities::prelude::Series;
+use entities::prelude::Genres;
+use entities::prelude::Tags;
 use std::env;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder, QuerySelect};
-use entities::{functions, genres, media, media_genres, seasons, series, titles};
+use entities::{functions, genres, media, media_genres, seasons, series, series_locks, titles};
 use integrations::tmdb::views::{Season, SeriesTitle};
 use views::users::CurrentUser;
 use crate::infrastructure::{constants, RuleViolation, SrvErr};
-use entities::prelude::{Genres, Languages, Logs, Media, Series, Sources, Tags, Titles, Watchlist};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::languages::Language;
@@ -15,7 +24,9 @@ use views::series::SeriesMetadata;
 use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
+use entities::traits::locks::{SetLock, ToLocks};
 use crate::infrastructure::traits::IntoActiveModel;
+use crate::media::{fetch_media, try_set_media_lock};
 use crate::services;
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
@@ -170,6 +181,11 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
 
     let on_watchlist = db_media.find_related(Watchlist).count(db).await? != 0;
 
+    let media_locks = db_media.find_related(MediaLocks).one(db).await?;
+    let series_locks = db_series.find_related(SeriesLocks).one(db).await?;
+    let mut locks = media_locks.to_locks();
+    locks.append(&mut series_locks.to_locks());
+
     let series = views::series::SeriesDetails {
         id: db_media.id,
         poster_path: db_media.poster_path,
@@ -190,6 +206,7 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
         tags,
         sources,
         logs,
+        locks
     };
 
     Ok(Some(series))
@@ -280,5 +297,44 @@ pub async fn update(series_id: i32, metadata: SeriesMetadata, user: &CurrentUser
     }
 
     tran.commit().await?;
+    Ok(())
+}
+
+pub async fn lock(series_id: i32, property: String, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    set_lock(series_id, property, true, user, db).await
+}
+
+pub async fn unlock(series_id: i32, property: String, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    set_lock(series_id, property, false, user, db).await
+}
+
+async fn set_lock(series_id: i32, property: String, locked: bool, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    let media = fetch_media(series_id, views::media::MediaType::Series, user, db).await?;
+    if try_set_media_lock(media, &property, locked, db).await? {
+        return Ok(());
+    }
+
+    if !series_locks::ActiveModel::has_lock(&property) {
+        return Err(SrvErr::BadRequest("Lock or property does not exist!".to_string()));
+    }
+
+    let locks = SeriesLocks::find().filter(series_locks::Column::SeriesId.eq(series_id)).one(db).await?;
+    if let Some(locks) = locks {
+        let mut active_locks = locks.into_active_model();
+        active_locks.set_lock(&property, locked);
+        active_locks.update(db).await?;
+    }
+    else {
+        let mut active_locks = series_locks::ActiveModel {
+            series_id: Set(series_id),
+            first_air_date: Set(false),
+            number_of_episodes: Set(false),
+            number_of_seasons: Set(false),
+            status: Set(false),
+            r#type: Set(false),
+        };
+        active_locks.set_lock(&property, locked);
+        active_locks.insert(db).await?;
+    }
     Ok(())
 }

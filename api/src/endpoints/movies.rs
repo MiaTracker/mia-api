@@ -5,13 +5,14 @@ use axum::response::IntoResponse;
 use axum::{Extension, Json};
 use views::api::{MaybeRouteType, RouteType};
 use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate, Images};
-use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSourceCreate, MediaSourceDelete, MediaType, PageReq, SearchParams, SearchQuery, MediaIndex, SearchResults};
+use views::media::{MediaCreateParams, MovieDeletePathParams, MediaSourceCreate, MediaSourceDelete, MediaType, PageReq, SearchParams, SearchQuery, MediaIndex, SearchResults};
 use views::movies::{MovieDetails, MovieMetadata};
 use views::users::CurrentUser;
 use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
+    operation_id = "movies::create",
     path = "/movies",
     params(MediaCreateParams),
     responses(
@@ -33,6 +34,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     post,
+    operation_id = "movies::create_w_source",
     path = "/movies/source_create",
     request_body = MediaSourceCreate,
     responses(
@@ -55,6 +57,7 @@ pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<
 
 #[utoipa::path(
     get,
+    operation_id = "movies::index",
     path = "/movies",
     params(PageReq),
     responses(
@@ -72,6 +75,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 
 #[utoipa::path(
     get,
+    operation_id = "movies::search",
     path = "/movies/search",
     params(SearchParams),
     request_body = SearchQuery,
@@ -91,6 +95,7 @@ pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "movies::genres",
     path = "/movies/genres",
     responses(
         (status = 200, description = "All genres of user's movies", body = [String]),
@@ -106,6 +111,7 @@ pub async fn genres(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "movies::details",
     path = "/movies/{movie_id}",
     params(
         ("movie_id" = i32, Path, )
@@ -131,6 +137,7 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
 
 #[utoipa::path(
     get,
+    operation_id = "movies::metadata",
     path = "/movies/{movie_id}/metadata",
     params(
         ("movie_id" = i32, Path, )
@@ -151,6 +158,7 @@ pub async fn metadata(state: State<AppState>, Extension(user): Extension<Current
 
 #[utoipa::path(
     get,
+    operation_id = "movies::on_watchlist",
     path = "/movies/{movie_id}/on_watchlist",
     params(
         ("movie_id" = i32, Path, )
@@ -171,6 +179,7 @@ pub async fn on_watchlist(state: State<AppState>, Extension(user): Extension<Cur
 
 #[utoipa::path(
     patch,
+    operation_id = "movies::update",
     path = "/movies/{movie_id}/metadata",
     params(
         ("movie_id" = i32, Path, )
@@ -193,6 +202,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "movies::backdrops",
     path = "/movies/{movie_id}/backdrops",
     params(
         ("movie_id" = i32, Path, )
@@ -213,6 +223,7 @@ pub async fn backdrops(state: State<AppState>, Extension(user): Extension<Curren
 
 #[utoipa::path(
     patch,
+    operation_id = "movies::update_backdrop",
     path = "/movies/{movie_id}/backdrops/default",
     params(
         ("movie_id" = i32, Path, )
@@ -235,6 +246,7 @@ pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<
 
 #[utoipa::path(
     get,
+    operation_id = "movies::posters",
     path = "/movies/{movie_id}/posters",
     params(
         ("movie_id" = i32, Path, )
@@ -255,6 +267,7 @@ pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentU
 
 #[utoipa::path(
     patch,
+    operation_id = "movies::update_poster",
     path = "/movies/{movie_id}/posters/default",
     params(
         ("movie_id" = i32, Path, )
@@ -277,6 +290,7 @@ pub async fn update_poster(state: State<AppState>, Extension(user): Extension<Cu
 
 #[utoipa::path(
     get,
+    operation_id = "movies::images",
     path = "/movies/{movie_id}/images",
     params(
         ("movie_id" = i32, Path, )
@@ -297,6 +311,7 @@ pub async fn images(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     patch,
+    operation_id = "movies::update_images",
     path = "/movies/{movie_id}/images",
     params(
         ("movie_id" = i32, Path, )
@@ -318,9 +333,56 @@ pub async fn update_images(state: State<AppState>, Extension(user): Extension<Cu
 }
 
 #[utoipa::path(
+    post,
+    operation_id = "movies::lock_property",
+    path = "/movies/{movie_id}/{property}/lock",
+    params(
+        ("movie_id" = i32, Path, ),
+        ("property" = &str, Path, )
+    ),
+    responses(
+        (status = 200, description = "Property was locked"),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The movie was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn lock_property(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                           Path((movie_id, property)): Path<(i32, String)>) -> impl IntoResponse {
+    let result = services::movies::lock(movie_id, property, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    post,
+    operation_id = "movies::unlock_property",
+    path = "/movies/{movie_id}/{property}/unlock",
+    params(
+        ("movie_id" = i32, Path, ),
+        ("property" = &str, Path, )
+    ),
+    responses(
+        (status = 200, description = "Property was unlocked"),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The movie was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn unlock_property(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                             Path((movie_id, property)): Path<(i32, String)>) -> impl IntoResponse {
+    let result = services::movies::unlock(movie_id, property, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
     delete,
+    operation_id = "movies::delete",
     path = "/movies/{movie_id}",
-    params(MediaDeletePathParams),
+    params(MovieDeletePathParams),
     responses(
         (status = 200, description = "Movie deleted"),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
@@ -330,13 +392,14 @@ pub async fn update_images(state: State<AppState>, Extension(user): Extension<Cu
     ),
     security(("api_key" = []))
 )]
-pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(path): Path<MediaDeletePathParams>) -> impl IntoResponse {
-    let result = services::media::delete(path.media_id, RouteType::Movies.into(), &user, &state.conn).await;
+pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(path): Path<MovieDeletePathParams>) -> impl IntoResponse {
+    let result = services::media::delete(path.movie_id, RouteType::Movies.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
 #[utoipa::path(
     post,
+    operation_id = "movies::delete_w_source",
     path = "/movies/source_delete",
     request_body = MediaSourceDelete,
     responses(

@@ -9,6 +9,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     post,
+    operation_id = "app_tokens::generate",
     path = "/app_tokens",
     request_body = AppTokenGenerate,
     responses(
@@ -26,6 +27,7 @@ pub async fn generate(state: State<AppState>, Extension(user): Extension<Current
 
 #[utoipa::path(
     get,
+    operation_id = "app_tokens::index",
     path = "/app_tokens",
     responses(
         (status = 200, description = "All tokens of the user", body = [Vec<AppTokenIndex>]),
@@ -42,6 +44,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 
 #[utoipa::path(
     delete,
+    operation_id = "app_tokens::revoke",
     path = "/app_tokens/{name}",
     params(AppTokenRevokeParams),
     responses(

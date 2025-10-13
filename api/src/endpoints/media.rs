@@ -10,6 +10,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     get,
+    operation_id = "media::index",
     path = "/media",
     params(PageReq),
     responses(
@@ -27,6 +28,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 
 #[utoipa::path(
     get,
+    operation_id = "media::search",
     path = "/media/search",
     params(SearchParams),
     request_body = SearchQuery,

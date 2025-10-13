@@ -9,6 +9,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
+    operation_id = "titles::create",
     path = "/{route_type}/{media_id}/titles",
     params(TitleCreateParams),
     request_body = TitleCreate,
@@ -31,6 +32,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     post,
+    operation_id = "titles::set_primary",
     path = "/{route_type}/{media_id}/titles/{title_id}/primary",
     params(TitleSetPrimaryParams),
     responses(
@@ -50,6 +52,7 @@ pub async fn set_primary(state: State<AppState>, Extension(user): Extension<Curr
 
 #[utoipa::path(
     delete,
+    operation_id = "titles::delete",
     path = "/{route_type}/{media_id}/titles/{title_id}",
     params(TitleDeleteParams),
     responses(

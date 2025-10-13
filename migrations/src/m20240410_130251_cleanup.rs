@@ -55,7 +55,7 @@ impl MigrationTrait for Migration {
             .col(ColumnDef::new(People::TMDBId).integer().unique_key().not_null())
             .col(ColumnDef::new(People::IMDBId).string())
             .col(ColumnDef::new(People::Name).string().not_null())
-            .col(ColumnDef::new(People::AlsoKnownAs).array(ColumnType::String(None).to_owned()))
+            .col(ColumnDef::new(People::AlsoKnownAs).array(ColumnType::String(StringLen::None).to_owned()))
             .col(ColumnDef::new(People::Biography).string())
             .col(ColumnDef::new(People::BirthDay).date())
             .col(ColumnDef::new(People::DeathDay).date())

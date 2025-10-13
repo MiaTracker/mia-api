@@ -9,6 +9,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
+    operation_id = "logs::create",
     path = "/{route_type}/{media_id}/logs",
     params(LogCreateParams),
     request_body = LogCreate,
@@ -28,6 +29,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "logs::details",
     path = "/{route_type}/{media_id}/logs/{log_id}",
     params(LogDetailsParams),
     responses(
@@ -46,6 +48,7 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
 
 #[utoipa::path(
     patch,
+    operation_id = "logs::update",
     path = "/{route_type}/{media_id}/logs/{log_id}",
     params(LogUpdateParams),
     responses(
@@ -66,6 +69,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     delete,
+    operation_id = "logs::delete",
     path = "/{route_type}/{media_id}/logs/{log_id}",
     params(LogDeleteParams),
     responses(

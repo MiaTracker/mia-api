@@ -7,6 +7,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     get,
+    operation_id = "languages::index",
     path = "/languages",
     responses(
         (status = 200, description = "All valid languages", body = [LanguageIndex]),

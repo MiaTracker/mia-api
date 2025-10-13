@@ -9,6 +9,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
+    operation_id = "sources::create",
     path = "/{route_type}/{media_id}/sources",
     params(SourceCreateParams),
     request_body = SourceCreate,
@@ -28,6 +29,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "sources::index",
     path = "/{route_type}/{media_id}/sources",
     params(SourceIndexParams),
     responses(
@@ -46,6 +48,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 
 #[utoipa::path(
     get,
+    operation_id = "sources::details",
     path = "/{route_type}/{media_id}/sources/{source_id}",
     params(SourceDetailsParams),
     responses(
@@ -64,6 +67,7 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
 
 #[utoipa::path(
     patch,
+    operation_id = "sources::update",
     path = "/{route_type}/{media_id}/sources/{source_id}",
     params(SourceUpdateParams),
     request_body = SourceUpdate,
@@ -83,6 +87,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     delete,
+    operation_id = "sources::delete",
     path = "/{route_type}/{media_id}/sources/{source_id}",
     params(SourceDeleteParams),
     responses(

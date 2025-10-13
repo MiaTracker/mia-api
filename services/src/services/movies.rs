@@ -1,10 +1,9 @@
 use std::env;
-
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 
-use entities::{functions, genres, media, media_genres, movies, titles};
-use entities::prelude::{Genres, Languages, Logs, Media, Movies, Sources, Tags, Titles, Watchlist};
+use entities::{functions, genres, media, media_genres, movie_locks, movies, titles};
+use entities::prelude::{Genres, Languages, Logs, Media, MediaLocks, MovieLocks, Movies, Sources, Tags, Titles, Watchlist};
 use entities::sea_orm_active_enums::MediaType;
 use integrations::tmdb;
 use views::genres::Genre;
@@ -20,6 +19,8 @@ use views::users::CurrentUser;
 use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
 use crate::services;
+use entities::traits::locks::{SetLock, ToLocks};
+use crate::media::{fetch_media, try_set_media_lock};
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
@@ -155,6 +156,11 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
 
     let on_watchlist = db_media.find_related(Watchlist).count(db).await? != 0;
 
+    let media_locks = db_media.find_related(MediaLocks).one(db).await?;
+    let movie_locks = db_movie.find_related(MovieLocks).one(db).await?;
+    let mut locks = media_locks.to_locks();
+    locks.append(&mut movie_locks.to_locks());
+
     let movie = MovieDetails {
         id: movie_id,
         poster_path: db_media.poster_path,
@@ -173,6 +179,7 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
         tags,
         sources,
         logs,
+        locks
     };
 
     Ok(Some(movie))
@@ -269,5 +276,42 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
     }
 
     tran.commit().await?;
+    Ok(())
+}
+
+pub async fn lock(movie_id: i32, property: String, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    set_lock(movie_id, property, true, user, db).await
+}
+
+pub async fn unlock(movie_id: i32, property: String, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    set_lock(movie_id, property, false, user, db).await
+}
+
+async fn set_lock(movie_id: i32, property: String, locked: bool, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+    let media = fetch_media(movie_id, views::media::MediaType::Movie, user, db).await?;
+    if try_set_media_lock(media, &property, locked, db).await? {
+        return Ok(());
+    }
+
+    if !movie_locks::ActiveModel::has_lock(&property) {
+        return Err(SrvErr::BadRequest("Lock or property does not exist!".to_string()));
+    }
+
+    let locks = MovieLocks::find().filter(movie_locks::Column::MovieId.eq(movie_id)).one(db).await?;
+    if let Some(locks) = locks {
+        let mut active_locks = locks.into_active_model();
+        active_locks.set_lock(&property, locked);
+        active_locks.update(db).await?;
+    }
+    else {
+        let mut active_locks = movie_locks::ActiveModel {
+            movie_id: Set(movie_id),
+            release_date: Set(false),
+            runtime: Set(false),
+            status: Set(false),
+        };
+        active_locks.set_lock(&property, locked);
+        active_locks.insert(db).await?;
+    }
     Ok(())
 }

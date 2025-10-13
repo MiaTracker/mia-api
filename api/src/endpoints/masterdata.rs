@@ -6,6 +6,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     post,
+    operation_id = "masterdata::refresh",
     path = "/masterdata/refresh",
     responses(
         (status = 200, description = "Masterdata refreshed"),

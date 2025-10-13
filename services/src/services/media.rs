@@ -8,8 +8,9 @@ use sea_orm::prelude::Expr;
 use sea_orm::QueryFilter;
 use sea_orm::sea_query::Query;
 
-use entities::{functions, genres, languages, media, media_genres, media_tags, sea_orm_active_enums, tags, titles, watchlist};
-use entities::prelude::{Genres, Languages, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
+use entities::{functions, genres, languages, media, media_genres, media_locks, media_tags, sea_orm_active_enums, tags, titles, watchlist};
+use entities::prelude::{Genres, Languages, Media, MediaGenres, MediaLocks, MediaTags, Sources, Tags, Titles};
+use entities::traits::locks::SetLock;
 use integrations::tmdb;
 use integrations::tmdb::views::MultiResult;
 use views::images::{BackdropUpdate, Image, Images, ImagesUpdate, PosterUpdate};
@@ -381,7 +382,35 @@ pub(crate) fn build_media_index(m: (media::Model, Option<titles::Model>)) -> Med
     }
 }
 
-async fn fetch_media(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<media::Model, SrvErr> {
+pub(crate) async fn try_set_media_lock(media: media::Model, property: &str, locked: bool, db: &DbConn) -> Result<bool, SrvErr> {
+    if !media_locks::ActiveModel::has_lock(property) {
+        return Ok(false);
+    }
+
+    let locks = media.find_related(MediaLocks).one(db).await?;
+    if let Some(locks) = locks {
+        let mut active_locks = locks.into_active_model();
+        active_locks.set_lock(property, locked);
+        active_locks.update(db).await?;
+    }
+    else {
+        let mut active_locks = media_locks::ActiveModel {
+            media_id: Set(media.id),
+            backdrop_path: Set(false),
+            homepage: Set(false),
+            imdb_id: Set(false),
+            overview: Set(false),
+            poster_path: Set(false),
+            tmdb_vote_average: Set(false),
+            original_language: Set(false),
+        };
+        active_locks.set_lock(property, locked);
+        active_locks.insert(db).await?;
+    }
+    Ok(true)
+}
+
+pub(crate) async fn fetch_media(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<media::Model, SrvErr> {
     let media = Media::find().filter(media::Column::Id.eq(media_id))
         .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
 

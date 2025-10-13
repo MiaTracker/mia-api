@@ -26,5 +26,6 @@ pub struct MovieDetails {
     pub genres: Vec<Genre>,
     pub tags: Vec<Tag>,
     pub sources: Vec<Source>,
-    pub logs: Vec<Log>
+    pub logs: Vec<Log>,
+    pub locks: Vec<&'static str>
 }

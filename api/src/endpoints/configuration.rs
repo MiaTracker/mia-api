@@ -6,6 +6,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     get,
+    operation_id = "configuration::images",
     path = "/configuration/images",
     responses(
         (status = 200, description = "Current images configuration", body = ImagesConfiguration),

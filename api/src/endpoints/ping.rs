@@ -8,6 +8,7 @@ use crate::infrastructure::AppState;
 
 #[utoipa::path(
     get,
+    operation_id = "ping::ping",
     path = "/ping",
     responses(
         (status = 200, description = "Service reachable"),

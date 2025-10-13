@@ -8,6 +8,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     post,
+    operation_id = "users::register",
     path = "/users/register",
     request_body = UserRegistration,
     responses(
@@ -25,6 +26,7 @@ pub async fn register(state: State<AppState>, Json(user): Json<UserRegistration>
 
 #[utoipa::path(
     post,
+    operation_id = "users::login",
     path = "/users/login",
     request_body = UserLogin,
     responses(
@@ -41,6 +43,7 @@ pub async fn login(state: State<AppState>, Json(user): Json<UserLogin>) -> impl 
 
 #[utoipa::path(
     get,
+    operation_id = "users::profile",
     path = "/users/profile",
     responses(
         (status = 200, description = "User profile data", body = UserProfile),
@@ -57,6 +60,7 @@ pub async fn profile(Extension(user): Extension<CurrentUser>) -> impl IntoRespon
 
 #[utoipa::path(
     get,
+    operation_id = "users::index",
     path = "/users",
     responses(
         (status = 200, description = "User profile data", body = [UserIndex]),
@@ -73,6 +77,7 @@ pub async fn index(state: State<AppState>) -> impl IntoResponse {
 
 #[utoipa::path(
     patch,
+    operation_id = "users::change_password",
     path = "/users/password",
     request_body = PasswordChange,
     responses(
@@ -91,6 +96,7 @@ pub async fn change_password(state: State<AppState>, Extension(user): Extension<
 
 #[utoipa::path(
     delete,
+    operation_id = "users::delete",
     path = "/users/{uuid}",
     params(UserDeleteParams),
     responses(

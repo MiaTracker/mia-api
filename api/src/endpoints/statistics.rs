@@ -9,6 +9,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     get,
+    operation_id = "statistics::stats",
     path = "/statistics",
     responses(
         (status = 200, description = "Statistics", body = Stats),

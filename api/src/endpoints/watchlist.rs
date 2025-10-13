@@ -12,6 +12,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     post,
+    operation_id = "watchlist::add",
     path = "/watchlist/add",
     request_body = WatchlistParams,
     responses(
@@ -35,6 +36,7 @@ pub async fn add(state: State<AppState>, Extension(user): Extension<CurrentUser>
 
 #[utoipa::path(
     get,
+    operation_id = "watchlist::index",
     path = "/watchlist",
     params(PageReq),
     responses(
@@ -52,6 +54,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 
 #[utoipa::path(
     post,
+    operation_id = "watchlist::search",
     path = "/watchlist/search",
     params(PageReq),
     request_body = SearchQuery,
@@ -70,6 +73,7 @@ pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     post,
+    operation_id = "watchlist::remove",
     path = "/watchlist/remove",
     request_body = WatchlistParams,
     responses(

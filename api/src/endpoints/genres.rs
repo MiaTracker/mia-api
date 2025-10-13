@@ -10,6 +10,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
+    operation_id = "genres::create",
     path = "/{route_type}/{media_id}/genres",
     params(GenreCreateParams),
     request_body = AppTokenGenerate,
@@ -34,6 +35,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     delete,
+    operation_id = "genres::delete",
     path = "/{route_type}/{media_id}/genres/{genre_id}",
     params(GenreDeleteParams),
     responses(
@@ -53,6 +55,7 @@ pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "genres::index",
     path = "/genres",
     responses(
         (status = 200, description = "All genres of user's media", body = [String]),

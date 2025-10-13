@@ -9,6 +9,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
     post,
+    operation_id = "logset::create",
     path = "/logset",
     request_body = LogsetCreate,
     responses(

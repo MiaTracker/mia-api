@@ -28,5 +28,6 @@ pub struct SeriesDetails {
     pub genres: Vec<Genre>,
     pub tags: Vec<Tag>,
     pub sources: Vec<Source>,
-    pub logs: Vec<Log>
+    pub logs: Vec<Log>,
+    pub locks: Vec<&'static str>
 }

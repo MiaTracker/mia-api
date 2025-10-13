@@ -18,3 +18,6 @@ pub mod tags;
 pub mod titles;
 pub mod users;
 pub mod watchlist;
+pub mod media_locks;
+pub mod movie_locks;
+pub mod series_locks;

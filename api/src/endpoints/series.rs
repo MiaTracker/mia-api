@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
 use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate, Images};
-use views::media::{MediaCreateParams, MediaDeletePathParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams, PageReq, MediaIndex, SearchResults};
+use views::media::{MediaCreateParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams, PageReq, MediaIndex, SearchResults, SeriesDeletePathParams};
 use views::series::{SeriesDetails, SeriesMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
@@ -12,6 +12,7 @@ use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
+    operation_id = "series::create",
     path = "/series",
     params(MediaCreateParams),
     responses(
@@ -33,6 +34,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     post,
+    operation_id = "series::create_w_source",
     path = "/series/source_create",
     request_body = MediaSourceCreate,
     responses(
@@ -55,6 +57,7 @@ pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<
 
 #[utoipa::path(
     get,
+    operation_id = "series::index",
     path = "/series",
     params(PageReq),
     responses(
@@ -73,6 +76,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 
 #[utoipa::path(
     get,
+    operation_id = "series::search",
     path = "/series/search",
     params(SearchParams),
     request_body = SearchQuery,
@@ -92,6 +96,7 @@ pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "series::genres",
     path = "/series/genres",
     responses(
         (status = 200, description = "All genres of user's series", body = [String]),
@@ -107,6 +112,7 @@ pub async fn genres(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "series::details",
     path = "/series/{series_id}",
     params(
         ("series_id" = i32, Path, )
@@ -132,6 +138,7 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
 
 #[utoipa::path(
     get,
+    operation_id = "series::metadata",
     path = "/series/{series_id}/metadata",
     params(
         ("series_id" = i32, Path, )
@@ -152,6 +159,7 @@ pub async fn metadata(state: State<AppState>, Extension(user): Extension<Current
 
 #[utoipa::path(
     get,
+    operation_id = "series::on_watchlist",
     path = "/series/{series_id}/on_watchlist",
     params(
         ("series_id" = i32, Path, )
@@ -172,6 +180,7 @@ pub async fn on_watchlist(state: State<AppState>, Extension(user): Extension<Cur
 
 #[utoipa::path(
     patch,
+    operation_id = "series::update",
     path = "/series/{series_id}/metadata",
     params(
         ("series_id" = i32, Path, )
@@ -193,6 +202,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     get,
+    operation_id = "series::backdrops",
     path = "/series/{series_id}/backdrops",
     params(
         ("series_id" = i32, Path, )
@@ -213,6 +223,7 @@ pub async fn backdrops(state: State<AppState>, Extension(user): Extension<Curren
 
 #[utoipa::path(
     patch,
+    operation_id = "series::update_backdrop",
     path = "/series/{series_id}/backdrops/default",
     params(
         ("series_id" = i32, Path, )
@@ -235,6 +246,7 @@ pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<
 
 #[utoipa::path(
     get,
+    operation_id = "series::posters",
     path = "/series/{series_id}/posters",
     params(
         ("series_id" = i32, Path, )
@@ -255,6 +267,7 @@ pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentU
 
 #[utoipa::path(
     patch,
+    operation_id = "series::update_poster",
     path = "/series/{series_id}/posters/default",
     params(
         ("series_id" = i32, Path, )
@@ -277,6 +290,7 @@ pub async fn update_poster(state: State<AppState>, Extension(user): Extension<Cu
 
 #[utoipa::path(
     get,
+    operation_id = "series::images",
     path = "/series/{series_id}/images",
     params(
         ("series_id" = i32, Path, )
@@ -297,6 +311,7 @@ pub async fn images(state: State<AppState>, Extension(user): Extension<CurrentUs
 
 #[utoipa::path(
     patch,
+    operation_id = "series::update_images",
     path = "/series/{series_id}/images",
     params(
         ("series_id" = i32, Path, )
@@ -318,9 +333,56 @@ pub async fn update_images(state: State<AppState>, Extension(user): Extension<Cu
 }
 
 #[utoipa::path(
+    post,
+    operation_id = "series::lock_property",
+    path = "/series/{series_id}/{property}/lock",
+    params(
+        ("series_id" = i32, Path, ),
+        ("property" = &str, Path, )
+    ),
+    responses(
+        (status = 200, description = "Property was locked"),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn lock_property(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                           Path((series_id, property)): Path<(i32, String)>) -> impl IntoResponse {
+    let result = services::series::lock(series_id, property, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
+    post,
+    operation_id = "series::unlock_property",
+    path = "/series/{series_id}/{property}/unlock",
+    params(
+        ("series_id" = i32, Path, ),
+        ("property" = &str, Path, )
+    ),
+    responses(
+        (status = 200, description = "Property was unlocked"),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The series was not found"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn unlock_property(state: State<AppState>, Extension(user): Extension<CurrentUser>,
+                             Path((series_id, property)): Path<(i32, String)>) -> impl IntoResponse {
+    let result = services::series::unlock(series_id, property, &user, &state.conn).await;
+    result.to_response(StatusCode::OK)
+}
+
+#[utoipa::path(
     delete,
+    operation_id = "series::delete",
     path = "/series/{series_id}",
-    params(MediaDeletePathParams),
+    params(SeriesDeletePathParams),
     responses(
         (status = 200, description = "Series deleted"),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
@@ -330,13 +392,14 @@ pub async fn update_images(state: State<AppState>, Extension(user): Extension<Cu
     ),
     security(("api_key" = []))
 )]
-pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(path): Path<MediaDeletePathParams>) -> impl IntoResponse {
-    let result = services::media::delete(path.media_id, RouteType::Series.into(), &user, &state.conn).await;
+pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(path): Path<SeriesDeletePathParams>) -> impl IntoResponse {
+    let result = services::media::delete(path.series_id, RouteType::Series.into(), &user, &state.conn).await;
     result.to_response(StatusCode::OK)
 }
 
 #[utoipa::path(
     post,
+    operation_id = "series::delete_w_source",
     path = "/series/source_delete",
     request_body = MediaSourceDelete,
     responses(
