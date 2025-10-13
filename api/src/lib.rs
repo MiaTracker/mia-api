@@ -6,24 +6,23 @@ mod infrastructure;
 mod middleware;
 mod openapi;
 
-use std::env;
 use std::net::SocketAddr;
 use sea_orm::Database;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use ::infrastructure::config;
 use crate::config::routes;
 use crate::infrastructure::AppState;
 use crate::openapi::ApiDoc;
 
 pub async fn launch() {
-    tracing_subscriber::fmt::init();
     services::infrastructure::initialize().await;
 
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET not set!");
+    let jwt_secret = config().jwt.secret.clone();
 
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL not set!");
+    let db_url = config().db.connection_url.clone();
     let conn = Database::connect(db_url.clone()).await
         .expect(format!("Failed to connect to database using connection string \"{}\"", db_url).as_str());
 

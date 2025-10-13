@@ -1,4 +1,3 @@
-use std::env;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 use sea_orm::ActiveValue::Set;
 
@@ -20,6 +19,7 @@ use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
 use crate::services;
 use entities::traits::locks::{SetLock, ToLocks};
+use infrastructure::config;
 use crate::media::{fetch_media, try_set_media_lock};
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
@@ -151,7 +151,7 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
     let title = if let Some(t) = title {
         t.title.clone()
     } else {
-        env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
+        config().media.unset_title.clone()
     };
 
     let on_watchlist = db_media.find_related(Watchlist).count(db).await? != 0;

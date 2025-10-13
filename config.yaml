@@ -1,0 +1,15 @@
+jwt:
+  secret: "some_secure_secret"
+
+db:
+  connection_url: "postgres://postgres:postgres@localhost/mia_development"
+  schema: "public"
+
+tmdb:
+  authorization_token: "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJmOWJjOTEwYzBjOWFlYmYzNjg5ZWU5YmNlN2NmNjFjZiIsInN1YiI6IjYyMmM5NTk4NGEwYjE5MDAxYjExMWY2NCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.AckD15GQs9-cnWiUlC6UCfJAKVVyNMEar33HbEw2UTw"
+
+logging:
+  level: "trace"
+
+media:
+  unset_title: "Title not found!"

@@ -6,9 +6,11 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["api", "migrations", "entities", "services", "views", "integrations", "transpiler"]
+members = ["api", "migrations", "entities", "services", "views", "integrations", "transpiler", "infrastructure"]
 
 [dependencies]
 tokio = "1.47.0"
 api = { path = "api" }
-dotenv = "0.15.0"
+tracing-subscriber = "0.3.20"
+infrastructure = { path = "infrastructure" }
+migrations = { path = "migrations" }

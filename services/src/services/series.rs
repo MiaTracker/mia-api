@@ -8,7 +8,6 @@ use entities::prelude::Media;
 use entities::prelude::Series;
 use entities::prelude::Genres;
 use entities::prelude::Tags;
-use std::env;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder, QuerySelect};
 use entities::{functions, genres, media, media_genres, seasons, series, series_locks, titles};
@@ -25,6 +24,7 @@ use views::sources::Source;
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
 use entities::traits::locks::{SetLock, ToLocks};
+use infrastructure::config;
 use crate::infrastructure::traits::IntoActiveModel;
 use crate::media::{fetch_media, try_set_media_lock};
 use crate::services;
@@ -176,7 +176,7 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
     let title = if let Some(t) = title {
         t.title.clone()
     } else {
-        env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
+        config().media.unset_title.clone()
     };
 
     let on_watchlist = db_media.find_related(Watchlist).count(db).await? != 0;

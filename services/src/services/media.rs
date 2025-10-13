@@ -1,5 +1,3 @@
-use std::env;
-
 use futures::TryFutureExt;
 use http::StatusCode;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
@@ -11,6 +9,7 @@ use sea_orm::sea_query::Query;
 use entities::{functions, genres, languages, media, media_genres, media_locks, media_tags, sea_orm_active_enums, tags, titles, watchlist};
 use entities::prelude::{Genres, Languages, Media, MediaGenres, MediaLocks, MediaTags, Sources, Tags, Titles};
 use entities::traits::locks::SetLock;
+use infrastructure::config;
 use integrations::tmdb;
 use integrations::tmdb::views::MultiResult;
 use views::images::{BackdropUpdate, Image, Images, ImagesUpdate, PosterUpdate};
@@ -371,7 +370,7 @@ pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titl
 pub(crate) fn build_media_index(m: (media::Model, Option<titles::Model>)) -> MediaIndex {
     let title = if let Some(title) = m.1 {
         title.title
-    } else { env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!") };
+    } else { config().media.unset_title.clone() };
 
     MediaIndex {
         id: m.0.id,

@@ -1,4 +1,7 @@
+use sea_orm_migration::sea_orm::{ConnectOptions, Database};
 pub use sea_orm_migration::prelude::*;
+use infrastructure::config;
+use infrastructure::fail;
 
 mod m20231004_133637_initial;
 mod m20231102_160504_sources;
@@ -42,5 +45,83 @@ impl MigratorTrait for Migrator {
             Box::new(m20240410_140155_seasons_fix::Migration),
             Box::new(m20251013_121027_locks::Migration),
         ]
+    }
+}
+
+macro_rules! prepare_connection {
+    () => {
+        {
+            let connect_options = ConnectOptions::new(&infrastructure::config().db.connection_url)
+                .set_schema_search_path(&config().db.schema)
+                .to_owned();
+            let db = match Database::connect(connect_options).await {
+                Ok(res) => { res }
+                Err(err) => {
+                    fail!("Failed to connect to database using connection string \"{}\". Reason: {}", &config().db.connection_url, err);
+                }
+            };
+            db
+        }
+    };
+}
+
+pub async fn migrate_up(num: Option<u32>) {
+    let db = prepare_connection!();
+    match Migrator::up(&db, num).await {
+        Ok(_) => { println!("Successfully applied migrations") }
+        Err(err) => {
+            fail!("Failed to apply migrations. Reason: {}", err);
+        }
+    }
+}
+
+pub async fn migrate_down(num: Option<u32>) {
+    let db = prepare_connection!();
+    match Migrator::down(&db, num).await {
+        Ok(_) => { println!("Successfully rolled back") }
+        Err(err) => {
+            fail!("Failed to rollback. Reason: {}", err);
+        }
+    }
+}
+
+
+pub async fn migrate_status() {
+    let db = prepare_connection!();
+    match Migrator::status(&db).await {
+        Ok(_) => { }
+        Err(err) => {
+            fail!("Failed check status. Reason: {}", err);
+        }
+    }
+}
+
+pub async fn migrate_fresh() {
+    let db = prepare_connection!();
+    match Migrator::fresh(&db).await {
+        Ok(_) => { println!("Successfully reapplied all migrations") }
+        Err(err) => {
+            fail!("Failed to reapply migrations. Reason: {}", err);
+        }
+    }
+}
+
+pub async fn migrate_refresh() {
+    let db = prepare_connection!();
+    match Migrator::refresh(&db).await {
+        Ok(_) => { println!("Successfully refreshed all migrations") }
+        Err(err) => {
+            fail!("Failed to refresh migrations. Reason: {}", err);
+        }
+    }
+}
+
+pub async fn migrate_reset() {
+    let db = prepare_connection!();
+    match Migrator::reset(&db).await {
+        Ok(_) => { println!("Successfully reset the database") }
+        Err(err) => {
+            fail!("Failed to reset the database. Reason: {}", err);
+        }
     }
 }

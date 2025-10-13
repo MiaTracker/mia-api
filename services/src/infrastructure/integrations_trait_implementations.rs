@@ -1,10 +1,9 @@
-use std::env;
-
 use chrono::NaiveDate;
 use sea_orm::{NotSet, Set};
 
 use entities::sea_orm_active_enums::MediaType;
 use entities::{genres, languages, media, movies, seasons, series};
+use infrastructure::config;
 use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeriesDetails, TmdbImage};
 use views::images::Image;
 use views::media::ExternalIndex;
@@ -210,7 +209,7 @@ impl IntoView<ExternalIndex> for &MultiMovieResult {
             title: if let Some(title) = self.title.clone() {
                 title
             } else {
-                env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
+                config().media.unset_title.clone()
             }
         }
     }
@@ -225,7 +224,7 @@ impl IntoView<ExternalIndex> for &MultiTvResult {
             title: if let Some(title) = self.name.clone() {
                 title
             } else {
-                env::var("UNSET_MEDIA_TITLE").expect("UNSET_MEDIA_TITLE not set!")
+                config().media.unset_title.clone()
             },
         }
     }
