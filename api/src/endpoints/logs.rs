@@ -2,9 +2,10 @@ use axum::Extension;
 use axum::extract::{Path, Json, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use views::logs::{LogCreate, LogCreateParams, LogDeleteParams, LogDetailsParams, LogUpdate, LogUpdateParams};
+use views::logs::{LogCreate, LogCreateParams, LogDeleteParams, LogDetailsParams, LogUpdate, LogUpdateParams, Log};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
+use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
@@ -13,9 +14,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     request_body = LogCreate,
     responses(
         (status = 201, description = "Log created"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -31,10 +32,10 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(LogDetailsParams),
     responses(
         (status = 200, description = "Log details", body = Log),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 404, description = "The log was not found", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The log was not found", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -49,10 +50,10 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
     params(LogUpdateParams),
     responses(
         (status = 200, description = "Log updated"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 404, description = "The log was not found", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The log was not found", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -69,10 +70,10 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(LogDeleteParams),
     responses(
         (status = 200, description = "Log deleted"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 404, description = "The log was not found", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The log was not found", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

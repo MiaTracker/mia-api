@@ -3,9 +3,10 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::MaybeRouteType;
-use views::media::{PageReq, SearchParams, SearchQuery};
+use views::media::{PageReq, SearchParams, SearchQuery, MediaIndex, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
+use views::api::ApiErrView;
 
 #[utoipa::path(
     get,
@@ -13,9 +14,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     params(PageReq),
     responses(
         (status = 200, description = "All media indexes", body = [MediaIndex]),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -31,9 +32,9 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     request_body = SearchQuery,
     responses(
         (status = 200, description = "Media indexes matching the search criteria", body = SearchResults),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

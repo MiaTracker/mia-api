@@ -4,10 +4,11 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
 use views::api::{MaybeRouteType, RouteType};
-use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate};
-use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSourceCreate, MediaSourceDelete, MediaType, PageReq, SearchParams, SearchQuery};
+use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate, Images};
+use views::media::{MediaCreateParams, MediaDeletePathParams, MediaSourceCreate, MediaSourceDelete, MediaType, PageReq, SearchParams, SearchQuery, MediaIndex, SearchResults};
 use views::movies::{MovieDetails, MovieMetadata};
 use views::users::CurrentUser;
+use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
@@ -16,9 +17,9 @@ use views::users::CurrentUser;
     responses(
         (status = 200, description = "Movie already exists", body = i32),
         (status = 201, description = "Movie created", body = i32),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -37,9 +38,9 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
     responses(
         (status = 200, description = "Movie already exists", body = i32),
         (status = 201, description = "Movie created", body = i32),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -58,9 +59,9 @@ pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<
     params(PageReq),
     responses(
         (status = 200, description = "All movie indexes", body = [MediaIndex]),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -76,9 +77,9 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     request_body = SearchQuery,
     responses(
         (status = 200, description = "Movie indexes matching the search criteria", body = SearchResults),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -93,8 +94,8 @@ pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUs
     path = "/movies/genres",
     responses(
         (status = 200, description = "All genres of user's movies", body = [String]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -111,10 +112,10 @@ pub async fn genres(state: State<AppState>, Extension(user): Extension<CurrentUs
     ),
     responses(
         (status = 200, description = "Movie details", body = MovieDetails),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -136,10 +137,10 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
     ),
     responses(
         (status = 200, description = "Movie metadata", body = MovieMetadata),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -156,10 +157,10 @@ pub async fn metadata(state: State<AppState>, Extension(user): Extension<Current
     ),
     responses(
     (status = 200, description = "Weather the movie is currently on watchlist", body = bool),
-    (status = 400, description = "The request is invalid", body = [Error]),
-    (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+    (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+    (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
     (status = 404, description = "The movie was not found"),
-    (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+    (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -177,10 +178,10 @@ pub async fn on_watchlist(state: State<AppState>, Extension(user): Extension<Cur
     request_body = MovieMetadata,
     responses(
         (status = 200, description = "Movie metadata updated"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -198,10 +199,10 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
     ),
     responses(
         (status = 200, description = "All backdrops of the movie", body = Images),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -219,10 +220,10 @@ pub async fn backdrops(state: State<AppState>, Extension(user): Extension<Curren
     request_body = ImagesUpdate,
     responses(
         (status = 200, description = "Default movie backdrop changed"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -240,10 +241,10 @@ pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<
     ),
     responses(
         (status = 200, description = "All posters of the movie", body = Images),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -261,10 +262,10 @@ pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentU
     request_body = ImagesUpdate,
     responses(
         (status = 200, description = "Default movie poster changed"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -282,10 +283,10 @@ pub async fn update_poster(state: State<AppState>, Extension(user): Extension<Cu
     ),
     responses(
         (status = 200, description = "All images of the movie", body = Images),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -303,10 +304,10 @@ pub async fn images(state: State<AppState>, Extension(user): Extension<CurrentUs
     request_body = ImagesUpdate,
     responses(
         (status = 200, description = "Default movie images changed"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -322,10 +323,10 @@ pub async fn update_images(state: State<AppState>, Extension(user): Extension<Cu
     params(MediaDeletePathParams),
     responses(
         (status = 200, description = "Movie deleted"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -340,10 +341,10 @@ pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUs
     request_body = MediaSourceDelete,
     responses(
         (status = 200, description = "Movie deleted"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

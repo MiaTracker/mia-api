@@ -35,8 +35,6 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
         crate::endpoints::movies::update_images,
         crate::endpoints::movies::delete,
         crate::endpoints::movies::delete_w_source,
-        crate::endpoints::media::index,
-        crate::endpoints::media::search,
         crate::endpoints::series::create,
         crate::endpoints::series::create_w_source,
         crate::endpoints::series::index,

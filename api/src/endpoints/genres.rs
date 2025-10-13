@@ -5,6 +5,8 @@ use axum::response::IntoResponse;
 use views::genres::{GenreCreate, GenreCreateParams, GenreDeleteParams};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
+use views::app_tokens::AppTokenGenerate;
+use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
@@ -14,10 +16,10 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     responses(
         (status = 200, description = "Genre was already assigned to the media"),
         (status = 201, description = "Genre was added to the media"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 404, description = "Media not found", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "Media not found", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -36,10 +38,10 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(GenreDeleteParams),
     responses(
         (status = 200, description = "Genre was removed from media"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 404, description = "Media not found", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "Media not found", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -54,8 +56,8 @@ pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUs
     path = "/genres",
     responses(
         (status = 200, description = "All genres of user's media", body = [String]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

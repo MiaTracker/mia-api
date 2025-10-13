@@ -3,6 +3,8 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::users::CurrentUser;
+use views::api::ApiErrView;
+use views::statistics::Stats;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
@@ -10,8 +12,8 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     path = "/statistics",
     responses(
         (status = 200, description = "Statistics", body = Stats),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

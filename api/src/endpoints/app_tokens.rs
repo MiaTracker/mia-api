@@ -2,8 +2,9 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use axum::response::IntoResponse;
-use views::app_tokens::{AppTokenGenerate, AppTokenRevokeParams};
+use views::app_tokens::{AppTokenGenerate, AppTokenRevokeParams, AppToken, AppTokenIndex};
 use views::users::CurrentUser;
+use views::api::ApiErrView;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
@@ -12,9 +13,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     request_body = AppTokenGenerate,
     responses(
         (status = 201, description = "New api token was generated", body = AppToken),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -28,9 +29,9 @@ pub async fn generate(state: State<AppState>, Extension(user): Extension<Current
     path = "/app_tokens",
     responses(
         (status = 200, description = "All tokens of the user", body = [Vec<AppTokenIndex>]),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -45,10 +46,10 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     params(AppTokenRevokeParams),
     responses(
         (status = 200, description = "Token revoked"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 404, description = "Token with this name was not found", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "Token with this name was not found", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

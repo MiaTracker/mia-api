@@ -1,8 +1,9 @@
+use views::api::ApiErrView;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use axum::response::IntoResponse;
-use views::users::{CurrentUser, PasswordChange, UserDeleteParams, UserLogin, UserRegistration};
+use views::users::{CurrentUser, PasswordChange, UserDeleteParams, UserLogin, UserRegistration, UserToken, UserProfile, UserIndex};
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
@@ -11,9 +12,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     request_body = UserRegistration,
     responses(
         (status = 201, description = "User created"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = ["admin"]))
 )]
@@ -28,9 +29,9 @@ pub async fn register(state: State<AppState>, Json(user): Json<UserRegistration>
     request_body = UserLogin,
     responses(
         (status = 200, description = "User logged in successfully", body = UserToken),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     )
 )]
 pub async fn login(state: State<AppState>, Json(user): Json<UserLogin>) -> impl IntoResponse {
@@ -43,9 +44,9 @@ pub async fn login(state: State<AppState>, Json(user): Json<UserLogin>) -> impl 
     path = "/users/profile",
     responses(
         (status = 200, description = "User profile data", body = UserProfile),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -59,9 +60,9 @@ pub async fn profile(Extension(user): Extension<CurrentUser>) -> impl IntoRespon
     path = "/users",
     responses(
         (status = 200, description = "User profile data", body = [UserIndex]),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = ["admin"]))
 )]
@@ -76,9 +77,9 @@ pub async fn index(state: State<AppState>) -> impl IntoResponse {
     request_body = PasswordChange,
     responses(
         (status = 200, description = "User password changed successfully"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = ["admin"]))
 )]
@@ -94,10 +95,10 @@ pub async fn change_password(state: State<AppState>, Extension(user): Extension<
     params(UserDeleteParams),
     responses(
         (status = 200, description = "User deleted"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The user was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = ["admin"]))
 )]

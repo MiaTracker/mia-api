@@ -5,6 +5,7 @@ use axum::response::IntoResponse;
 use views::tags::{TagCreate, TagCreateParams, TagDeleteParams};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
+use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
@@ -14,9 +15,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     responses(
         (status = 200, description = "Tag already attached to the media"),
         (status = 201, description = "Tag created"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -35,10 +36,10 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(TagDeleteParams),
     responses(
         (status = 200, description = "Tag deleted"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The tag had not been added to the media"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

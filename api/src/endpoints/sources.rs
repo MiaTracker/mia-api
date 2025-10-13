@@ -2,9 +2,10 @@ use axum::{Extension, Json};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use views::sources::{SourceCreate, SourceCreateParams, SourceDeleteParams, SourceDetailsParams, SourceIndexParams, SourceUpdate, SourceUpdateParams};
+use views::sources::{SourceCreate, SourceCreateParams, SourceDeleteParams, SourceDetailsParams, SourceIndexParams, SourceUpdate, SourceUpdateParams, Source};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
+use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
@@ -13,9 +14,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     request_body = SourceCreate,
     responses(
         (status = 201, description = "Source created"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -31,10 +32,10 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(SourceIndexParams),
     responses(
         (status = 200, description = "All sources of the media", body = [Source]),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The media was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -49,10 +50,10 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     params(SourceDetailsParams),
     responses(
         (status = 200, description = "Source details", body = Source),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The source was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -68,10 +69,10 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
     request_body = SourceUpdate,
     responses(
         (status = 200, description = "Source updated"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The source was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -86,10 +87,10 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(SourceDeleteParams),
     responses(
         (status = 200, description = "Source deleted"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The source was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::logset::LogsetCreate;
 use views::users::CurrentUser;
+use views::api::ApiErrView;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
@@ -12,9 +13,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     request_body = LogsetCreate,
     responses(
         (status = 201, description = "Log created"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

@@ -3,9 +3,10 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 
-use views::media::{PageReq, SearchQuery};
+use views::media::{PageReq, SearchQuery, MediaIndex};
 use views::users::CurrentUser;
 use views::watchlist::WatchlistParams;
+use views::api::ApiErrView;
 
 use crate::infrastructure::{AppState, IntoApiResponse};
 
@@ -16,10 +17,10 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     responses(
         (status = 200, description = "Media already on watchlist"),
         (status = 201, description = "Media added to watchlist"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The media was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -38,9 +39,9 @@ pub async fn add(state: State<AppState>, Extension(user): Extension<CurrentUser>
     params(PageReq),
     responses(
         (status = 200, description = "All media on watchlist", body = [MediaIndex]),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -56,9 +57,9 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
     request_body = SearchQuery,
     responses(
         (status = 200, description = "Filtered media on watchlist", body = [MediaIndex]),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -73,10 +74,10 @@ pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUs
     request_body = WatchlistParams,
     responses(
         (status = 200, description = "Media successfully removed from watchlist"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The media was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]

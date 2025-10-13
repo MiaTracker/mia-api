@@ -1,6 +1,7 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use views::api::ApiErrView;
 use crate::infrastructure::{AppState, IntoApiResponse};
 
 #[utoipa::path(
@@ -8,8 +9,8 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     path = "/masterdata/refresh",
     responses(
         (status = 200, description = "Masterdata refreshed"),
-        (status = 401, description = "Authorization token was not provided, was invalid or the user is not an admin", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 401, description = "Authorization token was not provided, was invalid or the user is not an admin", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = ["admin"]))
 )]

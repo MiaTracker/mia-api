@@ -5,6 +5,7 @@ use axum::response::IntoResponse;
 use views::titles::{TitleCreate, TitleCreateParams, TitleDeleteParams, TitleSetPrimaryParams};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
+use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
@@ -13,9 +14,9 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     request_body = TitleCreate,
     responses(
         (status = 201, description = "Title created"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -34,10 +35,10 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(TitleSetPrimaryParams),
     responses(
         (status = 200, description = "Title set as primary"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The title was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
@@ -53,10 +54,10 @@ pub async fn set_primary(state: State<AppState>, Extension(user): Extension<Curr
     params(TitleDeleteParams),
     responses(
         (status = 200, description = "Title deleted"),
-        (status = 400, description = "The request is invalid", body = [Error]),
-        (status = 401, description = "Authorization token was not provided or is invalid", body = [Error]),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The title was not found"),
-        (status = 500, description = "An internal error occurred while processing the request", body = [Error])
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
     ),
     security(("api_key" = []))
 )]
