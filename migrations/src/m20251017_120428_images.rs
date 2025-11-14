@@ -90,6 +90,7 @@ impl MigrationTrait for Migration {
             .cond_where(Expr::col(Media::TmdbId).is_not_null())
             .to_owned();
 
+        services::infrastructure::initialize().await;
         let res = db.query_all(builder.build(&query)).await?;
         for row in res {
             let id = row.try_get_by_index::<i32>(0)?;
