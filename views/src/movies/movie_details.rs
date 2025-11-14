@@ -21,6 +21,7 @@ pub struct MovieDetails {
     pub runtime: Option<i32>,
     pub status: Option<String>,
     pub overview: Option<String>,
+    pub tmdb_id: Option<i32>,
     pub tmdb_vote_average: Option<f32>,
     pub on_watchlist: bool,
     pub original_language: Option<Language>,

@@ -23,6 +23,7 @@ pub struct SeriesDetails {
     pub status: Option<String>,
     pub r#type: Option<String>,
     pub overview: Option<String>,
+    pub tmdb_id: Option<i32>,
     pub tmdb_vote_average: Option<f32>,
     pub on_watchlist: bool,
     pub original_language: Option<Language>,

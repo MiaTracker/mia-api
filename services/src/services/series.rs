@@ -228,6 +228,7 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
         status: db_series.status,
         r#type: db_series.r#type,
         overview: db_media.overview,
+        tmdb_id: db_media.tmdb_id,
         tmdb_vote_average: db_media.tmdb_vote_average,
         on_watchlist,
         original_language: language,

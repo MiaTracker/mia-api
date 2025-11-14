@@ -200,6 +200,7 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
         runtime: db_movie.runtime,
         status: db_movie.status,
         overview: db_media.overview,
+        tmdb_id: db_media.tmdb_id,
         tmdb_vote_average: db_media.tmdb_vote_average,
         on_watchlist,
         original_language: language,
