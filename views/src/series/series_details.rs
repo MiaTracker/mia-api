@@ -1,6 +1,7 @@
 use serde::Serialize;
 use utoipa::ToSchema;
 use crate::genres::Genre;
+use crate::images::Image;
 use crate::languages::Language;
 use crate::logs::Log;
 use crate::sources::Source;
@@ -10,8 +11,8 @@ use crate::titles::AlternativeTitle;
 #[derive(Serialize, ToSchema)]
 pub struct SeriesDetails {
     pub id: i32,
-    pub poster_path: Option<String>,
-    pub backdrop_path: Option<String>,
+    pub poster: Option<Image>,
+    pub backdrop: Option<Image>,
     pub stars: Option<f32>,
     pub title: String,
     pub alternative_titles: Vec<AlternativeTitle>,

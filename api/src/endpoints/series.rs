@@ -3,12 +3,13 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
-use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate, Images};
+use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate, ImageCandidates};
 use views::media::{MediaCreateParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams, PageReq, MediaIndex, SearchResults, SeriesDeletePathParams};
 use views::series::{SeriesDetails, SeriesMetadata};
 use views::users::CurrentUser;
 use crate::infrastructure::{AppState, IntoApiResponse};
 use views::api::ApiErrView;
+use views::images::ImageCandidate;
 
 #[utoipa::path(
     post,
@@ -75,7 +76,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 }
 
 #[utoipa::path(
-    get,
+    post,
     operation_id = "series::search",
     path = "/series/search",
     params(SearchParams),
@@ -208,7 +209,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
         ("series_id" = i32, Path, )
     ),
     responses(
-        (status = 200, description = "All backdrops of the series", body = Images),
+        (status = 200, description = "All backdrops of the series", body = Vec<ImageCandidate>),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
         (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The series was not found"),
@@ -252,7 +253,7 @@ pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<
         ("series_id" = i32, Path, )
     ),
     responses(
-        (status = 200, description = "All posters of the series", body = Images),
+        (status = 200, description = "All posters of the series", body = Vec<ImageCandidate>),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
         (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The series was not found"),
@@ -296,7 +297,7 @@ pub async fn update_poster(state: State<AppState>, Extension(user): Extension<Cu
         ("series_id" = i32, Path, )
     ),
     responses(
-        (status = 200, description = "All images of the series", body = Images),
+        (status = 200, description = "All images of the series", body = ImageCandidates),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
         (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The series was not found"),

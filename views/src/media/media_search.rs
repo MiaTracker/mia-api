@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
+use crate::images::Image;
 use crate::media::{MediaIndex, MediaType, PageReq};
 
 #[derive(Deserialize, IntoParams)]
@@ -60,6 +61,6 @@ pub struct SearchResults {
 pub struct ExternalIndex {
     pub external_id: i32,
     pub r#type: MediaType,
-    pub poster_path: Option<String>,
+    pub poster: Option<Image>,
     pub title: String
 }

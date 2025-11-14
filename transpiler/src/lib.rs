@@ -1,11 +1,11 @@
-use std::fmt::{Display, Formatter};
-use sea_orm::SelectTwo;
-use entities::{media, titles};
-use entities::sea_orm_active_enums::MediaType;
-use views::media::{PageReq, SearchQuery};
-use views::users::CurrentUser;
 use crate::constructor::construct;
 use crate::parser::parse;
+use entities::sea_orm_active_enums::MediaType;
+use entities::{images, media, titles};
+use sea_orm::SelectThree;
+use std::fmt::{Display, Formatter};
+use views::media::{PageReq, SearchQuery};
+use views::users::CurrentUser;
 
 mod parser;
 mod lexer;
@@ -33,7 +33,7 @@ pub struct TranspilationError {
 }
 
 pub struct TranspilationResult {
-    pub query: SelectTwo<media::Entity, titles::Entity>,
+    pub query: SelectThree<media::Entity, images::Entity, titles::Entity>,
     pub name_search: String,
     pub external_id: Option<ExternalId>,
     pub is_primitive: bool

@@ -1,5 +1,7 @@
+use crate::{app_tokens, entities, genres, image_sizes, languages, logs, sources, tags, titles, users};
 use views::app_tokens::AppTokenIndex;
 use views::genres::Genre;
+use views::images::ImageSize;
 use views::languages::Language;
 use views::logs::Log;
 use views::media::MediaType;
@@ -7,7 +9,6 @@ use views::sources::{Source, SourceType};
 use views::tags::Tag;
 use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
-use crate::{app_tokens, entities, genres, languages, logs, sources, tags, titles, users};
 
 impl From<users::Model> for CurrentUser {
     fn from(value: users::Model) -> Self {
@@ -107,6 +108,16 @@ impl From<&app_tokens::Model> for AppTokenIndex {
         Self {
             name: value.name.clone(),
             generated: value.generated.and_utc(),
+        }
+    }
+}
+
+impl From<&image_sizes::Model> for ImageSize {
+    fn from(s: &image_sizes::Model) -> Self {
+        Self {
+            slug: format!("{}x{}", s.width, s.height),
+            width: s.width,
+            height: s.height,
         }
     }
 }

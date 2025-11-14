@@ -20,6 +20,7 @@ mod m20240217_103742_app_token_generated;
 mod m20240410_130251_cleanup;
 mod m20240410_140155_seasons_fix;
 mod m20251013_121027_locks;
+mod m20251017_120428_images;
 
 pub struct Migrator;
 
@@ -44,6 +45,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240410_130251_cleanup::Migration),
             Box::new(m20240410_140155_seasons_fix::Migration),
             Box::new(m20251013_121027_locks::Migration),
+            Box::new(m20251017_120428_images::Migration),
         ]
     }
 }

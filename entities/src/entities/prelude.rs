@@ -2,8 +2,11 @@
 
 pub use super::app_tokens::Entity as AppTokens;
 pub use super::genres::Entity as Genres;
+pub use super::image_sizes::Entity as ImageSizes;
+pub use super::images::Entity as Images;
 pub use super::languages::Entity as Languages;
 pub use super::logs::Entity as Logs;
+pub use super::manual_image_references::Entity as ManualImageReferences;
 pub use super::media::Entity as Media;
 pub use super::media_genres::Entity as MediaGenres;
 pub use super::media_locks::Entity as MediaLocks;

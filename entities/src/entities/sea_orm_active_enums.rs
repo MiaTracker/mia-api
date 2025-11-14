@@ -3,6 +3,32 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "image_file_type")]
+pub enum ImageFileType {
+    #[sea_orm(string_value = "jpeg")]
+    Jpeg,
+    #[sea_orm(string_value = "png")]
+    Png,
+    #[sea_orm(string_value = "web_p")]
+    WebP,
+}
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "image_source")]
+pub enum ImageSource {
+    #[sea_orm(string_value = "tmdb")]
+    Tmdb,
+    #[sea_orm(string_value = "manual")]
+    Manual,
+}
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "image_type")]
+pub enum ImageType {
+    #[sea_orm(string_value = "backdrop")]
+    Backdrop,
+    #[sea_orm(string_value = "poster")]
+    Poster,
+}
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "media_type")]
 pub enum MediaType {
     #[sea_orm(string_value = "movie")]

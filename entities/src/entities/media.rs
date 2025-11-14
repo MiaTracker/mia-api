@@ -8,12 +8,10 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub backdrop_path: Option<String>,
     pub homepage: Option<String>,
     pub tmdb_id: Option<i32>,
     pub imdb_id: Option<String>,
     pub overview: Option<String>,
-    pub poster_path: Option<String>,
     #[sea_orm(column_type = "Float", nullable)]
     pub tmdb_vote_average: Option<f32>,
     pub original_language: Option<String>,
@@ -23,10 +21,28 @@ pub struct Model {
     #[sea_orm(column_type = "Float", nullable)]
     pub stars: Option<f32>,
     pub bot_controllable: bool,
+    pub backdrop_image_id: Option<i32>,
+    pub poster_image_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::images::Entity",
+        from = "Column::BackdropImageId",
+        to = "super::images::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Images2,
+    #[sea_orm(
+        belongs_to = "super::images::Entity",
+        from = "Column::PosterImageId",
+        to = "super::images::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Images1,
     #[sea_orm(
         belongs_to = "super::languages::Entity",
         from = "Column::OriginalLanguage",
@@ -37,6 +53,8 @@ pub enum Relation {
     Languages,
     #[sea_orm(has_many = "super::logs::Entity")]
     Logs,
+    #[sea_orm(has_one = "super::manual_image_references::Entity")]
+    ManualImageReferences,
     #[sea_orm(has_many = "super::media_genres::Entity")]
     MediaGenres,
     #[sea_orm(has_one = "super::media_locks::Entity")]
@@ -72,6 +90,12 @@ impl Related<super::languages::Entity> for Entity {
 impl Related<super::logs::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Logs.def()
+    }
+}
+
+impl Related<super::manual_image_references::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ManualImageReferences.def()
     }
 }
 

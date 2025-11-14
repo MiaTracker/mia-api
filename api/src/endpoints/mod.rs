@@ -15,3 +15,4 @@ pub mod app_tokens;
 pub mod statistics;
 pub mod languages;
 pub mod ping;
+pub mod images;

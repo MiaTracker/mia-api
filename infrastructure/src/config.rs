@@ -52,7 +52,8 @@ pub struct Configuration {
     pub db: DbConfiguration,
     pub tmdb: TMDBConfiguration,
     pub logging: LoggingConfiguration,
-    pub media: MediaConfiguration
+    pub media: MediaConfiguration,
+    pub images: ImagesConfiguration
 }
 
 #[derive(Deserialize)]
@@ -74,6 +75,11 @@ pub struct TMDBConfiguration {
 #[derive(Deserialize)]
 pub struct LoggingConfiguration {
     pub level: LogLevel
+}
+
+#[derive(Deserialize)]
+pub struct ImagesConfiguration {
+    pub store_path: String
 }
 
 #[derive(Deserialize, Clone)]

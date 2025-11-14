@@ -3,12 +3,13 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
+use views::api::ApiErrView;
 use views::api::{MaybeRouteType, RouteType};
-use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate, Images};
-use views::media::{MediaCreateParams, MovieDeletePathParams, MediaSourceCreate, MediaSourceDelete, MediaType, PageReq, SearchParams, SearchQuery, MediaIndex, SearchResults};
+use views::images::ImageCandidate;
+use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate};
+use views::media::{MediaCreateParams, MediaIndex, MediaSourceCreate, MediaSourceDelete, MediaType, MovieDeletePathParams, PageReq, SearchParams, SearchQuery, SearchResults};
 use views::movies::{MovieDetails, MovieMetadata};
 use views::users::CurrentUser;
-use views::api::ApiErrView;
 
 #[utoipa::path(
     post,
@@ -74,7 +75,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 }
 
 #[utoipa::path(
-    get,
+    post,
     operation_id = "movies::search",
     path = "/movies/search",
     params(SearchParams),
@@ -208,7 +209,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
         ("movie_id" = i32, Path, )
     ),
     responses(
-        (status = 200, description = "All backdrops of the movie", body = Images),
+        (status = 200, description = "All backdrops of the movie", body = ImageCandidate),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
         (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
@@ -228,7 +229,7 @@ pub async fn backdrops(state: State<AppState>, Extension(user): Extension<Curren
     params(
         ("movie_id" = i32, Path, )
     ),
-    request_body = ImagesUpdate,
+    request_body = BackdropUpdate,
     responses(
         (status = 200, description = "Default movie backdrop changed"),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
@@ -252,7 +253,7 @@ pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<
         ("movie_id" = i32, Path, )
     ),
     responses(
-        (status = 200, description = "All posters of the movie", body = Images),
+        (status = 200, description = "All posters of the movie", body = Vec<ImageCandidate>),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
         (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),
@@ -272,7 +273,7 @@ pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentU
     params(
         ("movie_id" = i32, Path, )
     ),
-    request_body = ImagesUpdate,
+    request_body = PosterUpdate,
     responses(
         (status = 200, description = "Default movie poster changed"),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
@@ -296,7 +297,7 @@ pub async fn update_poster(state: State<AppState>, Extension(user): Extension<Cu
         ("movie_id" = i32, Path, )
     ),
     responses(
-        (status = 200, description = "All images of the movie", body = Images),
+        (status = 200, description = "All images of the movie", body = ImageCandidate),
         (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
         (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The movie was not found"),

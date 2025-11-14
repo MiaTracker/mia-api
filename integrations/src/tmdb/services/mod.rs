@@ -4,3 +4,4 @@ pub mod initialize;
 pub mod series;
 pub mod genres;
 pub mod search;
+pub mod images;

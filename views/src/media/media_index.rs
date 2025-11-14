@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
+use crate::images::Image;
 use crate::media::MediaType;
 
 #[derive(Deserialize, IntoParams)]
@@ -14,7 +15,7 @@ pub struct PageReq {
 pub struct MediaIndex {
     pub id: i32,
     pub r#type: MediaType,
-    pub poster_path: Option<String>,
+    pub poster: Option<Image>,
     pub stars: Option<f32>,
     pub title: String
 }

@@ -79,6 +79,8 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
         crate::endpoints::watchlist::remove,
         crate::endpoints::ping::ping,
         crate::endpoints::masterdata::refresh,
+        crate::endpoints::images::get_tmdb,
+        crate::endpoints::images::get_local,
     ),
     components(
         schemas(
@@ -102,8 +104,8 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
             views::media::SearchQuery,
             views::media::SortTarget,
             views::media::MediaType,
-            views::images::Images,
-            views::images::Image,
+            views::images::ImageCandidates,
+            views::images::ImageCandidate,
             views::images::ImagesUpdate,
             views::images::BackdropUpdate,
             views::images::PosterUpdate,

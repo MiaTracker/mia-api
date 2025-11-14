@@ -5,13 +5,14 @@ use crate::logs::Log;
 use crate::tags::Tag;
 use crate::titles::AlternativeTitle;
 use crate::genres::Genre;
+use crate::images::Image;
 use crate::sources::Source;
 
 #[derive(Serialize, ToSchema)]
 pub struct MovieDetails {
     pub id: i32,
-    pub poster_path: Option<String>,
-    pub backdrop_path: Option<String>,
+    pub poster: Option<Image>,
+    pub backdrop: Option<Image>,
     pub stars: Option<f32>,
     pub title: String,
     pub alternative_titles: Vec<AlternativeTitle>,

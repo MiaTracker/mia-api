@@ -27,7 +27,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 }
 
 #[utoipa::path(
-    get,
+    post,
     operation_id = "media::search",
     path = "/media/search",
     params(SearchParams),

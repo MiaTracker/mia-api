@@ -1,10 +1,10 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
-use sea_orm::ActiveValue::Set;
-
-use entities::{functions, genres, media, media_genres, movie_locks, movies, titles};
-use entities::prelude::{Genres, Languages, Logs, Media, MediaLocks, MovieLocks, Movies, Sources, Tags, Titles, Watchlist};
-use entities::sea_orm_active_enums::MediaType;
+use entities::prelude::{Genres, ImageSizes, Languages, Logs, Media, MediaLocks, MovieLocks, Movies, Sources, Tags, Titles, Watchlist};
+use entities::sea_orm_active_enums::{ImageType, MediaType};
+use entities::traits::linked::MediaPosters;
+use entities::{functions, genres, image_sizes, media, media_genres, movie_locks, movies, titles};
 use integrations::tmdb;
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 use views::genres::Genre;
 use views::languages::Language;
 use views::logs::Log;
@@ -15,12 +15,13 @@ use views::tags::Tag;
 use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
 
-use crate::infrastructure::{RuleViolation, SrvErr};
 use crate::infrastructure::traits::IntoActiveModel;
+use crate::infrastructure::{RuleViolation, SrvErr};
+use crate::media::{fetch_media, try_set_media_lock};
 use crate::services;
 use entities::traits::locks::{SetLock, ToLocks};
 use infrastructure::config;
-use crate::media::{fetch_media, try_set_media_lock};
+use crate::services::images::{fetch_backdrop_and_poster, save_tmdb_image};
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
@@ -35,7 +36,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
         Err(err) => { return Err(SrvErr::DB(err)); }
     };
 
-    let tran = db.begin().await?;
+    let tran = db.begin().await?; //TODO: properly handle transactions
 
     let tmdb_movie = match tmdb::services::movies::details(tmdb_id).await {
         Ok(movie) => { movie }
@@ -44,6 +45,23 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
 
     let mut media: media::ActiveModel = tmdb_movie.into_active_model();
     let mut movie: movies::ActiveModel = tmdb_movie.into_active_model();
+
+    media.backdrop_image_id = Set(
+        match tmdb_movie.backdrop_path {
+            None =>  None,
+            Some(path) => {
+                Some(save_tmdb_image(path.as_str(), ImageType::Backdrop, db).await?)
+            }
+        }
+    );
+    media.poster_image_id = Set(
+        match tmdb_movie.poster_path {
+            None =>  None,
+            Some(path) => {
+                Some(save_tmdb_image(path.as_str(), ImageType::Poster, db).await?)
+            }
+        }
+    );
 
     media.user_id = Set(user.id);
     media.bot_controllable = Set(user.though_bot);
@@ -91,17 +109,25 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
 
 
 pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id))
-        .filter(media::Column::Type.eq(MediaType::Movie)).find_also_related(Titles)
+    let media = Media::find().filter(media::Column::UserId.eq(user.id))
+        .find_also_linked(MediaPosters)
+        .find_also_related(Titles)
+        .filter(media::Column::Type.eq(MediaType::Movie))
         .filter(titles::Column::Primary.eq(true)).order_by_asc(functions::default_media_sort())
         .offset(page_req.offset).limit(page_req.limit).all(db).await?;
-    let indexes = services::media::build_media_indexes(media_w_titles);
+
+    let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
+
+    let indexes = services::media::build_media_indexes(media, poster_sizes);
     Ok(indexes)
 }
 
 pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<Option<MovieDetails>, SrvErr> {
     let db_media = Media::find().filter(media::Column::Id.eq(movie_id))
-        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Movie)).one(db).await?;
+        .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq(MediaType::Movie))
+        .one(db).await?;
 
     if db_media.is_none() {
         return Ok(None);
@@ -161,10 +187,12 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
     let mut locks = media_locks.to_locks();
     locks.append(&mut movie_locks.to_locks());
 
+    let (backdrop, poster) = fetch_backdrop_and_poster(&db_media, db).await?;
+
     let movie = MovieDetails {
         id: movie_id,
-        poster_path: db_media.poster_path,
-        backdrop_path: db_media.backdrop_path,
+        poster,
+        backdrop,
         stars: db_media.stars,
         title,
         alternative_titles,

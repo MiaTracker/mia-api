@@ -13,3 +13,6 @@ logging:
 
 media:
   unset_title: "Title not found!"
+
+images:
+  store_path: "/home/beta/Documents/Projects/mia/mia-api/deploy/images"

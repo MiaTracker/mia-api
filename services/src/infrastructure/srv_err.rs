@@ -1,3 +1,6 @@
+use std::fmt::{Display, Formatter};
+use std::io;
+use std::io::Error;
 use http::StatusCode;
 use sea_orm::DbErr;
 use log::error;
@@ -6,6 +9,7 @@ use crate::infrastructure::rule_violation::RuleViolation;
 
 pub enum SrvErr {
     DB(DbErr),
+    IO(io::Error),
     RuleViolation(Vec<RuleViolation>),
     NotFound,
     Internal(String),
@@ -24,7 +28,15 @@ impl From<DbErr> for SrvErr {
 
 impl From<integrations::infrastructure::Error> for SrvErr {
     fn from(value: integrations::infrastructure::Error) -> Self {
+        error!("Integration error: {}{}", value.status_code.map_or("".to_string(), |c| format!("{} - ", c.as_str())), value.message);
         SrvErr::Integration(value.message)
+    }
+}
+
+impl From<io::Error> for SrvErr {
+    fn from(value: Error) -> Self {
+        error!("IO error: {}", value.to_string());
+        SrvErr::IO(value)
     }
 }
 
@@ -109,6 +121,38 @@ impl Into<ApiErr> for &SrvErr {
                     status: StatusCode::BAD_REQUEST
                 }
             }
+            SrvErr::IO(io) => {
+                ApiErr {
+                    errors: vec![
+                        ApiErrView {
+                            key: ErrorKey::InternalServerError.to_string(),
+                            debug_message: io.to_string()
+                        },
+                    ],
+                    status: StatusCode::INTERNAL_SERVER_ERROR
+                }
+            }
+        }
+    }
+}
+
+impl Display for SrvErr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SrvErr::DB(err) => { write!(f, "Database error: {}", err) }
+            SrvErr::IO(err) => { write!(f, "IO error: {}", err) }
+            SrvErr::RuleViolation(violations) => {
+                for violation in violations {
+                    write!(f, "Rule violation: {}", violation)?
+                }
+                Ok(())
+            }
+            SrvErr::NotFound => { write!(f, "Not found") }
+            SrvErr::Internal(err) => { write!(f, "Internal error: {}", err)}
+            SrvErr::Integration(err) => { write!(f, "Integration error: {}", err) }
+            SrvErr::Unauthorized => { write!(f, "Unauthorized") }
+            SrvErr::MasterdataOutdated => { write!(f, "Masterdata is outdated") }
+            SrvErr::BadRequest(err) => { write!(f, "Bad request: {}", err) }
         }
     }
 }

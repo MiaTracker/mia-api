@@ -1,4 +1,4 @@
-use entities::prelude::{MediaLocks, SeriesLocks};
+use entities::prelude::{ImageSizes, MediaLocks, SeriesLocks};
 use entities::prelude::Watchlist;
 use entities::prelude::Logs;
 use entities::prelude::Sources;
@@ -10,11 +10,12 @@ use entities::prelude::Genres;
 use entities::prelude::Tags;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder, QuerySelect};
-use entities::{functions, genres, media, media_genres, seasons, series, series_locks, titles};
+use entities::{functions, genres, image_sizes, media, media_genres, seasons, series, series_locks, titles};
 use integrations::tmdb::views::{Season, SeriesTitle};
 use views::users::CurrentUser;
 use crate::infrastructure::{constants, RuleViolation, SrvErr};
-use entities::sea_orm_active_enums::MediaType;
+use entities::sea_orm_active_enums::{ImageType, MediaType};
+use entities::traits::linked::MediaPosters;
 use integrations::tmdb;
 use views::languages::Language;
 use views::logs::Log;
@@ -28,6 +29,7 @@ use infrastructure::config;
 use crate::infrastructure::traits::IntoActiveModel;
 use crate::media::{fetch_media, try_set_media_lock};
 use crate::services;
+use crate::services::images::{fetch_backdrop_and_poster, save_tmdb_image};
 
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let med_res = media::Entity::find().filter(media::Column::TmdbId.eq(tmdb_id))
@@ -52,6 +54,23 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
 
     let mut media: media::ActiveModel = tmdb_series.into_active_model();
     let mut series: series::ActiveModel = tmdb_series.into_active_model();
+
+    media.backdrop_image_id = Set(
+        match tmdb_series.backdrop_path {
+            None =>  None,
+            Some(path) => {
+                Some(save_tmdb_image(path.as_str(), ImageType::Backdrop, db).await?)
+            }
+        }
+    );
+    media.poster_image_id = Set(
+        match tmdb_series.poster_path {
+            None =>  None,
+            Some(path) => {
+                Some(save_tmdb_image(path.as_str(), ImageType::Poster, db).await?)
+            }
+        }
+    );
 
     media.user_id = Set(user.id);
     media.bot_controllable = Set(user.though_bot);
@@ -116,11 +135,19 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
 }
 
 pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id))
-        .filter(media::Column::Type.eq(MediaType::Series)).find_also_related(Titles)
+    let media = Media::find().filter(media::Column::UserId.eq(user.id))
+        .find_also_linked(MediaPosters)
+        .find_also_related(Titles)
+        .filter(media::Column::Type.eq(MediaType::Series))
         .filter(titles::Column::Primary.eq(true)).order_by_asc(functions::default_media_sort())
         .offset(page_req.offset).limit(page_req.limit).all(db).await?;
-    let indexes = services::media::build_media_indexes(media_w_titles);
+
+    let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
+
+    let indexes = services::media::build_media_indexes(media, poster_sizes);
+
     Ok(indexes)
 }
 
@@ -186,10 +213,12 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
     let mut locks = media_locks.to_locks();
     locks.append(&mut series_locks.to_locks());
 
+    let (backdrop, poster) = fetch_backdrop_and_poster(&db_media, db).await?;
+
     let series = views::series::SeriesDetails {
         id: db_media.id,
-        poster_path: db_media.poster_path,
-        backdrop_path: db_media.backdrop_path,
+        poster,
+        backdrop,
         stars: db_media.stars,
         title,
         alternative_titles,

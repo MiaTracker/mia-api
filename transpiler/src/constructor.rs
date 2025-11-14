@@ -8,6 +8,7 @@ use entities::{functions, genres, languages, logs, media, media_genres, media_ta
 use entities::functions::DatePart;
 use entities::prelude::{Media, Titles};
 use entities::sea_orm_active_enums::MediaType;
+use entities::traits::linked::MediaPosters;
 use views::media::{PageReq, SearchQuery, SortTarget};
 
 use crate::{ErrorSource, ExternalId, parser, TranspilationError, TranspilationResult};
@@ -142,6 +143,7 @@ pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, u
 
     let mut select = Media::find()
         .filter(media::Column::UserId.eq(user_id))
+        .find_also_linked(MediaPosters)
         .find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true))
         .offset(page_req.offset).limit(page_req.limit);

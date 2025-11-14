@@ -1,5 +1,5 @@
 use entities::languages;
-use views::images::Image;
+use views::images::ImageCandidate;
 
 pub trait IntoActiveModel<T> {
     fn into_active_model(self) -> T;
@@ -14,5 +14,5 @@ pub trait SortCompare {
 }
 
 pub trait IntoImage {
-    fn into_image(self, default_path: &Option<String>, languages: &Vec<languages::Model>) -> Image;
+    fn into_image(self, languages: &Vec<languages::Model>,  sizes: &Vec<views::configuration::ImageSize>) -> ImageCandidate;
 }

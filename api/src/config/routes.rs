@@ -1,6 +1,6 @@
 use axum::Router;
 use axum::routing::{delete, get, patch, post};
-use crate::endpoints::{app_tokens, configuration, genres, languages, logs, logset, masterdata, media, movies, ping, series, sources, statistics, tags, titles, users, watchlist};
+use crate::endpoints::{app_tokens, configuration, genres, images, languages, logs, logset, masterdata, media, movies, ping, series, sources, statistics, tags, titles, users, watchlist};
 use crate::infrastructure::AppState;
 
 
@@ -81,6 +81,8 @@ pub fn build() -> Router<AppState>
         .route("/statistics", get(statistics::stats))
         .route("/genres", get(genres::index))
         .route("/languages", get(languages::index))
+        .route("/img/tmdb/{slug}/{name}", get(images::get_tmdb))
+        .route("/img/{slug}/{name}", get(images::get_local))
 }
 
 pub fn build_anonymous() -> Router<AppState> {

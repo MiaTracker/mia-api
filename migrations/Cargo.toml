@@ -13,6 +13,9 @@ infrastructure = { path = "../infrastructure" }
 uuid = { version = "1.18.0", features = ["v4"] }
 log = { version = "0.4.0"}
 
+services = { path = "../services" }
+entities = { path = "../entities" }
+
 [dependencies.sea-orm-migration]
 version = "1.1.0"
 features = ["runtime-tokio-rustls", "sqlx-postgres", "with-uuid"]

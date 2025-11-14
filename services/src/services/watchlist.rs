@@ -1,7 +1,8 @@
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set};
 use sea_orm::sea_query::Query;
-use entities::{functions, media, titles, watchlist};
-use entities::prelude::{Media, Titles, Watchlist};
+use entities::{functions, image_sizes, media, titles, watchlist};
+use entities::prelude::{ImageSizes, Media, Titles, Watchlist};
+use entities::traits::linked::MediaPosters;
 use views::media::{MediaIndex, PageReq, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 use crate::infrastructure::SrvErr;
@@ -37,13 +38,19 @@ pub async fn add(media_id: i32, user: &CurrentUser, db: &DbConn) -> Result<bool,
 }
 
 pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let media_w_titles = Media::find().right_join(Watchlist)
+    let media = Media::find().right_join(Watchlist)
         .filter(media::Column::UserId.eq(user.id))
+        .find_also_linked(MediaPosters)
         .find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true))
         .order_by_asc(functions::default_media_sort())
         .offset(page_req.offset).limit(page_req.limit).all(db).await?;
-    let indexes = services::media::build_media_indexes(media_w_titles);
+
+    let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
+
+    let indexes = services::media::build_media_indexes(media, poster_sizes);
     Ok(indexes)
 }
 
@@ -58,11 +65,16 @@ pub async fn search(query: SearchQuery, page_req: PageReq, user: &CurrentUser, d
     }
     let res = res.ok().unwrap();
 
-    let media_w_titles = res.query.filter(media::Column::Id.in_subquery(Query::select()
+    let media = res.query.filter(media::Column::Id.in_subquery(Query::select()
             .column(watchlist::Column::MediaId).from(Watchlist).to_owned()))
         .all(db).await?;
 
-    let indexes = services::media::build_media_indexes(media_w_titles);
+    let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
+
+
+    let indexes = services::media::build_media_indexes(media, poster_sizes);
 
     Ok(SearchResults {
         indexes,

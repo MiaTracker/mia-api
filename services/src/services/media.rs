@@ -1,25 +1,30 @@
+use entities::prelude::{Genres, ImageSizes, Images, Languages, ManualImageReferences, Media, MediaGenres, MediaLocks, MediaTags, Sources, Tags, Titles};
+use entities::sea_orm_active_enums::{ImageFileType, ImageSource, ImageType};
+use entities::traits::linked::MediaPosters;
+use entities::traits::locks::SetLock;
+use entities::{functions, genres, image_sizes, images, languages, manual_image_references, media, media_genres, media_locks, media_tags, sea_orm_active_enums, tags, titles, watchlist};
 use futures::TryFutureExt;
 use http::StatusCode;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
-use sea_orm::ActiveValue::Set;
-use sea_orm::prelude::Expr;
-use sea_orm::QueryFilter;
-use sea_orm::sea_query::Query;
-
-use entities::{functions, genres, languages, media, media_genres, media_locks, media_tags, sea_orm_active_enums, tags, titles, watchlist};
-use entities::prelude::{Genres, Languages, Media, MediaGenres, MediaLocks, MediaTags, Sources, Tags, Titles};
-use entities::traits::locks::SetLock;
 use infrastructure::config;
 use integrations::tmdb;
 use integrations::tmdb::views::MultiResult;
-use views::images::{BackdropUpdate, Image, Images, ImagesUpdate, PosterUpdate};
+use sea_orm::prelude::Expr;
+use sea_orm::sea_query::Query;
+use sea_orm::ActiveValue::Set;
+use sea_orm::QueryFilter;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
+use std::collections::HashMap;
+use std::path::Path;
+use views::images::{BackdropUpdate, Image, ImageCandidate, ImageCandidates, ImageSize, ImagesUpdate, PosterUpdate};
 use views::media::{MediaIndex, MediaSourceCreate, MediaType, PageReq, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 
-use crate::{movies, series, sources};
-use crate::infrastructure::SrvErr;
+use crate::images::{delete_unused_image, save_tmdb_image};
+use crate::infrastructure::constants::tmdb_config;
 use crate::infrastructure::traits::{IntoImage, IntoView, SortCompare};
+use crate::infrastructure::SrvErr;
 use crate::sources::delete_from_media;
+use crate::{movies, series, sources};
 
 pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let (created, id) = match media_type {
@@ -33,11 +38,18 @@ pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, use
 }
 
 pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
-    let media_w_titles = Media::find().filter(media::Column::UserId.eq(user.id)).find_also_related(Titles)
+    let media = Media::find().filter(media::Column::UserId.eq(user.id))
+        .find_also_linked(MediaPosters)
+        .find_also_related(Titles)
         .filter(titles::Column::Primary.eq(true))
         .order_by_asc(functions::default_media_sort())
         .offset(page_req.offset).limit(page_req.limit).all(db).await?;
-    let indexes = build_media_indexes(media_w_titles);
+
+    let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
+
+    let indexes = build_media_indexes(media, poster_sizes);
     Ok(indexes)
 }
 
@@ -53,14 +65,18 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
         })
     }
     let res = res.ok().unwrap();
-    let media_w_titles = res.query.all(db).await?;
+    let media = res.query.all(db).await?;
+
+    let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
 
     let external_t;
     let mut external_limit = 0;
     if res.is_primitive && (res.name_search.len() > 3 || committed || res.external_id.is_some()) {
         if let Some(l) = limit {
-            if (l as usize) > media_w_titles.len() {
-                external_limit = (l as usize) - media_w_titles.len();
+            if (l as usize) > media.len() {
+                external_limit = (l as usize) - media.len();
             }
         } else {
             external_limit = usize::MAX;
@@ -69,11 +85,11 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
             if let Some(external_id) = res.external_id {
                 match external_id.r#type {
                     MediaType::Movie => {
-                        if media_w_titles.iter().any(|y| y.0.tmdb_id == Some(external_id.tmdb_id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
+                        if media.iter().any(|y| y.0.tmdb_id == Some(external_id.tmdb_id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
                             external_t = None;
                         } else {
                             let res = integrations::tmdb::services::movies::details(external_id.tmdb_id).map_ok(|x|
-                                if !media_w_titles.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
+                                if !media.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
                                     vec![x.into_view()]
                                 } else { Vec::new() }
                             ).await;
@@ -88,11 +104,11 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
                         }
                     }
                     MediaType::Series => {
-                        if media_w_titles.iter().any(|y| y.0.tmdb_id == Some(external_id.tmdb_id) && y.0.r#type == sea_orm_active_enums::MediaType::Series) {
+                        if media.iter().any(|y| y.0.tmdb_id == Some(external_id.tmdb_id) && y.0.r#type == sea_orm_active_enums::MediaType::Series) {
                             external_t = None;
                         } else {
                             let res = integrations::tmdb::services::series::details(external_id.tmdb_id).map_ok(|x|
-                                if !media_w_titles.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Series) {
+                                if !media.iter().any(|y| y.0.tmdb_id == Some(x.id) && y.0.r#type == sea_orm_active_enums::MediaType::Series) {
                                     vec![x.into_view()]
                                 } else { Vec::new() }
                             ).await;
@@ -114,7 +130,7 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
                             if external_limit == 0 { return None; }
                             match r {
                                 MultiResult::Movie(movie) => {
-                                    if media_w_titles.iter().find(|x| {
+                                    if media.iter().find(|x| {
                                         if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { true }
                                         else { false }
                                     }).is_some() { return None }
@@ -122,7 +138,7 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
                                     else { None }
                                 }
                                 MultiResult::Tv(tv) => {
-                                    if media_w_titles.iter().find(|x| {
+                                    if media.iter().find(|x| {
                                         if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { true }
                                         else { false }
                                     }).is_some() { return None }
@@ -144,7 +160,7 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
         external = e;
     } else { external = Vec::new(); }
 
-    let indexes = build_media_indexes(media_w_titles);
+    let indexes = build_media_indexes(media, poster_sizes);
 
     Ok(SearchResults {
         indexes,
@@ -165,7 +181,7 @@ pub async fn on_watchlist(media_id: i32, media_type: MediaType, user: &CurrentUs
     Ok(on_watchlist)
 }
 
-pub async fn backdrops(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<Vec<Image>, SrvErr> {
+pub async fn backdrops(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<Vec<ImageCandidate>, SrvErr> {
     let media = fetch_media(media_id, media_type, user, db).await?;
 
     let tmdb_images = if let Some(tmdb_id) = media.tmdb_id {
@@ -182,7 +198,39 @@ pub async fn backdrops(media_id: i32, media_type: MediaType, user: &CurrentUser,
 
     let languages = Languages::find().filter(languages::Column::Iso6391.is_in(lang_codes)).all(db).await?;
 
-    let mut backdrops: Vec<Image> = tmdb_images.backdrops.into_iter().map(|x| x.into_image(&media.backdrop_path, &languages)).collect();
+    let media_backdrop = if let Some(backdrop_id) = media.backdrop_image_id {
+        Images::find_by_id(backdrop_id)
+            .find_with_related(ImageSizes)
+            .all(db).await?.into_iter().next()
+    } else {
+        None
+    };
+
+    let manual_backdrops = Images::find().inner_join(ManualImageReferences)
+        .filter(images::Column::Type.eq(ImageType::Backdrop))
+        .filter(manual_image_references::Column::MediaId.eq(media.id))
+        .find_with_related(ImageSizes)
+        .all(db).await?;
+
+    let mut backdrops: Vec<ImageCandidate> = media_backdrop.as_ref().map_or_else(Vec::new, |backdrop| {
+        vec![
+            backdrop.into_view().map(|mut b| {
+                b.current = true;
+                b
+            })]
+        }).into_iter()
+        .chain(manual_backdrops.into_iter().map(|x| x.into_view()))
+        .chain(
+            tmdb_images.backdrops.into_iter().filter_map(|x|
+                if let Some(backdrop) = &media_backdrop && backdrop.0.source == ImageSource::Tmdb && backdrop.0.source_path.as_ref().is_some_and(|p| p == &x.file_path) {
+                    None
+                }
+                else {
+                    Some(Ok(x.into_image(&languages, &tmdb_config().images.backdrop_sizes)))
+                }
+            )
+        ).collect::<Result<Vec<ImageCandidate>, SrvErr>>()?;
+
 
     backdrops.sort_by(|y, x| x.sort_compare(y));
 
@@ -191,15 +239,21 @@ pub async fn backdrops(media_id: i32, media_type: MediaType, user: &CurrentUser,
 
 pub async fn update_backdrop(media_id: i32, media_type: MediaType, backdrop: BackdropUpdate, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let media = fetch_media(media_id, media_type, user, db).await?;
-
+    let image_id = fetch_id_or_pull_image(backdrop.source, backdrop.path.as_str(), ImageType::Backdrop, db).await?;
+    let old_image_id = media.backdrop_image_id;
     let mut am = media.into_active_model();
-    am.backdrop_path = Set(Some(backdrop.path));
+    am.backdrop_image_id = Set(Some(image_id));
 
     am.update(db).await?;
+
+    if let Some(old_image_id) = old_image_id {
+        delete_unused_image(old_image_id, db).await?;
+    }
+
     Ok(())
 }
 
-pub async fn posters(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<Vec<Image>, SrvErr> {
+pub async fn posters(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<Vec<ImageCandidate>, SrvErr> {
     let media = fetch_media(media_id, media_type, user, db).await?;
 
     let tmdb_images = if let Some(tmdb_id) = media.tmdb_id {
@@ -216,7 +270,39 @@ pub async fn posters(media_id: i32, media_type: MediaType, user: &CurrentUser, d
 
     let languages = Languages::find().filter(languages::Column::Iso6391.is_in(lang_codes)).all(db).await?;
 
-    let mut posters: Vec<Image> = tmdb_images.posters.into_iter().map(|x| x.into_image(&media.poster_path, &languages)).collect();
+    let media_poster = if let Some(poster_id) = media.poster_image_id {
+        Images::find_by_id(poster_id)
+            .find_with_related(ImageSizes)
+            .all(db).await?.into_iter().next()
+    } else {
+        None
+    };
+
+    let manual_posters = Images::find().inner_join(ManualImageReferences)
+        .filter(images::Column::Type.eq(ImageType::Poster))
+        .filter(manual_image_references::Column::MediaId.eq(media.id))
+        .find_with_related(ImageSizes)
+        .all(db).await?;
+
+    let mut posters: Vec<ImageCandidate> = media_poster.as_ref().map_or_else(Vec::new, |poster| {
+        vec![
+            poster.into_view().map(|mut p| {
+                p.current = true;
+                p
+            })
+        ]}).into_iter()
+        .chain(
+            manual_posters.into_iter().map(|x| x.into_view())
+        ).chain(
+        tmdb_images.posters.into_iter().filter_map(|x|
+            if let Some(poster) = &media_poster && poster.0.source == ImageSource::Tmdb && poster.0.source_path.as_ref().is_some_and(|p| p == &x.file_path) {
+                None
+            }
+            else {
+                Some(Ok(x.into_image(&languages, &tmdb_config().images.poster_sizes)))
+            }
+        )
+    ).collect::<Result<Vec<ImageCandidate>, SrvErr>>()?;
 
     posters.sort_by(|y, x| x.sort_compare(y));
 
@@ -225,16 +311,23 @@ pub async fn posters(media_id: i32, media_type: MediaType, user: &CurrentUser, d
 
 pub async fn update_poster(media_id: i32, media_type: MediaType, poster: PosterUpdate, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let media = fetch_media(media_id, media_type, user, db).await?;
+    let image_id = fetch_id_or_pull_image(poster.source, poster.path.as_str(), ImageType::Poster, db).await?;
+    let old_image_id = media.poster_image_id;
 
     let mut am = media.into_active_model();
-    am.poster_path = Set(Some(poster.path));
+    am.poster_image_id = Set(Some(image_id));
 
     am.update(db).await?;
+
+    if let Some(old_image_id) = old_image_id {
+        delete_unused_image(old_image_id, db).await?;
+    }
+
     Ok(())
 }
 
 
-pub async fn images(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<Images, SrvErr> {
+pub async fn images(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<ImageCandidates, SrvErr> {
     let media = fetch_media(media_id, media_type, user, db).await?;
 
     let tmdb_images = if let Some(tmdb_id) = media.tmdb_id {
@@ -244,7 +337,7 @@ pub async fn images(media_id: i32, media_type: MediaType, user: &CurrentUser, db
             tmdb::services::series::images(tmdb_id, &media.original_language).await?
         }
     } else {
-        return Ok(Images {
+        return Ok(ImageCandidates {
             backdrops: vec![],
             posters: vec![],
         })
@@ -255,9 +348,9 @@ pub async fn images(media_id: i32, media_type: MediaType, user: &CurrentUser, db
 
     let languages = Languages::find().filter(languages::Column::Iso6391.is_in(lang_codes)).all(db).await?;
 
-    let mut images = Images {
-        backdrops: tmdb_images.backdrops.into_iter().map(|x| x.into_image(&media.backdrop_path, &languages)).collect(),
-        posters: tmdb_images.posters.into_iter().map(|x| x.into_image(&media.poster_path, &languages)).collect(),
+    let mut images = ImageCandidates {
+        backdrops: tmdb_images.backdrops.into_iter().map(|x| x.into_image(&languages, &tmdb_config().images.backdrop_sizes)).collect(),
+        posters: tmdb_images.posters.into_iter().map(|x| x.into_image(&languages, &tmdb_config().images.poster_sizes)).collect(),
     };
 
     images.backdrops.sort_by(|y, x| x.sort_compare(y));
@@ -271,10 +364,14 @@ pub async fn update_images(media_id: i32, media_type: MediaType, images: ImagesU
 
     let mut am = media.into_active_model();
     if let Some(backdrop) = images.backdrop_path {
-        am.backdrop_path = Set(Some(backdrop));
+        let source = images.backdrop_source.ok_or(SrvErr::BadRequest("Source not provided".to_string()))?;
+        let backdrop_image_id = fetch_id_or_pull_image(source, backdrop.as_str(), ImageType::Backdrop, db).await?;
+        am.backdrop_image_id = Set(Some(backdrop_image_id));
     }
     if let Some(poster) = images.poster_path {
-        am.poster_path = Set(Some(poster));
+        let source = images.poster_source.ok_or(SrvErr::BadRequest("Source not provided".to_string()))?;
+        let poster_image_id = fetch_id_or_pull_image(source, poster.as_str(), ImageType::Poster, db).await?;
+        am.poster_image_id = Set(Some(poster_image_id));
     }
     am.update(db).await?;
     Ok(())
@@ -334,6 +431,9 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
         return Err(SrvErr::Unauthorized);
     }
 
+    let poster_id = media.poster_image_id;
+    let backdrop_id = media.backdrop_image_id;
+
     let tran = db.begin().await?;
     media.delete(db).await?;
 
@@ -352,30 +452,64 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
             .to_owned())
     ).exec(db).await?;
 
+    if let Some(poster_id) = poster_id {
+        delete_unused_image(poster_id, db).await?;
+    }
+
+    if let Some(backdrop_id) = backdrop_id {
+        delete_unused_image(backdrop_id, db).await?;
+    }
+
+    let deleted_references = ManualImageReferences::delete_many()
+        .filter(manual_image_references::Column::MediaId.eq(media_id))
+        .exec_with_returning(db).await?;
+
+    for deleted_reference in deleted_references {
+        delete_unused_image(deleted_reference.image_id, db).await?;
+    }
+
     tran.commit().await?;
 
     Ok(())
 }
 
 
-pub(crate) fn build_media_indexes(media_w_titles: Vec<(media::Model, Option<titles::Model>)>) -> Vec<MediaIndex> {
-    let mut indexes = Vec::with_capacity(media_w_titles.len());
-    for m in media_w_titles {
-        indexes.push(build_media_index(m));
+pub(crate) fn build_media_indexes(data: Vec<(media::Model, Option<images::Model>, Option<titles::Model>)>, poster_sizes: Vec<image_sizes::Model>) -> Vec<MediaIndex> {
+    let mut sizes_map: HashMap<i32, Vec<&image_sizes::Model>> = HashMap::new();
+
+    for size in &poster_sizes {
+        if let Some(vec) = sizes_map.get_mut(&size.image_id) {
+            vec.push(size);
+        }
+        else {
+            let vec = vec![size];
+            sizes_map.insert(size.image_id.clone(), vec);
+        }
+    }
+
+    let mut indexes = Vec::with_capacity(data.len());
+    for m in data {
+        let sizes = m.0.poster_image_id.and_then(|i| sizes_map.get(&i));
+        indexes.push(build_media_index(m, sizes));
     }
 
     indexes
 }
 
-pub(crate) fn build_media_index(m: (media::Model, Option<titles::Model>)) -> MediaIndex {
-    let title = if let Some(title) = m.1 {
+pub(crate) fn build_media_index(m: (media::Model, Option<images::Model>, Option<titles::Model>), poster_sizes: Option<&Vec<&image_sizes::Model>>) -> MediaIndex {
+    let title = if let Some(title) = m.2 {
         title.title
     } else { config().media.unset_title.clone() };
+
+    let image = m.1.map(|i| Image {
+        path: format!("/{}.{}", i.path, i.file_type.to_extension()),
+        sizes: poster_sizes.map_or(vec![], |v| v.iter().map(|s| ImageSize::from(*s)).collect())
+    });
 
     MediaIndex {
         id: m.0.id,
         r#type: views::media::MediaType::from(m.0.r#type),
-        poster_path: m.0.poster_path,
+        poster: image,
         stars: m.0.stars,
         title,
     }
@@ -414,4 +548,25 @@ pub(crate) async fn fetch_media(media_id: i32, media_type: MediaType, user: &Cur
         .filter(media::Column::UserId.eq(user.id)).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
 
     media.ok_or(SrvErr::NotFound)
+}
+
+pub(crate) async fn fetch_id_or_pull_image(source: views::images::ImageSource, path: &str, image_type: ImageType, db: &DbConn) -> Result<i32, SrvErr> {
+    match source {
+        views::images::ImageSource::Internal => {
+            let backdrop_path = Path::new(&path);
+            let path = backdrop_path.file_stem().map(|p| p.to_str())
+                .ok_or(SrvErr::BadRequest("Invalid path".to_string()))?;
+            let file_type = ImageFileType::try_from_extension(backdrop_path.extension()
+                .ok_or(SrvErr::BadRequest("Invalid path".to_string()))?.to_str()
+                .ok_or(SrvErr::BadRequest("Invalid path".to_string()))?)
+                .ok_or(SrvErr::BadRequest("Invalid path".to_string()))?;
+            let image = Images::find().filter(images::Column::Path.eq(path)
+                .and(images::Column::Type.eq(image_type)
+                    .and(images::Column::FileType.eq(file_type)))).one(db).await?;
+            image.map(|i| i.id)
+        }
+        views::images::ImageSource::TMDB => {
+            Some(save_tmdb_image(path, image_type, db).await?)
+        }
+    }.ok_or(SrvErr::BadRequest("Invalid path".to_string()))
 }

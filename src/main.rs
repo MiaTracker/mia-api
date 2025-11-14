@@ -14,7 +14,7 @@ async fn main() {
 
     if let Some(arg) = args.next() {
         match arg.as_str() {
-            "run" => {
+            "serve" => {
                 api::launch().await;
             },
             "migrate" => {

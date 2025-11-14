@@ -1,6 +1,6 @@
+use infrastructure::config;
 use once_cell::unsync::Lazy;
 use reqwest::header::{HeaderMap, HeaderValue};
-use infrastructure::config;
 
 pub const CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::new()

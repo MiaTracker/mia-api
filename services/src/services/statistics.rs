@@ -3,9 +3,10 @@ use sea_orm::{ColumnTrait, DbConn, EntityTrait, FromQueryResult, PaginatorTrait,
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::Func;
 
-use entities::{genres, languages, logs, media, titles};
-use entities::prelude::{Genres, Languages, Logs, Media, Titles};
+use entities::{genres, image_sizes, images, languages, logs, media, titles};
+use entities::prelude::{Genres, ImageSizes, Languages, Logs, Media, Titles};
 use entities::sea_orm_active_enums::MediaType;
+use entities::traits::linked::MediaPosters;
 use views::statistics::{AvgRatingStats, CategoryStats, ComparativeStats, LogStats, MediaStats, Stats};
 use views::users::CurrentUser;
 
@@ -53,22 +54,26 @@ pub async fn stats(user: &CurrentUser, db: &DbConn) -> Result<Stats, SrvErr> {
     let watched_movie_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Movie))
         .inner_join(Logs)
+        .find_also_linked(MediaPosters)
         .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
     let watched_series_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series))
         .inner_join(Logs)
+        .find_also_linked(MediaPosters)
         .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
 
     let rated_movie_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Movie))
         .inner_join(Logs)
+        .find_also_linked(MediaPosters)
         .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
     let rated_series_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series))
         .inner_join(Logs)
+        .find_also_linked(MediaPosters)
         .group_by(media::Column::Id).group_by(titles::Column::Id).order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
 
@@ -133,6 +138,42 @@ pub async fn stats(user: &CurrentUser, db: &DbConn) -> Result<Stats, SrvErr> {
             watched_movie_future, watched_series_future, genres_future, languages_future,
             rated_movie_future, rated_series_future, media_avg_future, movies_avg_future, series_avg_future)?;
 
+    let watched_movie_id = watched_movie.as_ref().and_then(|p| Some(p.0.id));
+    let watched_series_id = watched_series.as_ref().and_then(|p| Some(p.0.id));
+    let rated_movie_id = rated_movie.as_ref().and_then(|p| Some(p.0.id));
+    let rated_series_id = rated_series.as_ref().and_then(|p| Some(p.0.id));
+
+    let media_vec: Vec<(media::Model, Option<images::Model>, Option<titles::Model>)> =
+        vec![watched_movie, watched_series, rated_movie, rated_series].into_iter()
+        .filter_map(|p| p).collect();
+    let poster_ids: Vec<i32> = media_vec.iter()
+        .filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
+
+    let indexes = crate::services::media::build_media_indexes(media_vec, poster_sizes);
+
+    let mut watched_movie_idx = Option::None;
+    let mut watched_series_idx = Option::None;
+    let mut rated_movie_idx = Option::None;
+    let mut rated_series_idx = Option::None;
+
+    for index in indexes {
+        if watched_movie_id.is_some_and(|i| i == index.id) {
+            watched_movie_idx = Some(index);
+        }
+        else if watched_series_id.is_some_and(|i| i == index.id) {
+            watched_series_idx = Some(index);
+        }
+        else if rated_movie_id.is_some_and(|i| i == index.id) {
+            rated_movie_idx = Some(index);
+        }
+        else if rated_series_id.is_some_and(|i| i == index.id) {
+            rated_series_idx = Some(index);
+        }
+    }
+
+
     Ok(Stats {
         media: MediaStats {
             count: media_count,
@@ -147,20 +188,12 @@ pub async fn stats(user: &CurrentUser, db: &DbConn) -> Result<Stats, SrvErr> {
         genres,
         languages,
         most_watched: CategoryStats {
-            movie: watched_movie.map(|m| {
-                crate::services::media::build_media_index(m)
-            }),
-            series: watched_series.map(|s| {
-                crate::services::media::build_media_index(s)
-            }),
+            movie: watched_movie_idx,
+            series: watched_series_idx,
         },
         highest_rated: CategoryStats {
-            movie: rated_movie.map(|m| {
-                crate::services::media::build_media_index(m)
-            }),
-            series: rated_series.map(|m| {
-                crate::services::media::build_media_index(m)
-            }),
+            movie: rated_movie_idx,
+            series: rated_series_idx,
         },
         average_rating: AvgRatingStats {
             overall: media_avg.map_or(Some(0f64), |x| x.avg),

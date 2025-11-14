@@ -1,25 +1,21 @@
 use chrono::NaiveDate;
 use sea_orm::{NotSet, Set};
 
+use crate::infrastructure::constants::tmdb_config;
+use crate::infrastructure::traits::{IntoActiveModel, IntoImage, IntoView};
 use entities::sea_orm_active_enums::MediaType;
 use entities::{genres, languages, media, movies, seasons, series};
 use infrastructure::config;
 use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeriesDetails, TmdbImage};
-use views::images::Image;
+use views::images::{Image, ImageCandidate};
 use views::media::ExternalIndex;
-
-use crate::infrastructure::traits::{IntoActiveModel, IntoImage, IntoView};
 
 impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
     fn into_active_model(self) -> media::ActiveModel {
         media::ActiveModel {
             id: NotSet,
             user_id: NotSet,
-            backdrop_path:
-            if let Some(path) = self.backdrop_path.clone() {
-                if path.is_empty() { Set(None) }
-                else { Set(Some(path)) }
-            } else { Set(None) },
+            backdrop_image_id: NotSet,
             homepage:
             if let Some(homepage) = self.homepage.clone() {
                 if homepage.is_empty() { Set(None) }
@@ -36,11 +32,7 @@ impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
                 if overview.is_empty() { Set(None) }
                 else { Set(Some(overview)) }
             } else { Set(None) },
-            poster_path:
-            if let Some(poster_path) = self.poster_path.clone() {
-                if poster_path.is_empty() { Set(None) }
-                else { Set(Some(poster_path)) }
-            } else { Set(None) },
+            poster_image_id: NotSet,
             tmdb_vote_average:
             if let Some(vote_average) = self.vote_average {
                 Set(Some(vote_average))
@@ -97,11 +89,7 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesDetails {
         media::ActiveModel {
             id: NotSet,
             user_id: NotSet,
-            backdrop_path:
-            if let Some(path) = self.backdrop_path.clone() {
-                if path.is_empty() { Set(None) }
-                else { Set(Some(path)) }
-            } else { Set(None) },
+            backdrop_image_id: NotSet,
             homepage:
             if let Some(homepage) = self.homepage.clone() {
                 if homepage.is_empty() { Set(None) }
@@ -114,11 +102,7 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesDetails {
                 if overview.is_empty() { Set(None) }
                 else { Set(Some(overview)) }
             } else { Set(None) },
-            poster_path:
-            if let Some(poster_path) = self.poster_path.clone() {
-                if poster_path.is_empty() { Set(None) }
-                else { Set(Some(poster_path)) }
-            } else { Set(None) },
+            poster_image_id: NotSet,
             tmdb_vote_average:
             if let Some(vote_average) = self.vote_average {
                 Set(Some(vote_average))
@@ -205,7 +189,12 @@ impl IntoView<ExternalIndex> for &MultiMovieResult {
         ExternalIndex {
             external_id: self.id,
             r#type: views::media::MediaType::Movie,
-            poster_path: self.poster_path.clone(),
+            poster: self.poster_path.clone().map(|p|
+                Image {
+                    path: p,
+                    sizes: tmdb_config().images.poster_sizes.iter().map(|s| s.into_view()).collect(),
+                }
+            ),
             title: if let Some(title) = self.title.clone() {
                 title
             } else {
@@ -220,7 +209,12 @@ impl IntoView<ExternalIndex> for &MultiTvResult {
         ExternalIndex {
             external_id: self.id,
             r#type: views::media::MediaType::Series,
-            poster_path: self.poster_path.clone(),
+            poster: self.poster_path.clone().map(|p|
+                Image {
+                    path: p,
+                    sizes: tmdb_config().images.poster_sizes.iter().map(|s| s.into_view()).collect(),
+                }
+            ),
             title: if let Some(title) = self.name.clone() {
                 title
             } else {
@@ -235,7 +229,12 @@ impl IntoView<ExternalIndex> for &MovieDetails {
         ExternalIndex {
             external_id: self.id,
             r#type: views::media::MediaType::Movie,
-            poster_path: self.poster_path.clone(),
+            poster: self.poster_path.clone().map(|p|
+                Image {
+                    path: p,
+                    sizes: tmdb_config().images.poster_sizes.iter().map(|s| s.into_view()).collect(),
+                }
+            ),
             title: self.title.clone(),
         }
     }
@@ -246,20 +245,27 @@ impl IntoView<ExternalIndex> for &SeriesDetails {
         ExternalIndex {
             external_id: self.id,
             r#type: views::media::MediaType::Series,
-            poster_path: self.poster_path.clone(),
+            poster: self.poster_path.clone().map(|p|
+                Image {
+                    path: p,
+                    sizes: tmdb_config().images.poster_sizes.iter().map(|s| s.into_view()).collect(),
+                }
+            ),
             title: self.name.clone(),
         }
     }
 }
 
 impl IntoImage for &TmdbImage {
-    fn into_image(self, default_path: &Option<String>, languages: &Vec<languages::Model>) -> Image {
-        Image {
+    fn into_image(self, languages: &Vec<languages::Model>, sizes: &Vec<views::configuration::ImageSize>) -> ImageCandidate {
+        ImageCandidate {
             language: self.iso_639_1.as_ref().map(|z| languages.iter().find(|y| y.iso6391.as_str() == z).map(|l| l.english_name.clone())).flatten(),
-            width: self.width,
-            height: self.height,
-            current: default_path.as_ref().is_some_and(|p| p == self.file_path.as_str()),
-            file_path: self.file_path.clone(),
+            original_width: self.width,
+            original_height: self.height,
+            path: self.file_path.clone(),
+            current: false,
+            sizes: sizes.iter().map(|s| s.into_view()).collect(),
+            source: views::images::ImageSource::TMDB,
         }
     }
 }
