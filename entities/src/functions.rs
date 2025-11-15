@@ -39,7 +39,7 @@ impl ImageFileType {
         })
     }
 
-    pub fn to_extension(&self) -> &str {
+    pub fn to_extension(&self) -> &'static str {
         match self {
             ImageFileType::Jpeg => "jpg",
             ImageFileType::Png => "png",

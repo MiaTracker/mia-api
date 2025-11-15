@@ -9,8 +9,8 @@ use image::{DynamicImage, ImageFormat, ImageReader};
 use image::imageops::FilterType;
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrait, ModelTrait, NotSet, Set};
-use tokio::fs;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, Set};
+use tokio::{fs, task};
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt};
 use tokio_util::io::ReaderStream;
@@ -108,7 +108,7 @@ pub async fn get_tmdb(slug: String, path: String) -> Result<(StatusCode, String,
     }
 }
 
-pub async fn save_tmdb_image<C>(tmdb_path: &str, r#type: ImageType, db: &C) -> Result<i32, SrvErr> where C : ConnectionTrait {
+pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &DbConn) -> Result<i32, SrvErr> {
     let backdrop_bytes = tmdb::services::images::image(tmdb_path).await?;
 
     let reader = match ImageReader::new(Cursor::new(backdrop_bytes)).with_guessed_format() {
@@ -139,7 +139,7 @@ pub async fn save_tmdb_image<C>(tmdb_path: &str, r#type: ImageType, db: &C) -> R
         }
     };
 
-    let extension = image_file_type.to_extension();
+    let extension: &'static str = image_file_type.to_extension();
 
     let directory = loop {
         let uuid = Uuid::new_v4().simple().to_string();
@@ -169,45 +169,11 @@ pub async fn save_tmdb_image<C>(tmdb_path: &str, r#type: ImageType, db: &C) -> R
 
     save_image_size(db_image.id, width, height, &directory_path, extension, format, &image, db).await?;
 
-    let gcd = gcd::binary_u32(width, height);
+    let db = db.clone();
 
-    let width_short = width <= height;
-    let short = if width_short { width } else { height };
-    let long = if width_short { height } else { width };
-    let step = short / gcd;
-
-    let ratio = long as f32 / short as f32;
-
-    let (_, results) = unsafe {
-        // Safe because the Scope is never forgotten
-        TokioScope::scope_and_collect(|scope| {
-            let mut i = 0;
-            loop {
-                let threshold = 100 + 200 * i;
-                if threshold > short - 200 {
-                    break;
-                }
-                let directory_path = &directory_path;
-                let image = &image;
-                let (resized_width, resized_height) = calculate_image_size(threshold, width_short, step, ratio);
-
-                scope.spawn(async move {
-                    save_image_size(db_image.id, resized_width, resized_height, directory_path, extension, format, image, db).await
-                });
-
-                i += 1;
-            }
-        })
-    }.await;
-
-
-    let results = results.into_iter().map(|r| r.map_err(|err| {
-        error!("An error returned by Tokio while joining tasks: {:?}", err);
-        return SrvErr::Internal("A Tokio task failed".to_string());
-    })).collect::<Result<Vec<_>, SrvErr>>()?;
-    for result in results {
-        result?;
-    }
+    task::spawn(async move {
+        save_image_sizes_task(db_image.id, width, height, directory_path, extension, format, image, db).await;
+    });
 
     Ok(db_image.id)
 }
@@ -263,6 +229,53 @@ pub(crate) async fn delete_unused_image(id: i32, db: &DbConn) -> Result<(), SrvE
     })
 }
 
+async fn save_image_sizes_task(image_id: i32, width: u32, height: u32, directory_path: PathBuf,
+                               extension: &str, format: ImageFormat, image: DynamicImage, db: DbConn) {
+    let gcd = gcd::binary_u32(width, height);
+
+    let width_short = width <= height;
+    let short = if width_short { width } else { height };
+    let long = if width_short { height } else { width };
+    let step = short / gcd;
+
+    let ratio = long as f32 / short as f32;
+
+    let (_, results) = unsafe {
+        // Safe because the Scope is never forgotten
+        TokioScope::scope_and_collect(|scope| {
+            let mut i = 0;
+            loop {
+                let threshold = 100 + 200 * i;
+                if threshold > short - 200 {
+                    break;
+                }
+                let directory_path = &directory_path;
+                let image = &image;
+                let (resized_width, resized_height) = calculate_image_size(threshold, width_short, step, ratio);
+                let db = &db;
+
+                scope.spawn(async move {
+                    save_image_size(image_id, resized_width, resized_height, directory_path, extension, format, image, db).await
+                });
+
+                i += 1;
+            }
+        })
+    }.await;
+
+    let results = results.into_iter().map(|r| r.map_err(|err| {
+        error!("An error returned by Tokio while joining tasks: {:?}", err);
+        return SrvErr::Internal("A Tokio task failed".to_string());
+    })).collect::<Result<Vec<_>, SrvErr>>();
+    while let Ok(ref results_vec) = results {
+        for result in results_vec {
+            if let Err(e) = result {
+                error!("Failed to save image size for image {}: {}", image_id, e);
+            }
+        }
+    }
+}
+
 fn calculate_image_size(threshold: u32, width_short: bool, step: u32, ratio: f32) -> (u32, u32) {
     let multiplier = if step == threshold || step <= 100 {
         (threshold as f32 / step as f32).ceil()
@@ -280,8 +293,8 @@ fn calculate_image_size(threshold: u32, width_short: bool, step: u32, ratio: f32
     }
 }
 
-async fn save_image_size<C>(image_id: i32, width: u32, height: u32, directory_path: &PathBuf,
-                         extension: &str, format: ImageFormat, image: &DynamicImage, db: &C) -> Result<(), SrvErr>  where C : ConnectionTrait {
+async fn save_image_size(image_id: i32, width: u32, height: u32, directory_path: &PathBuf,
+                         extension: &str, format: ImageFormat, image: &DynamicImage, db: &DbConn) -> Result<(), SrvErr> {
 
     let path = directory_path
         .join(format!("{}x{}", width, height))

@@ -10,11 +10,15 @@ path = "src/lib.rs"
 
 [dependencies]
 infrastructure = { path = "../infrastructure" }
+integrations = { path = "../integrations" }
+
 uuid = { version = "1.18.0", features = ["v4"] }
 log = { version = "0.4.0"}
-
-services = { path = "../services" }
-entities = { path = "../entities" }
+sea-orm = { version = "1.1.0", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+image = "0.25.8"
+gcd = "2.3.0"
+async-scoped = { version = "0.9.0", features = ["use-tokio"] }
+tokio = "1.47.0"
 
 [dependencies.sea-orm-migration]
 version = "1.1.0"
