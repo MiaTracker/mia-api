@@ -1,3 +1,4 @@
+use log::debug;
 use sea_orm_migration::prelude::*;
 use entities::sea_orm_active_enums;
 use crate::extension::postgres::Type;
@@ -96,6 +97,8 @@ impl MigrationTrait for Migration {
             let id = row.try_get_by_index::<i32>(0)?;
             let backdrop_path = row.try_get_by_index_nullable::<Option<String>>(1)?;
             let poster_path = row.try_get_by_index_nullable::<Option<String>>(2)?;
+
+            debug!("Migrating media {}", id);
 
             if let Some(backdrop_path) = backdrop_path {
                 let backdrop_id = save_tmdb_image(backdrop_path.as_str(), sea_orm_active_enums::ImageType::Backdrop,

@@ -167,6 +167,8 @@ pub async fn save_tmdb_image<C>(tmdb_path: &str, r#type: ImageType, db: &C) -> R
 
     fs::create_dir_all(&directory_path).await?;
 
+    save_image_size(db_image.id, width, height, &directory_path, extension, format, &image, db).await?;
+
     let gcd = gcd::binary_u32(width, height);
 
     let width_short = width <= height;
@@ -182,18 +184,16 @@ pub async fn save_tmdb_image<C>(tmdb_path: &str, r#type: ImageType, db: &C) -> R
             let mut i = 0;
             loop {
                 let threshold = 100 + 200 * i;
-                let original = threshold >= short;
-                let directory_path = &directory_path;
-                let image = &image;
-
-                scope.spawn(async move {
-                    save_image_size(db_image.id, threshold, original, width, height, width_short, step,
-                                    ratio, directory_path, extension, format, image, db).await
-                });
-
-                if original {
+                if threshold > short - 200 {
                     break;
                 }
+                let directory_path = &directory_path;
+                let image = &image;
+                let (resized_width, resized_height) = calculate_image_size(threshold, width_short, step, ratio);
+
+                scope.spawn(async move {
+                    save_image_size(db_image.id, resized_width, resized_height, directory_path, extension, format, image, db).await
+                });
 
                 i += 1;
             }
@@ -263,40 +263,37 @@ pub(crate) async fn delete_unused_image(id: i32, db: &DbConn) -> Result<(), SrvE
     })
 }
 
-async fn save_image_size<C>(image_id: i32, threshold: u32, original: bool, width: u32, height: u32,
-                         width_short: bool, step: u32, ratio: f32, directory_path: &PathBuf,
-                         extension: &str, format: ImageFormat, image: &DynamicImage, db: &C) -> Result<(), SrvErr>  where C : ConnectionTrait {
-    let resized_width;
-    let resized_height;
-    (resized_width, resized_height) = if original {
-        (width, height)
+fn calculate_image_size(threshold: u32, width_short: bool, step: u32, ratio: f32) -> (u32, u32) {
+    let multiplier = if step == threshold || step <= 100 {
+        (threshold as f32 / step as f32).ceil()
+    } else { threshold as f32 / step as f32 };
+
+    let resized_short_f = step as f32 * multiplier;
+    let resized_long = (resized_short_f * ratio).round() as u32;
+    let resized_short = resized_short_f.round() as u32;
+
+
+    if width_short {
+        (resized_short, resized_long)
     } else {
-        let multiplier = if step == threshold || step <= 100 {
-            (threshold as f32 / step as f32).ceil()
-        } else { threshold as f32 / step as f32 };
+        (resized_long, resized_short)
+    }
+}
 
-        let resized_short_f = step as f32 * multiplier;
-        let resized_long = (resized_short_f * ratio).round() as u32;
-        let resized_short = resized_short_f.round() as u32;
-
-
-        if width_short {
-            (resized_short, resized_long)
-        } else {
-            (resized_long, resized_short)
-        }
-    };
+async fn save_image_size<C>(image_id: i32, width: u32, height: u32, directory_path: &PathBuf,
+                         extension: &str, format: ImageFormat, image: &DynamicImage, db: &C) -> Result<(), SrvErr>  where C : ConnectionTrait {
 
     let path = directory_path
-        .join(format!("{}x{}", resized_width, resized_height))
+        .join(format!("{}x{}", width, height))
         .with_extension(extension);
 
     {
-        let resized_image = if original {
+        let resized_image = if image.width() == width && image.height() == height {
+            debug!("Saving original image. Size: {} x {}", width, height);
             image.clone()
         } else {
-            debug!("Started image resize. Size: {} x {}", resized_width, resized_height);
-            let img = image.resize_exact(resized_width, resized_height, FilterType::Lanczos3);
+            debug!("Started image resize. Size: {} x {}", width, height);
+            let img = image.resize_exact(width, height, FilterType::Lanczos3);
             debug!("Finished image resize");
             img
         };
@@ -309,7 +306,7 @@ async fn save_image_size<C>(image_id: i32, threshold: u32, original: bool, width
 
         let mut file = File::create_new(&path).await.map_err(|e|
             {
-                error!("File {} for size {}x{} already exists", path.display(), resized_width, resized_height);
+                error!("File {} for size {}x{} already exists. Error: {}", path.display(), width, height, e);
                 e
             })?;
         if let Err(err) = file.write_all(buffer.as_slice()).await {
@@ -323,8 +320,8 @@ async fn save_image_size<C>(image_id: i32, threshold: u32, original: bool, width
     image_sizes::ActiveModel {
         id: Default::default(),
         image_id: Set(image_id),
-        width: Set(resized_width as i32),
-        height: Set(resized_height as i32),
+        width: Set(width as i32),
+        height: Set(height as i32),
     }.insert(db).await?;
 
     Ok(())
