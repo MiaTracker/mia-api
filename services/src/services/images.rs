@@ -267,7 +267,7 @@ async fn save_image_sizes_task(image_id: i32, width: u32, height: u32, directory
         error!("An error returned by Tokio while joining tasks: {:?}", err);
         return SrvErr::Internal("A Tokio task failed".to_string());
     })).collect::<Result<Vec<_>, SrvErr>>();
-    while let Ok(ref results_vec) = results {
+    if let Ok(ref results_vec) = results {
         for result in results_vec {
             if let Err(e) = result {
                 error!("Failed to save image size for image {}: {}", image_id, e);
