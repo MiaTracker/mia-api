@@ -1,6 +1,6 @@
 use futures::try_join;
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::{Func, SimpleExpr};
+use sea_orm::sea_query::{Alias, Func, IntoColumnRef, SimpleExpr};
 use sea_orm::{ColumnTrait, DbConn, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 
 use entities::prelude::{Genres, ImageSizes, Languages, Logs, Media, Titles};
@@ -55,26 +55,30 @@ pub async fn stats(user: &CurrentUser, db: &DbConn) -> Result<Stats, SrvErr> {
         .filter(media::Column::Type.eq(MediaType::Movie))
         .inner_join(Logs)
         .find_also_linked(MediaPosters)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Custom("r0.id".to_string())).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Column((Alias::new("r0"), images::Column::Id).into_column_ref()))
+        .order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
     let watched_series_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series))
         .inner_join(Logs)
         .find_also_linked(MediaPosters)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Custom("r0.id".to_string())).order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Column((Alias::new("r0"), images::Column::Id).into_column_ref()))
+        .order_by_desc(logs::Column::Id.count()).order_by_desc(media::Column::Stars.if_null(-1)).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
 
     let rated_movie_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Movie))
         .inner_join(Logs)
         .find_also_linked(MediaPosters)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Custom("r0.id".to_string())).order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Column((Alias::new("r0"), images::Column::Id).into_column_ref()))
+        .order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
     let rated_series_future = Media::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::Type.eq(MediaType::Series))
         .inner_join(Logs)
         .find_also_linked(MediaPosters)
-        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Custom("r0.id".to_string())).order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
+        .group_by(media::Column::Id).group_by(titles::Column::Id).group_by(SimpleExpr::Column((Alias::new("r0"), images::Column::Id).into_column_ref()))
+        .order_by_desc(media::Column::Stars.if_null(-1)).order_by_desc(logs::Column::Id.count()).limit(1)
         .find_also_related(Titles).filter(titles::Column::Primary.eq(true)).one(db);
 
     let genres_future = async {
