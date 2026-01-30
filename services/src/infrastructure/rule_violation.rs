@@ -34,6 +34,8 @@ pub enum RuleViolation {
     PasswordChangeOldPasswordIncorrect,
     PasswordChangePasswordsDoNotMatch,
     PasswordChangePasswordRequirementsNotMet,
+
+    SourceHasLogs
 }
 
 impl fmt::Display for RuleViolation {

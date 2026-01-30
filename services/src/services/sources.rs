@@ -1,6 +1,6 @@
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, Set, TransactionTrait};
 use entities::{media, sea_orm_active_enums, sources};
-use entities::prelude::{Media, Sources};
+use entities::prelude::{Logs, Media, Sources};
 use views::media::MediaType;
 use views::sources::{Source, SourceCreate, SourceUpdate};
 use views::users::CurrentUser;
@@ -145,6 +145,11 @@ pub async fn delete(media_id: i32, source_id: i32, media_type: MediaType, user: 
 pub async fn delete_from_media(media: media::Model, source: sources::Model, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     if user.though_bot && !source.bot_controllable {
         return Err(SrvErr::Unauthorized)
+    }
+
+    let has_logs = source.find_related(Logs).count(db).await? > 0;
+    if has_logs {
+        return Err(SrvErr::RuleViolation(vec![RuleViolation::SourceHasLogs]));
     }
 
     let tran = db.begin().await?;
