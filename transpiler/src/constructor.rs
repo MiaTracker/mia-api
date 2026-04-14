@@ -1,18 +1,18 @@
+use chrono::NaiveDate;
 use cruet::Inflector;
-use sea_orm::{ColumnTrait, Condition, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::{Alias, BinOper, Cond, Func, Query, SelectStatement, SimpleExpr, UnionType};
 use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::{Alias, BinOper, Cond, ExprTrait, Func, Query, SelectStatement, SimpleExpr};
+use sea_orm::{ColumnTrait, Condition, EntityTrait, JoinType, Order, QueryFilter, QueryOrder, QuerySelect};
 
-use entities::{functions, genres, languages, logs, media, media_genres, media_tags, movies, series, sources, tags, titles, watchlist};
-use entities::functions::DatePart;
 use entities::prelude::{Media, Titles};
 use entities::sea_orm_active_enums::MediaType;
 use entities::traits::linked::MediaPosters;
+use entities::{functions, genres, languages, logs, media, media_genres, media_tags, movies, series, sources, tags, titles, watchlist};
 use views::media::{PageReq, SearchQuery, SortTarget};
 
-use crate::{ErrorSource, ExternalId, parser, TranspilationError, TranspilationResult};
 use crate::parser::{BinaryExpr, ComparisonOperator, Literal, LogicalExpr, LogicalOperator, SortDirection, TernaryExpr};
+use crate::{parser, ErrorSource, ExternalId, TranspilationError, TranspilationResult};
 
 macro_rules! assert_eq {
     ($op:ident) => {
@@ -75,7 +75,8 @@ impl FromLiteral for i32 {
                     Ok(r) => { Ok(Some(r)) }
                     Err(_) => { Err(ConstructionError::from(format!("Expected integer, found '{}'", s))) }
                 }
-            }
+            },
+            Literal::Date(d) => Err(ConstructionError::from(format!("Expected integer, found {}", d)))
         }
     }
 }
@@ -93,7 +94,8 @@ impl FromLiteral for f32 {
                     Ok(r) => { Ok(Some(r)) }
                     Err(_) => { Err(ConstructionError::from(format!("Expected float, found '{}'", s))) }
                 }
-            }
+            },
+            Literal::Date(d) => Err(ConstructionError::from(format!("Expected integer, found {}", d)))
         }
     }
 }
@@ -119,6 +121,17 @@ impl FromLiteral for bool {
             Literal::Int(i) => { Ok(Some(i.is_positive())) }
             Literal::Float(f) => { Ok(Some(f.is_sign_positive())) }
             Literal::String(s) => { Ok(Some(!s.is_empty())) }
+            Literal::Date(d) => Err(ConstructionError::from(format!("Expected integer, found {}", d)))
+        }
+    }
+}
+
+impl FromLiteral for chrono::NaiveDate {
+    fn from_literal(literal: Literal) -> Result<Option<Self>, ConstructionError> where Self: Sized {
+        match literal {
+            Literal::Null => Ok(None),
+            Literal::Date(d) => Ok(Some(d)),
+            l => Err(ConstructionError::from(format!("Expected date, found '{:?}'", l))),
         }
     }
 }
@@ -373,7 +386,8 @@ fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<S
         "language" => { language_target(op, literal) }
         "id" => { id_target(op, literal) }
         "tmdb_id" => { tmdb_id_target(op, literal) }
-        "year" => { year_target(op, literal) }
+        "release_date" => { release_date_target(op, literal) }
+        "date_added" => { date_added_target(op, literal) }
         "on_watchlist" => { on_watchlist_target(op, literal) }
         "rated" => { rated_target(op, literal) }
         "tmdb_rating" => { tmdb_rating_target(op, literal) }
@@ -585,25 +599,38 @@ fn tmdb_id_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStat
     )
 }
 
-fn year_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
-    let year = literal.to_value::<i32>()?;
+fn release_date_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    let date = literal.to_value::<chrono::NaiveDate>()?;
     let operator = operator(op);
     Ok(
         Query::select()
-            .columns([(movies::Entity, movies::Column::Id)])
-            .from(movies::Entity)
-            .cond_where(Expr::expr(Func::cust(DatePart).arg("Year").arg(Expr::col((movies::Entity, movies::Column::ReleaseDate)))).binary(operator, year))
-            .union(UnionType::All, Query::select()
-                .columns([(series::Entity, series::Column::Id)])
-                .from(series::Entity)
-                .cond_where(Expr::expr(Func::cust(DatePart).arg("Year").arg(Expr::col((series::Entity, series::Column::FirstAirDate)))).binary(operator, year))
-                .to_owned()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .left_join(series::Entity, Expr::col((series::Entity, series::Column::Id)).equals((media::Entity, media::Column::Id)))
+            .left_join(movies::Entity, Expr::col((movies::Entity, movies::Column::Id)).equals((movies::Entity, movies::Column::Id)))
+            .cond_where(
+                Func::coalesce([
+                    Expr::col(movies::Column::ReleaseDate).into(),
+                    Expr::col(series::Column::FirstAirDate).into()
+                ]).binary(operator, date)
             )
             .to_owned()
     )
 }
 
-fn year_sort_target() -> SelectStatement {
+fn date_added_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    let date = literal.to_value::<chrono::NaiveDate>()?;
+    let operator = operator(op);
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .cond_where(Expr::col((media::Entity, media::Column::DateAdded)).binary(operator, date))
+            .to_owned()
+    )
+}
+
+fn release_date_sort_target() -> SelectStatement {
     Query::select()
         .expr_as(
             Func::coalesce([
@@ -620,6 +647,15 @@ fn year_sort_target() -> SelectStatement {
         )
         .to_owned()
 }
+
+fn date_added_sort_target() -> SelectStatement {
+    Query::select()
+        .expr(Expr::col((Alias::new("ord_media"), media::Column::DateAdded)).if_null(NaiveDate::from_ymd_opt(1, 1, 1).unwrap()))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .to_owned()
+}
+
 
 fn on_watchlist_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     assert_eq!(op);
@@ -718,7 +754,8 @@ fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
             "type" => { media_type_sort_target() },
             "has_source" => { has_source_sort_target() },
             "number_of_sources" => { number_of_sources_sort_target() },
-            "year" => { year_sort_target() },
+            "release_date" => { release_date_sort_target() },
+            "date_added" => { date_added_sort_target() },
             "tmdb_rating" => { tmdb_rating_sort_target() },
             _ => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", target))) }
         }.into_sub_query_statement()

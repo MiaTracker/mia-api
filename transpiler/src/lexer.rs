@@ -103,14 +103,16 @@ impl Lexer<'_> {
         return true
     }
 
+    fn peek_at(&self, offset: usize) -> char {
+        self.source.chars().nth(self.current + offset).unwrap_or('\0')
+    }
+
     fn peek(&self) -> char {
-        if self.at_end() { return '\0' }
-        return self.source.chars().nth(self.current).unwrap()
+        self.peek_at(0)
     }
 
     fn peek_next(&self) -> char {
-        if self.current + 2 > self.source.chars().count() { return '\0'; }
-        self.source.chars().nth(self.current + 1).unwrap()
+        self.peek_at(1)
     }
 
     fn string(&mut self) {
@@ -140,6 +142,15 @@ impl Lexer<'_> {
             while self.peek().is_ascii_digit() { self.advance(); }
 
             float = true;
+        } else if self.peek() == '-'
+            && self.peek_at(1).is_ascii_digit()
+            && self.peek_at(2).is_ascii_digit()
+            && self.peek_at(3) == '-'
+            && self.peek_at(4).is_ascii_digit()
+            && self.peek_at(5).is_ascii_digit()
+        {
+            self.date();
+            return;
         }
 
         let str: String = self.source.chars().skip(self.start).take(self.current - self.start).collect();
@@ -157,6 +168,16 @@ impl Lexer<'_> {
             } else {
                 self.error("Invalid number literal.");
             }
+        }
+    }
+
+    fn date(&mut self) {
+        for _ in 0..6 { self.advance(); }
+
+        let str: String = self.source.chars().skip(self.start).take(self.current - self.start).collect();
+        match chrono::NaiveDate::parse_from_str(&str, "%Y-%m-%d") {
+            Ok(d) => self.add_token(TokenType::Date(d)),
+            Err(_) => self.error(&format!("Invalid date literal '{}'", str)),
         }
     }
 

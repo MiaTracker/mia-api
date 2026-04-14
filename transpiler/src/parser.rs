@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use chrono::NaiveDate;
 use crate::{ErrorSource, TranspilationError};
 use crate::lexer::{LexingError, scan};
 
@@ -73,6 +74,7 @@ pub enum TokenType {
     String(String),
     Int(i32),
     Float(f32),
+    Date(NaiveDate),
 
     And,
     False,
@@ -90,7 +92,8 @@ pub enum Literal {
     Null,
     Int(i32),
     Float(f32),
-    String(String)
+    String(String),
+    Date(NaiveDate),
 }
 
 #[derive(Debug, PartialEq)]
@@ -305,6 +308,7 @@ impl Parser {
             TokenType::String(s) => Literal::String(s.clone()),
             TokenType::Int(i) => Literal::Int(i.clone()),
             TokenType::Float(f) => Literal::Float(f.clone()),
+            TokenType::Date(d) => Literal::Date(*d),
             _ => {
                 return Err(self.error(token, "Unexpected token. Literal expected."))
             }
