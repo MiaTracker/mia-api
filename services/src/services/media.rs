@@ -16,7 +16,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveMode
 use std::collections::HashMap;
 use std::path::Path;
 use views::images::{BackdropUpdate, Image, ImageCandidate, ImageCandidates, ImageSize, ImagesUpdate, PosterUpdate};
-use views::media::{MediaIndex, MediaSourceCreate, MediaType, PageReq, SearchQuery, SearchResults};
+use views::media::{MediaByIdsQuery, MediaIndex, MediaSourceCreate, MediaType, PageReq, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 
 use crate::images::{delete_unused_image, save_tmdb_image};
@@ -44,6 +44,29 @@ pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result
         .filter(titles::Column::Primary.eq(true))
         .order_by_asc(functions::default_media_sort())
         .offset(page_req.offset).limit(page_req.limit).all(db).await?;
+
+    let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
+    let poster_sizes = ImageSizes::find()
+        .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
+
+    let indexes = build_media_indexes(media, poster_sizes);
+    Ok(indexes)
+}
+
+pub async fn search_by_ids(req: MediaByIdsQuery, page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
+    let ids = req.ids.clone();
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let res = transpiler::transpile(req.into(), page_req, user, None);
+    let Ok(res) = res else {
+        return Ok(Vec::new());
+    };
+
+    let media = res.query
+        .filter(media::Column::Id.is_in(ids))
+        .all(db).await?;
 
     let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
     let poster_sizes = ImageSizes::find()

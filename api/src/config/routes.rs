@@ -23,6 +23,7 @@ pub fn build() -> Router<AppState>
         .route("/app_tokens/{name}", delete(app_tokens::revoke))
         .route("/media", get(media::index))
         .route("/media/search", post(media::search))
+        .route("/media/by_ids", post(media::search_by_ids))
         .route("/movies", post(movies::create))
         .route("/movies", get(movies::index))
         .route("/movies/search", post(movies::search))
