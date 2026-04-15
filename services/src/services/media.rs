@@ -16,7 +16,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveMode
 use std::collections::HashMap;
 use std::path::Path;
 use views::images::{BackdropUpdate, Image, ImageCandidate, ImageCandidates, ImageSize, ImagesUpdate, PosterUpdate};
-use views::media::{MediaByIdsQuery, MediaIndex, MediaSourceCreate, MediaType, PageReq, SearchQuery, SearchResults};
+use views::media::{InternalSearchResults, MediaByIdsQuery, MediaIndex, MediaSourceCreate, MediaType, PageReq, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 
 use crate::images::{delete_unused_image, save_tmdb_image};
@@ -53,16 +53,23 @@ pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result
     Ok(indexes)
 }
 
-pub async fn search_by_ids(req: MediaByIdsQuery, page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
+pub async fn search_by_ids(req: MediaByIdsQuery, page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<InternalSearchResults, SrvErr> {
     let ids = req.ids.clone();
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
 
     let res = transpiler::transpile(req.into(), page_req, user, None);
     let Ok(res) = res else {
-        return Ok(Vec::new());
+        return Ok(InternalSearchResults {
+            indexes: vec![],
+            query_valid: false,
+        });
     };
+
+    if ids.is_empty() {
+        return Ok(InternalSearchResults {
+            indexes: vec![],
+            query_valid: true,
+        });
+    }
 
     let media = res.query
         .filter(media::Column::Id.is_in(ids))
@@ -73,7 +80,10 @@ pub async fn search_by_ids(req: MediaByIdsQuery, page_req: PageReq, user: &Curre
         .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
 
     let indexes = build_media_indexes(media, poster_sizes);
-    Ok(indexes)
+    Ok(InternalSearchResults {
+        indexes,
+        query_valid: true
+    })
 }
 
 pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<SearchResults, SrvErr> {

@@ -64,3 +64,9 @@ pub struct ExternalIndex {
     pub poster: Option<Image>,
     pub title: String
 }
+
+#[derive(Serialize, ToSchema)]
+pub struct InternalSearchResults {
+    pub indexes: Vec<MediaIndex>,
+    pub query_valid: bool
+}
