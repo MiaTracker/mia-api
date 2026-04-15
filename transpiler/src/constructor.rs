@@ -607,7 +607,7 @@ fn release_date_target(op: ComparisonOperator, literal: Literal) -> Result<Selec
             .columns([(media::Entity, media::Column::Id)])
             .from(media::Entity)
             .left_join(series::Entity, Expr::col((series::Entity, series::Column::Id)).equals((media::Entity, media::Column::Id)))
-            .left_join(movies::Entity, Expr::col((movies::Entity, movies::Column::Id)).equals((movies::Entity, movies::Column::Id)))
+            .left_join(movies::Entity, Expr::col((movies::Entity, movies::Column::Id)).equals((media::Entity, media::Column::Id)))
             .cond_where(
                 Func::coalesce([
                     Expr::col(movies::Column::ReleaseDate).into(),
