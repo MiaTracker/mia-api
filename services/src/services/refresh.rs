@@ -12,6 +12,8 @@ use crate::infrastructure::SrvErr;
 use crate::{movies, series};
 
 pub async fn run_refresh() {
+    crate::infrastructure::initialize().await;
+
     let db_url = config().db.connection_url.clone();
     let conn = Database::connect(db_url.clone()).await
         .expect(format!("Failed to connect to database using connection string \"{}\"", db_url).as_str());
