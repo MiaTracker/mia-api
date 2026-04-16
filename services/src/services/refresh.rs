@@ -43,7 +43,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
 
     async fn fetch_all_tmdb_ids(media_type: MediaType, db: &DbConn) -> Result<Vec<i32>, SrvErr> {
         #[derive(FromQueryResult)]
-        struct IdEntity { pub tmdb_id: i32 }
+        struct IdEntity { pub tmdb_id: Option<i32> }
 
         Ok(Media::find()
             .select_only().columns([media::Column::TmdbId])
@@ -52,7 +52,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
             .all(db)
             .await?
             .into_iter()
-            .map(|e| e.tmdb_id)
+            .filter_map(|e| e.tmdb_id)
             .collect())
     }
 
