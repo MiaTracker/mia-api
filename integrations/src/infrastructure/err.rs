@@ -10,10 +10,18 @@ pub struct Error {
 
 impl From<reqwest::Error> for Error {
     fn from(value: reqwest::Error) -> Self {
+        let kind = if value.is_timeout() {
+            "timed out"
+        } else if value.is_connect() {
+            "connection failed"
+        } else {
+            "request failed"
+        };
+        let message = format!("{}: {}", kind, value);
         Self {
-            message: value.to_string(),
+            message,
             status_code: value.status(),
-            source: Some(Box::new(value))
+            source: Some(Box::new(value)),
         }
     }
 }
@@ -53,9 +61,20 @@ impl std::error::Error for Error {
 
 #[macro_export]
 macro_rules! assert_request {
-    ($response:expr) => { if $response.status() != reqwest::StatusCode::OK {
-        return Err(crate::infrastructure::Error { message: "Request to integration resource failed.".to_string(), status_code: Some($response.status()), source: None })
-    }};
+    ($response:expr) => {
+        if $response.status() != reqwest::StatusCode::OK {
+            let status = $response.status();
+            return Err($crate::infrastructure::Error {
+                message: format!(
+                    "TMDB returned {}: {}",
+                    status.as_u16(),
+                    status.canonical_reason().unwrap_or("Unknown")
+                ),
+                status_code: Some(status),
+                source: None,
+            });
+        }
+    };
 }
 
 #[macro_export]

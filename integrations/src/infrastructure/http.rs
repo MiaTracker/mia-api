@@ -43,7 +43,13 @@ async fn retry_get(request_fn: impl Fn() -> reqwest::RequestBuilder) -> Result<r
                 tokio::time::sleep(delay).await;
                 attempt += 1;
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                let mut err = Error::from(e);
+                if attempt > 0 {
+                    err.message = format!("after {} retries: {}", attempt, err.message);
+                }
+                return Err(err);
+            }
         }
     }
 }
