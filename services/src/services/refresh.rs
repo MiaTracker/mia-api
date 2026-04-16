@@ -96,7 +96,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
     let mut errors = 0usize;
 
     for (start_date, end_date) in intervals {
-        let mut futures: Vec<std::pin::Pin<Box<dyn Future<Output = (usize, usize)> + '_>>> = Vec::new();
+        let mut futures: Vec<std::pin::Pin<Box<dyn Future<Output = (usize, usize)> + Send + '_>>> = Vec::new();
 
         if !movie_tmdb_ids.is_empty() {
             let movie_media: Vec<media::Model> = media::Entity::find()
