@@ -52,6 +52,7 @@ pub async fn launch() {
         let interval = interval.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(interval);
+            interval.tick().await; // First tick finishes immediately
             loop {
                 interval.tick().await;
                 match services::refresh::refresh(&scheduler_conn).await {
