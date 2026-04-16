@@ -2,7 +2,9 @@ use entities::prelude::{Genres, ImageSizes, Languages, Logs, Media, MediaLocks, 
 use entities::sea_orm_active_enums::{ImageType, MediaType};
 use entities::traits::linked::MediaPosters;
 use entities::{functions, genres, image_sizes, media, media_genres, movie_locks, movies, titles};
+use chrono::NaiveDate;
 use integrations::tmdb;
+use integrations::tmdb::views::PropertyChanges;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 use views::genres::Genre;
@@ -17,7 +19,7 @@ use views::users::CurrentUser;
 
 use crate::infrastructure::traits::IntoActiveModel;
 use crate::infrastructure::{RuleViolation, SrvErr};
-use crate::media::{fetch_media, try_set_media_lock};
+use crate::media::{fetch_media, is_locked, try_set_media_lock};
 use crate::services;
 use entities::traits::locks::{SetLock, ToLocks};
 use infrastructure::config;
@@ -234,6 +236,7 @@ pub async fn metadata(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
         title,
         overview: db_media.overview,
         original_language: db_media.original_language,
+        origin_country: db_media.origin_country,
         release_date: movie.release_date,
         runtime: movie.runtime,
         status: movie.status,
@@ -342,5 +345,71 @@ async fn set_lock(movie_id: i32, property: String, locked: bool, user: &CurrentU
         active_locks.set_lock(&property, locked);
         active_locks.insert(db).await?;
     }
+    Ok(())
+}
+
+/// Apply TMDB property-level changes to a movie, respecting locks.
+pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyChanges, db: &DbConn) -> Result<(), SrvErr> {
+    crate::media::apply_changes(media, changes, db).await?;
+
+    let movie_locks = MovieLocks::find()
+        .filter(movie_locks::Column::MovieId.eq(media.id))
+        .one(db)
+        .await?;
+
+    let mut movie_am = movies::ActiveModel {
+        id: Set(media.id),
+        ..Default::default()
+    };
+    let mut any_change = false;
+
+    for change in &changes.changes {
+        let last_item = match change.items.last() {
+            Some(item) => item,
+            None => continue,
+        };
+        let value = match &last_item.value {
+            Some(v) => v,
+            None => continue,
+        };
+
+        match change.key.as_str() {
+            "status" => {
+                if !is_locked(&movie_locks, |l| l.status) {
+                    movie_am.status = Set(value.as_str().map(|s| s.to_string()));
+                    any_change = true;
+                }
+            }
+            "runtime" => {
+                if !is_locked(&movie_locks, |l| l.runtime) {
+                    movie_am.runtime = Set(value.as_i64().map(|n| n as i32));
+                    any_change = true;
+                }
+            }
+            "releases" => {
+                if !is_locked(&movie_locks, |l| l.release_date) {
+                    let country = value.get("iso_3166_1").and_then(|v| v.as_str()).unwrap_or("");
+                    if media.origin_country.as_ref().is_some_and(|c| c.iter().any(|c| c == country)) {
+                        if let Some(date_str) = value.get("release_date").and_then(|v| v.as_str()) {
+                            let date = chrono::DateTime::parse_from_rfc3339(date_str)
+                                .map(|dt| dt.date_naive())
+                                .or_else(|_| NaiveDate::parse_from_str(date_str, "%Y-%m-%d"))
+                                .ok();
+                            if let Some(date) = date {
+                                movie_am.release_date = Set(Some(date));
+                                any_change = true;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if any_change {
+        movie_am.update(db).await?;
+    }
+
     Ok(())
 }

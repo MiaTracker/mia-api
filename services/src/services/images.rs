@@ -109,6 +109,12 @@ pub async fn get_tmdb(slug: String, path: String) -> Result<(StatusCode, String,
 }
 
 pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &DbConn) -> Result<i32, SrvErr> {
+    let existing = Images::find().filter(images::Column::SourcePath.eq(tmdb_path)).one(db).await?;
+
+    if let Some(existing_image) = existing {
+        return Ok(existing_image.id);
+    }
+
     let backdrop_bytes = tmdb::services::images::image(tmdb_path).await?;
 
     let reader = match ImageReader::new(Cursor::new(backdrop_bytes)).with_guessed_format() {

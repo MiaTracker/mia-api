@@ -16,7 +16,9 @@ use views::users::CurrentUser;
 use crate::infrastructure::{constants, RuleViolation, SrvErr};
 use entities::sea_orm_active_enums::{ImageType, MediaType};
 use entities::traits::linked::MediaPosters;
+use chrono::NaiveDate;
 use integrations::tmdb;
+use integrations::tmdb::views::PropertyChanges;
 use views::languages::Language;
 use views::logs::Log;
 use views::media::{MediaIndex, PageReq};
@@ -261,6 +263,7 @@ pub async fn metadata(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result
         title,
         overview: db_media.overview,
         original_language: db_media.original_language,
+        origin_country: db_media.origin_country,
         first_air_date: series.first_air_date,
         number_of_episodes: series.number_of_episodes,
         number_of_seasons: series.number_of_seasons,
@@ -366,5 +369,77 @@ async fn set_lock(series_id: i32, property: String, locked: bool, user: &Current
         active_locks.set_lock(&property, locked);
         active_locks.insert(db).await?;
     }
+    Ok(())
+}
+
+/// Apply TMDB property-level changes to a series, respecting locks.
+pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyChanges, db: &DbConn) -> Result<(), SrvErr> {
+    crate::media::apply_changes(media, changes, db).await?;
+
+    let series_locks = SeriesLocks::find()
+        .filter(series_locks::Column::SeriesId.eq(media.id))
+        .one(db)
+        .await?;
+
+    let mut series_am = series::ActiveModel {
+        id: Set(media.id),
+        ..Default::default()
+    };
+    let mut any_change = false;
+
+    for change in &changes.changes {
+        let last_item = match change.items.last() {
+            Some(item) => item,
+            None => continue,
+        };
+        let value = match &last_item.value {
+            Some(v) => v,
+            None => continue,
+        };
+
+        match change.key.as_str() {
+            "status" => {
+                if !series_locks.as_ref().map_or(false, |l| l.status) {
+                    series_am.status = Set(value.as_str().map(|s| s.to_string()));
+                    any_change = true;
+                }
+            }
+            "type" => {
+                if !series_locks.as_ref().map_or(false, |l| l.r#type) {
+                    series_am.r#type = Set(value.as_str().map(|s| s.to_string()));
+                    any_change = true;
+                }
+            }
+            "first_air_date" => {
+                if !series_locks.as_ref().map_or(false, |l| l.first_air_date) {
+                    if let Some(date_str) = value.as_str() {
+                        let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok();
+                        if let Some(date) = date {
+                            series_am.first_air_date = Set(Some(date));
+                            any_change = true;
+                        }
+                    }
+                }
+            }
+            "number_of_episodes" => {
+                if !series_locks.as_ref().map_or(false, |l| l.number_of_episodes) {
+                    series_am.number_of_episodes = Set(value.as_i64().map(|n| n as i32));
+                    any_change = true;
+                }
+            }
+            "number_of_seasons" => {
+                if !series_locks.as_ref().map_or(false, |l| l.number_of_seasons) {
+                    series_am.number_of_seasons = Set(value.as_i64().map(|n| n as i32));
+                    any_change = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if any_change {
+        series_am.update(db).await?;
+    }
+
     Ok(())
 }

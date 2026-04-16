@@ -42,6 +42,11 @@ impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
                 if original_language.is_empty() { Set(None) }
                 else { Set(Some(original_language)) }
             } else { Set(None) },
+            origin_country: if self.origin_country.is_empty() {
+                Set(None)
+            } else {
+                Set(Some(self.origin_country.clone()))
+            },
             date_added: Set(chrono::Utc::now().date_naive()),
             r#type: Set(MediaType::Movie),
             stars: Set(None),
@@ -112,6 +117,7 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesDetails {
                 if original_language.is_empty() { Set(None) }
                 else { Set(Some(original_language)) }
             } else { Set(None) },
+            origin_country: Set(self.origin_country.clone()),
             date_added: Set(chrono::Utc::now().date_naive()),
             r#type: Set(MediaType::Series),
             stars: Set(None),

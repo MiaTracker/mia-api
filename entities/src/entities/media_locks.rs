@@ -14,6 +14,7 @@ pub struct Model {
     pub poster_path: bool,
     pub tmdb_vote_average: bool,
     pub original_language: bool,
+    pub origin_country: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

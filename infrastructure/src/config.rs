@@ -1,8 +1,10 @@
 use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 use serde::Deserialize;
 use crate::fail;
+use duration_str::deserialize_duration;
 
 pub const CONFIG_FILE_PATH: &str = "config.yaml";
 
@@ -53,7 +55,7 @@ pub struct Configuration {
     pub tmdb: TMDBConfiguration,
     pub logging: LoggingConfiguration,
     pub media: MediaConfiguration,
-    pub images: ImagesConfiguration
+    pub images: ImagesConfiguration,
 }
 
 #[derive(Deserialize)]
@@ -69,7 +71,9 @@ pub struct DbConfiguration {
 
 #[derive(Deserialize)]
 pub struct TMDBConfiguration {
-    pub authorization_token: String
+    pub authorization_token: String,
+    #[serde(default, deserialize_with = "deserialize_duration")]
+    pub refresh_interval: Option<Duration>
 }
 
 #[derive(Deserialize)]

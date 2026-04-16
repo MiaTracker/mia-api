@@ -23,6 +23,7 @@ pub struct Model {
     pub bot_controllable: bool,
     pub backdrop_image_id: Option<i32>,
     pub poster_image_id: Option<i32>,
+    pub origin_country: Option<Vec<String>>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -13,6 +13,7 @@ pub struct MovieDetails {
     pub imdb_id: Option<String>,
     pub original_language: Option<String>,
     pub original_title: Option<String>,
+    pub origin_country: Vec<String>,
     pub overview: Option<String>,
     pub popularity: f32,
     pub poster_path: Option<String>,

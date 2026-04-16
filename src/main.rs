@@ -17,6 +17,9 @@ async fn main() {
             "serve" => {
                 api::launch().await;
             },
+            "refresh" => {
+                services::refresh::run_refresh().await;
+            },
             "migrate" => {
                 if let Some(arg) = args.next() {
                     match arg.as_str() {

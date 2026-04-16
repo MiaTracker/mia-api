@@ -26,6 +26,7 @@ pub async fn launch() {
     let conn = Database::connect(db_url.clone()).await
         .expect(format!("Failed to connect to database using connection string \"{}\"", db_url).as_str());
 
+    let scheduler_conn = conn.clone();
     let state = AppState { conn, jwt_secret };
 
     let admin_serv = ServiceBuilder::new()
@@ -45,6 +46,21 @@ pub async fn launch() {
         .layer(cors_serv).with_state(state)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+
+    // Spawn the built-in refresh scheduler if configured
+    if let Some(interval) = &config().tmdb.refresh_interval {
+        let interval = interval.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(interval);
+            loop {
+                interval.tick().await;
+                match services::refresh::refresh(&scheduler_conn).await {
+                    Ok(r) => tracing::info!("Scheduled refresh complete. Updated: {}, Errors: {}", r.updated, r.errors),
+                    Err(e) => tracing::error!("Scheduled refresh failed: {}", e),
+                }
+            }
+        });
+    }
 
     if let Ok(listener) = TcpListener::bind(&addr).await {
         tracing::debug!("Listening on {}", addr);

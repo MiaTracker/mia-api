@@ -21,6 +21,8 @@ mod m20240410_130251_cleanup;
 mod m20240410_140155_seasons_fix;
 mod m20251013_121027_locks;
 mod m20251017_120428_images;
+mod m20260416_000001_sync_state;
+mod m20260416_000002_origin_country;
 
 pub struct Migrator;
 
@@ -46,6 +48,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20240410_140155_seasons_fix::Migration),
             Box::new(m20251013_121027_locks::Migration),
             Box::new(m20251017_120428_images::Migration),
+            Box::new(m20260416_000001_sync_state::Migration),
+            Box::new(m20260416_000002_origin_country::Migration),
         ]
     }
 }

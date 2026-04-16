@@ -7,9 +7,9 @@ use futures::TryFutureExt;
 use http::StatusCode;
 use infrastructure::config;
 use integrations::tmdb;
-use integrations::tmdb::views::MultiResult;
+use integrations::tmdb::views::{PropertyChanges, MultiResult};
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::Query;
+use sea_orm::sea_query::{ExprTrait, Query};
 use sea_orm::ActiveValue::Set;
 use sea_orm::QueryFilter;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
@@ -569,6 +569,7 @@ pub(crate) async fn try_set_media_lock(media: media::Model, property: &str, lock
             poster_path: Set(false),
             tmdb_vote_average: Set(false),
             original_language: Set(false),
+            origin_country: Set(false),
         };
         active_locks.set_lock(property, locked);
         active_locks.insert(db).await?;
@@ -602,4 +603,153 @@ pub(crate) async fn fetch_id_or_pull_image(source: views::images::ImageSource, p
             Some(save_tmdb_image(path, image_type, db).await?)
         }
     }.ok_or(SrvErr::BadRequest("Invalid path".to_string()))
+}
+
+/// Apply TMDB property-level changes to the shared media table fields.
+/// Only updates fields that changed AND are not locked.
+/// Adds new titles as alternative titles (never touches the primary title).
+pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: &DbConn) -> Result<(), SrvErr> {
+    let locks = media.find_related(MediaLocks).one(db).await?;
+
+    let mut media_am = media::ActiveModel {
+        id: Set(media.id),
+        ..Default::default()
+    };
+    let mut any_change = false;
+
+    for change in &changes.changes {
+        let last_item = match change.items.last() {
+            Some(item) => item,
+            None => continue,
+        };
+        let value = match &last_item.value {
+            Some(v) => v,
+            None => continue,
+        };
+
+        match change.key.as_str() {
+            "overview" => {
+                let lang = last_item.iso_639_1.as_deref().unwrap_or("");
+                if lang == "en" && !is_locked(&locks, |l| l.overview) {
+                    media_am.overview = Set(value.as_str().map(|s| s.to_string()));
+                    any_change = true;
+                }
+            }
+            "homepage" => {
+                if !is_locked(&locks, |l| l.homepage) {
+                    media_am.homepage = Set(value.as_str().map(|s| s.to_string()));
+                    any_change = true;
+                }
+            }
+            "imdb_id" => {
+                if !is_locked(&locks, |l| l.imdb_id) {
+                    media_am.imdb_id = Set(value.as_str().map(|s| s.to_string()));
+                    any_change = true;
+                }
+            }
+            "original_language" => {
+                if !is_locked(&locks, |l| l.original_language) {
+                    media_am.original_language = Set(value.as_str().map(|s| s.to_string()));
+                    any_change = true;
+                }
+            }
+            "origin_country" => {
+                if !is_locked(&locks, |l| l.origin_country) {
+                    if let Some(arr) = value.as_array() {
+                        let countries: Vec<String> = arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect();
+                        media_am.origin_country = Set(Some(countries));
+                        any_change = true;
+                    }
+                }
+            }
+            "vote_average" => {
+                if !is_locked(&locks, |l| l.tmdb_vote_average) {
+                    media_am.tmdb_vote_average = Set(value.as_f64().map(|f| f as f32));
+                    any_change = true;
+                }
+            }
+            "poster" => {
+                if !is_locked(&locks, |l| l.poster_path) {
+                    if let Some(file_path) = value.get("file_path").and_then(|v| v.as_str()) {
+                        let new_id = save_tmdb_image(file_path, ImageType::Poster, db).await?;
+                        if Some(new_id) != media.poster_image_id {
+                            media_am.poster_image_id = Set(Some(new_id));
+                            any_change = true;
+                        }
+                    }
+                }
+            }
+            "backdrop" => {
+                if !is_locked(&locks, |l| l.backdrop_path) {
+                    if let Some(file_path) = value.get("file_path").and_then(|v| v.as_str()) {
+                        let new_id = save_tmdb_image(file_path, ImageType::Backdrop, db).await?;
+                        if Some(new_id) != media.backdrop_image_id {
+                            media_am.backdrop_image_id = Set(Some(new_id));
+                            any_change = true;
+                        }
+                    }
+                }
+            }
+            "images" => {
+                if media.poster_image_id.is_none() && !is_locked(&locks, |l| l.poster_path) {
+                    let poster = change.items.iter().filter(|i| i.value.as_ref()
+                        .is_some_and(|o| o.get("poster").is_some())).next()
+                        .map(|v| v.value.as_ref().unwrap().get("poster").unwrap());
+
+                    if let Some(poster) = poster {
+                        if let Some(file_path) = poster.get("file_path").and_then(|v| v.as_str()) {
+                        let new_id = save_tmdb_image(file_path, ImageType::Poster, db).await?;
+                            media_am.poster_image_id = Set(Some(new_id));
+                            any_change = true;
+                        }
+                    }
+                }
+                if media.backdrop_image_id.is_none() && !is_locked(&locks, |l| l.backdrop_path) {
+                    let backdrop = change.items.iter().filter(|i| i.value.as_ref()
+                        .is_some_and(|o| o.get("backdrop").is_some())).next()
+                        .map(|v| v.value.as_ref().unwrap().get("backdrop").unwrap());
+
+                    if let Some(backdrop) = backdrop {
+                        if let Some(file_path) = backdrop.get("file_path").and_then(|v| v.as_str()) {
+                        let new_id = save_tmdb_image(file_path, ImageType::Backdrop, db).await?;
+                            media_am.backdrop_image_id = Set(Some(new_id));
+                            any_change = true;
+                        }
+                    }
+                }
+            }
+            "title" | "name" => {
+                let lang = last_item.iso_639_1.as_deref().unwrap_or("");
+                if lang == "en" || media.original_language.as_ref().map(|l| l == lang).unwrap_or(false) {
+                    if let Some(title_str) = value.as_str() {
+                        let existing = Titles::find()
+                            .filter(titles::Column::MediaId.eq(media.id))
+                            .filter(titles::Column::Title.eq(title_str))
+                            .count(db).await?;
+                        if existing == 0 {
+                            titles::ActiveModel {
+                                id: sea_orm::NotSet,
+                                media_id: Set(media.id),
+                                primary: Set(false),
+                                title: Set(title_str.to_string()),
+                            }.insert(db).await?;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if any_change {
+        media_am.update(db).await?;
+    }
+
+    Ok(())
+}
+
+pub fn is_locked<T>(locks: &Option<T>, f: impl Fn(&T) -> bool) -> bool {
+    locks.as_ref().map_or(false, f)
 }

@@ -14,3 +14,4 @@ api = { path = "api" }
 tracing-subscriber = "0.3.20"
 infrastructure = { path = "infrastructure" }
 migrations = { path = "migrations" }
+services = { path = "services" }

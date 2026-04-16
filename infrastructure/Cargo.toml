@@ -8,3 +8,4 @@ log = "0.4.0"
 serde_yaml = "0.9.0"
 serde = { version = "1.0.0", features = ["derive"] }
 tracing = "0.1.41"
+duration-str = "0.21.0"

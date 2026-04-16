@@ -17,6 +17,7 @@ pub use super::seasons::Entity as Seasons;
 pub use super::series::Entity as Series;
 pub use super::series_locks::Entity as SeriesLocks;
 pub use super::sources::Entity as Sources;
+pub use super::sync_state::Entity as SyncState;
 pub use super::tags::Entity as Tags;
 pub use super::titles::Entity as Titles;
 pub use super::users::Entity as Users;

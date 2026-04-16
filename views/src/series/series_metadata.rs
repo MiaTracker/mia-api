@@ -9,6 +9,7 @@ pub struct SeriesMetadata {
     pub title: Option<String>,
     pub overview: Option<String>,
     pub original_language: Option<String>,
+    pub origin_country: Option<Vec<String>>,
     #[schema(value_type = String, format = Date)]
     pub first_air_date: Option<chrono::NaiveDate>,
     pub number_of_episodes: Option<i32>,

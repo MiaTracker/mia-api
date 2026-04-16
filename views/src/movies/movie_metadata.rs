@@ -9,6 +9,7 @@ pub struct MovieMetadata {
     pub title: Option<String>,
     pub overview: Option<String>,
     pub original_language: Option<String>,
+    pub origin_country: Option<Vec<String>>,
     #[schema(value_type = String, format = Date)]
     pub release_date: Option<chrono::NaiveDate>,
     pub runtime: Option<i32>,

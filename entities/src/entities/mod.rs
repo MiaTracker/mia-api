@@ -20,6 +20,7 @@ pub mod seasons;
 pub mod series;
 pub mod series_locks;
 pub mod sources;
+pub mod sync_state;
 pub mod tags;
 pub mod titles;
 pub mod users;

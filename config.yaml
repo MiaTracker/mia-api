@@ -7,6 +7,7 @@ db:
 
 tmdb:
   authorization_token: "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJmOWJjOTEwYzBjOWFlYmYzNjg5ZWU5YmNlN2NmNjFjZiIsInN1YiI6IjYyMmM5NTk4NGEwYjE5MDAxYjExMWY2NCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.AckD15GQs9-cnWiUlC6UCfJAKVVyNMEar33HbEw2UTw"
+  refresh_interval: 24h
 
 logging:
   level: "trace"

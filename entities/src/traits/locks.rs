@@ -21,6 +21,7 @@ impl ToLocks for Option<media_locks::Model> {
             if locks.poster_path { list.push(stringify!(poster_path)) }
             if locks.tmdb_vote_average { list.push(stringify!(tmdb_vote_average)) }
             if locks.original_language { list.push(stringify!(original_language)) }
+            if locks.origin_country { list.push(stringify!(origin_country)) }
         }
         list
     }
@@ -34,7 +35,8 @@ impl SetLock for media_locks::ActiveModel {
         property == stringify!(overview) ||
         property == stringify!(poster_path) ||
         property == stringify!(tmdb_vote_average) ||
-        property == stringify!(original_language)
+        property == stringify!(original_language) ||
+        property == stringify!(origin_country)
     }
 
     fn set_lock(&mut self, property: &str, locked: bool) {
@@ -45,6 +47,7 @@ impl SetLock for media_locks::ActiveModel {
         else if property == stringify!(poster_path) { self.poster_path = Set(locked) }
         else if property == stringify!(tmdb_vote_average) { self.tmdb_vote_average = Set(locked) }
         else if property == stringify!(original_language) { self.original_language = Set(locked) }
+        else if property == stringify!(origin_country) { self.origin_country = Set(locked) }
     }
 }
 
