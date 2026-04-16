@@ -9,7 +9,7 @@ use infrastructure::config;
 use integrations::tmdb;
 use integrations::tmdb::views::{PropertyChanges, MultiResult};
 use sea_orm::prelude::Expr;
-use sea_orm::sea_query::{ExprTrait, Query};
+use sea_orm::sea_query::Query;
 use sea_orm::ActiveValue::Set;
 use sea_orm::QueryFilter;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};

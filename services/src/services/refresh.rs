@@ -1,18 +1,15 @@
 use chrono::{Duration, Utc};
-use sea_orm::{ActiveModelTrait, ColumnTrait, Database, DbConn, EntityTrait, FromQueryResult, Identity, NotSet, Order, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ActiveModelTrait, ColumnTrait, Database, DbConn, EntityTrait, FromQueryResult, NotSet, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::ActiveValue::Set;
 use entities::prelude::{Media, SyncState};
 use entities::sea_orm_active_enums::MediaType;
 use entities::{media, sync_state};
 use integrations::tmdb;
 use log::{error, info};
-use sea_orm::prelude::DateTimeWithTimeZone;
-use entities::sync_state::Model;
 use infrastructure::config;
 use views::refresh::RefreshResult;
 use crate::infrastructure::SrvErr;
-use crate::{movies, series, services};
-use crate::media::fetch_id_or_pull_image;
+use crate::{movies, series};
 
 pub async fn run_refresh() {
     let db_url = config().db.connection_url.clone();
