@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use futures::future::join_all;
+use futures::StreamExt;
 use sea_orm::{ActiveModelTrait, ColumnTrait, Database, DbConn, EntityTrait, FromQueryResult, NotSet, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::ActiveValue::Set;
 use entities::prelude::{Media, SyncState};
@@ -160,7 +160,11 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
             }
         }
 
-        for (u, e) in join_all(futures).await {
+        let results: Vec<(usize, usize)> = futures::stream::iter(futures)
+            .buffer_unordered(15)
+            .collect()
+            .await;
+        for (u, e) in results {
             updates += u;
             errors += e;
         }
