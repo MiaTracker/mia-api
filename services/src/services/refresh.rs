@@ -1,17 +1,18 @@
 use chrono::{Duration, Utc};
-use sea_orm::{ActiveModelTrait, ColumnTrait, Database, DbConn, EntityTrait, NotSet, Order, QueryFilter, QueryOrder};
+use sea_orm::{ActiveModelTrait, ColumnTrait, Database, DbConn, EntityTrait, FromQueryResult, Identity, NotSet, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::ActiveValue::Set;
 use entities::prelude::{Media, SyncState};
 use entities::sea_orm_active_enums::MediaType;
 use entities::{media, sync_state};
 use integrations::tmdb;
-use log::error;
+use log::{error, info};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use entities::sync_state::Model;
 use infrastructure::config;
 use views::refresh::RefreshResult;
 use crate::infrastructure::SrvErr;
 use crate::{movies, series, services};
+use crate::media::fetch_id_or_pull_image;
 
 pub async fn run_refresh() {
     let db_url = config().db.connection_url.clone();
@@ -20,7 +21,7 @@ pub async fn run_refresh() {
 
     match refresh(&conn).await {
         Ok(result) => {
-            println!("Refresh complete. Updated: {}, Errors: {}", result.updated, result.errors);
+            println!("Refresh complete. Updated: {}, Errors: {}", result.updates, result.errors);
         }
         Err(err) => {
             eprintln!("Refresh failed: {}", err);
@@ -41,28 +42,58 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
         }
         Some(s) => { s.synced_at.date_naive() }
     };
+    let end_date = now.date_naive();
+
+    async fn fetch_all_tmdb_ids(media_type: MediaType, db: &DbConn) -> Result<Vec<i32>, SrvErr> {
+        #[derive(FromQueryResult)]
+        struct IdEntity { pub tmdb_id: i32 }
+
+        Ok(Media::find()
+            .select_only().columns([media::Column::TmdbId])
+            .filter(media::Column::Type.eq(media_type))
+            .into_model::<IdEntity>()
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|e| e.tmdb_id)
+            .collect())
+    }
+
+    let movie_tmdb_ids = if end_date - start < Duration::days(14) {
+        match tmdb::services::movies::changed(start, end_date).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                info!("Failed to fetch changed movie IDs from TMDB: {} Falling back to full update", e);
+                fetch_all_tmdb_ids(MediaType::Movie, &db).await?
+            }
+        }
+    } else {
+        fetch_all_tmdb_ids(MediaType::Movie, &db).await?
+    };
+
+    let series_tmdb_ids = if end_date - start < Duration::days(14) {
+        match tmdb::services::series::changed(start, end_date).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                info!("Failed to fetch changed series IDs from TMDB: {} Falling back to full update", e);
+                fetch_all_tmdb_ids(MediaType::Series, &db).await?
+            }
+        }
+    } else {
+        fetch_all_tmdb_ids(MediaType::Series, &db).await?
+    };
 
     // Split [start, now] into 14-day chunks
     let intervals = build_intervals(start, now.date_naive());
 
-    let mut updated = 0usize;
+    let mut updates = 0usize;
     let mut errors = 0usize;
 
     for (start_date, end_date) in intervals {
 
-        // --- Movies ---
-        let changed_movie_tmdb_ids = match tmdb::services::movies::changed(start_date, end_date).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                error!("Failed to fetch changed movie IDs from TMDB: {}", e);
-                errors += 1;
-                continue;
-            }
-        };
-
-        if !changed_movie_tmdb_ids.is_empty() {
+        if !movie_tmdb_ids.is_empty() {
             let movie_media: Vec<media::Model> = media::Entity::find()
-                .filter(media::Column::TmdbId.is_in(changed_movie_tmdb_ids))
+                .filter(media::Column::TmdbId.is_in(movie_tmdb_ids.clone()))
                 .filter(media::Column::Type.eq(MediaType::Movie))
                 .all(db)
                 .await?;
@@ -81,7 +112,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
                     }
                 };
                 match movies::apply_changes(&med, &changes, db).await {
-                    Ok(_) => updated += 1,
+                    Ok(_) => updates += 1,
                     Err(e) => {
                         error!("Failed to apply changes for movie media_id={}: {}", med.id, e);
                         errors += 1;
@@ -90,19 +121,9 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
             }
         }
 
-        // --- Series ---
-        let changed_series_tmdb_ids = match tmdb::services::series::changed(start_date, end_date).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                error!("Failed to fetch changed series IDs from TMDB: {}", e);
-                errors += 1;
-                continue;
-            }
-        };
-
-        if !changed_series_tmdb_ids.is_empty() {
+        if !series_tmdb_ids.is_empty() {
             let series_media: Vec<media::Model> = media::Entity::find()
-                .filter(media::Column::TmdbId.is_in(changed_series_tmdb_ids))
+                .filter(media::Column::TmdbId.is_in(series_tmdb_ids.clone()))
                 .filter(media::Column::Type.eq(MediaType::Series))
                 .all(db)
                 .await?;
@@ -121,7 +142,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
                     }
                 };
                 match series::apply_changes(&med, &changes, db).await {
-                    Ok(_) => updated += 1,
+                    Ok(_) => updates += 1,
                     Err(e) => {
                         error!("Failed to apply changes for series media_id={}: {}", med.id, e);
                         errors += 1;
@@ -138,7 +159,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
     };
     state_am.insert(db).await?;
 
-    Ok(RefreshResult { updated, errors })
+    Ok(RefreshResult { updates, errors })
 }
 
 /// Split [start, end] into non-overlapping 14-day windows.

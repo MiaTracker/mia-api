@@ -32,7 +32,14 @@ pub async fn changed(start_date: NaiveDate, end_date: NaiveDate) -> Result<Vec<i
         all_ids.extend(page_data.results.iter().map(|r| r.id));
         if page_data.page >= page_data.total_pages {
             break;
-        } //TODO: fallback
+        }
+        if page_data.total_pages > 500 {
+            return Err(Error {
+                message: "Result had more than 500 pages.".to_string(),
+                status_code: None,
+                source: None,
+            })
+        }
         page = page_data.page + 1;
     }
     Ok(all_ids)

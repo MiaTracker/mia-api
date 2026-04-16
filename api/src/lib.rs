@@ -55,7 +55,7 @@ pub async fn launch() {
             loop {
                 interval.tick().await;
                 match services::refresh::refresh(&scheduler_conn).await {
-                    Ok(r) => tracing::info!("Scheduled refresh complete. Updated: {}, Errors: {}", r.updated, r.errors),
+                    Ok(r) => tracing::info!("Scheduled refresh complete. Updates: {}, Errors: {}", r.updates, r.errors),
                     Err(e) => tracing::error!("Scheduled refresh failed: {}", e),
                 }
             }
