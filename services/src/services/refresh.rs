@@ -1,4 +1,5 @@
 use chrono::{Duration, Utc};
+use futures::future::join_all;
 use sea_orm::{ActiveModelTrait, ColumnTrait, Database, DbConn, EntityTrait, FromQueryResult, NotSet, Order, QueryFilter, QueryOrder, QuerySelect};
 use sea_orm::ActiveValue::Set;
 use entities::prelude::{Media, SyncState};
@@ -58,29 +59,35 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
             .collect())
     }
 
-    let movie_tmdb_ids = if end_date - start < Duration::days(14) {
-        match tmdb::services::movies::changed(start, end_date).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                info!("Failed to fetch changed movie IDs from TMDB: {} Falling back to full update", e);
-                fetch_all_tmdb_ids(MediaType::Movie, &db).await?
+    let within_window = end_date - start < Duration::days(14);
+    let (movie_tmdb_ids, series_tmdb_ids) = futures::try_join!(
+        async {
+            if within_window {
+                match tmdb::services::movies::changed(start, end_date).await {
+                    Ok(ids) => Ok(ids),
+                    Err(e) => {
+                        info!("Failed to fetch changed movie IDs from TMDB: {} Falling back to full update", e);
+                        fetch_all_tmdb_ids(MediaType::Movie, db).await
+                    }
+                }
+            } else {
+                fetch_all_tmdb_ids(MediaType::Movie, db).await
+            }
+        },
+        async {
+            if within_window {
+                match tmdb::services::series::changed(start, end_date).await {
+                    Ok(ids) => Ok(ids),
+                    Err(e) => {
+                        info!("Failed to fetch changed series IDs from TMDB: {} Falling back to full update", e);
+                        fetch_all_tmdb_ids(MediaType::Series, db).await
+                    }
+                }
+            } else {
+                fetch_all_tmdb_ids(MediaType::Series, db).await
             }
         }
-    } else {
-        fetch_all_tmdb_ids(MediaType::Movie, &db).await?
-    };
-
-    let series_tmdb_ids = if end_date - start < Duration::days(14) {
-        match tmdb::services::series::changed(start, end_date).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                info!("Failed to fetch changed series IDs from TMDB: {} Falling back to full update", e);
-                fetch_all_tmdb_ids(MediaType::Series, &db).await?
-            }
-        }
-    } else {
-        fetch_all_tmdb_ids(MediaType::Series, &db).await?
-    };
+    )?;
 
     // Split [start, now] into 14-day chunks
     let intervals = build_intervals(start, now.date_naive());
@@ -89,6 +96,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
     let mut errors = 0usize;
 
     for (start_date, end_date) in intervals {
+        let mut futures: Vec<std::pin::Pin<Box<dyn Future<Output = (usize, usize)> + '_>>> = Vec::new();
 
         if !movie_tmdb_ids.is_empty() {
             let movie_media: Vec<media::Model> = media::Entity::find()
@@ -98,25 +106,26 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
                 .await?;
 
             for med in movie_media {
-                let tmdb_id = match med.tmdb_id {
-                    Some(id) => id,
-                    None => continue,
-                };
-                let changes = match tmdb::services::movies::property_changes(tmdb_id, start_date, end_date).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!("Failed to fetch changes for movie tmdb_id={}: {}", tmdb_id, e);
-                        errors += 1;
-                        continue;
+                futures.push(Box::pin(async move {
+                    let tmdb_id = match med.tmdb_id {
+                        Some(id) => id,
+                        None => return (0, 0),
+                    };
+                    let changes = match tmdb::services::movies::property_changes(tmdb_id, start_date, end_date).await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            error!("Failed to fetch changes for movie tmdb_id={}: {}", tmdb_id, e);
+                            return (0, 1);
+                        }
+                    };
+                    match movies::apply_changes(&med, &changes, db).await {
+                        Ok(_) => (1, 0),
+                        Err(e) => {
+                            error!("Failed to apply changes for movie media_id={}: {}", med.id, e);
+                            (0, 1)
+                        }
                     }
-                };
-                match movies::apply_changes(&med, &changes, db).await {
-                    Ok(_) => updates += 1,
-                    Err(e) => {
-                        error!("Failed to apply changes for movie media_id={}: {}", med.id, e);
-                        errors += 1;
-                    }
-                }
+                }));
             }
         }
 
@@ -128,26 +137,32 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
                 .await?;
 
             for med in series_media {
-                let tmdb_id = match med.tmdb_id {
-                    Some(id) => id,
-                    None => continue,
-                };
-                let changes = match tmdb::services::series::property_changes(tmdb_id, start_date, end_date).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!("Failed to fetch changes for series tmdb_id={}: {}", tmdb_id, e);
-                        errors += 1;
-                        continue;
+                futures.push(Box::pin(async move {
+                    let tmdb_id = match med.tmdb_id {
+                        Some(id) => id,
+                        None => return (0, 0),
+                    };
+                    let changes = match tmdb::services::series::property_changes(tmdb_id, start_date, end_date).await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            error!("Failed to fetch changes for series tmdb_id={}: {}", tmdb_id, e);
+                            return (0, 1);
+                        }
+                    };
+                    match series::apply_changes(&med, &changes, db).await {
+                        Ok(_) => (1, 0),
+                        Err(e) => {
+                            error!("Failed to apply changes for series media_id={}: {}", med.id, e);
+                            (0, 1)
+                        }
                     }
-                };
-                match series::apply_changes(&med, &changes, db).await {
-                    Ok(_) => updates += 1,
-                    Err(e) => {
-                        error!("Failed to apply changes for series media_id={}: {}", med.id, e);
-                        errors += 1;
-                    }
-                }
+                }));
             }
+        }
+
+        for (u, e) in join_all(futures).await {
+            updates += u;
+            errors += e;
         }
     }
 
