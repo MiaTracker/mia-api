@@ -2,7 +2,7 @@ use futures_util::stream::TryStreamExt;
 use bytes::Bytes;
 use reqwest::{header, Response, StatusCode};
 use crate::{assert_request, constants};
-use crate::infrastructure::{Error, CLIENT};
+use crate::infrastructure::{Error, client_get};
 
 pub async fn image(path: &str) -> Result<Bytes, Error> {
     let resp = image_request("original", path).await?;
@@ -27,6 +27,5 @@ pub async fn image_stream(size_slug: String, path: String) -> Result<(StatusCode
 async fn image_request(size_slug: &str, path: &str) -> Result<Response, Error> {
     let conf = &constants::TMDB_CONFIGURATION.get().expect("Failed to get TMDB_CONFIGURATION").images;
     let uri = format!("{}{}{}", conf.secure_base_url.as_str(), size_slug, path);
-    let resp = CLIENT.get(uri).send().await?;
-    Ok(resp)
+    client_get(&uri).await
 }

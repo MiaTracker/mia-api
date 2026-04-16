@@ -1,19 +1,18 @@
 use chrono::NaiveDate;
 use crate::tmdb::views::{ChangedPage, PropertyChanges, MovieDetails, TmdbImages, MovieTitles};
 use crate::{assert_request, constants, deserialize};
-use crate::infrastructure::{Error, TMDB_HEADERS};
-use crate::infrastructure::CLIENT;
+use crate::infrastructure::{Error, tmdb_get};
 
 pub async fn details(movie_id: i32) -> Result<MovieDetails, Error> {
     let uri = constants::TMDB_URL.to_owned() + "movie/" + movie_id.to_string().as_str() + "?languages=" + constants::TMDB_LANG;
-    let resp = CLIENT.get(uri).headers(TMDB_HEADERS.clone()).send().await?;
+    let resp = tmdb_get(&uri).await?;
     assert_request!(resp);
     Ok(deserialize!(MovieDetails, resp))
 }
 
 pub async fn alternative_titles(movie_id: i32) -> Result<MovieTitles, Error> {
     let uri = constants::TMDB_URL.to_owned() + "movie/" + movie_id.to_string().as_str() + "/alternative_titles?country=" + constants::TMDB_COUNTRY;
-    let resp = CLIENT.get(uri).headers(TMDB_HEADERS.clone()).send().await?;
+    let resp = tmdb_get(&uri).await?;
     assert_request!(resp);
     Ok(deserialize!(MovieTitles, resp))
 }
@@ -26,7 +25,7 @@ pub async fn changed(start_date: NaiveDate, end_date: NaiveDate) -> Result<Vec<i
             "{}movie/changes?start_date={}&end_date={}&page={}",
             constants::TMDB_URL, start_date, end_date, page
         );
-        let resp = CLIENT.get(&uri).headers(TMDB_HEADERS.clone()).send().await?;
+        let resp = tmdb_get(&uri).await?;
         assert_request!(resp);
         let page_data = deserialize!(ChangedPage, resp);
         all_ids.extend(page_data.results.iter().map(|r| r.id));
@@ -50,7 +49,7 @@ pub async fn property_changes(movie_id: i32, start_date: NaiveDate, end_date: Na
         "{}movie/{}/changes?start_date={}&end_date={}",
         constants::TMDB_URL, movie_id, start_date, end_date
     );
-    let resp = CLIENT.get(&uri).headers(TMDB_HEADERS.clone()).send().await?;
+    let resp = tmdb_get(&uri).await?;
     assert_request!(resp);
     Ok(deserialize!(PropertyChanges, resp))
 }
@@ -60,7 +59,7 @@ pub async fn images(movie_id: i32, original_language: &Option<String>) -> Result
     if let Some(lang) = original_language {
         uri = uri + "%2C" + lang.as_str();
     }
-    let resp = CLIENT.get(uri).headers(TMDB_HEADERS.clone()).send().await?;
+    let resp = tmdb_get(&uri).await?;
     assert_request!(resp);
     Ok(deserialize!(TmdbImages, resp))
 }
