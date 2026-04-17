@@ -4,9 +4,9 @@ use sea_orm::{NotSet, Set};
 use crate::infrastructure::constants::tmdb_config;
 use crate::infrastructure::traits::{IntoActiveModel, IntoImage, IntoView};
 use entities::sea_orm_active_enums::MediaType;
-use entities::{genres, languages, media, movies, seasons, series};
+use entities::{episodes, genres, languages, media, movies, seasons, series};
 use infrastructure::config;
-use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeriesDetails, TmdbImage};
+use integrations::tmdb::views::{Genre, Languages, MovieDetails, MultiMovieResult, MultiTvResult, Season, SeasonDetails, SeriesDetails, TmdbEpisode, TmdbImage};
 use views::images::{Image, ImageCandidate};
 use views::media::ExternalIndex;
 
@@ -175,7 +175,66 @@ impl IntoActiveModel<seasons::ActiveModel> for &Season {
             poster_path: Set(self.poster_path.clone()),
             season_number: Set(self.season_number),
             tmdb_vote_average: Set(self.vote_average),
+            tmdb_id: Set(Some(self.id)),
             stars: NotSet,
+        }
+    }
+}
+
+impl IntoActiveModel<seasons::ActiveModel> for &SeasonDetails {
+    fn into_active_model(self) -> seasons::ActiveModel {
+        seasons::ActiveModel {
+            id: NotSet,
+            series_id: NotSet,
+            air_date:
+            if let Some(air_date) = self.air_date.clone() {
+                if air_date.is_empty() { Set(None) }
+                else {
+                    let res = NaiveDate::parse_from_str(air_date.as_str(), "%Y-%m-%d");
+                    match res {
+                        Ok(date) => { Set(Some(date)) }
+                        Err(_) => { Set(None) }
+                    }
+                }
+            } else {
+                Set(None)
+            },
+            episode_count: Set(Some(self.episodes.len() as i32)),
+            name: Set(self.name.clone()),
+            overview: Set(self.overview.clone()),
+            poster_path: Set(self.poster_path.clone()),
+            season_number: Set(self.season_number),
+            tmdb_vote_average: Set(self.vote_average),
+            tmdb_id: Set(Some(self.id)),
+            stars: NotSet,
+        }
+    }
+}
+
+impl IntoActiveModel<episodes::ActiveModel> for &TmdbEpisode {
+    fn into_active_model(self) -> episodes::ActiveModel {
+        episodes::ActiveModel {
+            id: NotSet,
+            season_id: NotSet,
+            tmdb_id: Set(Some(self.id)),
+            episode_number: Set(self.episode_number),
+            name: Set(self.name.clone()),
+            overview: Set(self.overview.clone()),
+            air_date: if let Some(air_date) = self.air_date.clone() {
+                if air_date.is_empty() { Set(None) }
+                else {
+                    let res = NaiveDate::parse_from_str(air_date.as_str(), "%Y-%m-%d");
+                    match res {
+                        Ok(date) => { Set(Some(date)) }
+                        Err(_) => { Set(None) }
+                    }
+                }
+            } else {
+                Set(None)
+            },
+            runtime: Set(self.runtime),
+            tmdb_vote_average: Set(self.vote_average),
+            still_path: Set(self.still_path.clone()),
         }
     }
 }

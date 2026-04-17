@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 use crate::{assert_request, constants, deserialize};
 use crate::infrastructure::{Error, tmdb_get};
-use crate::tmdb::views::{ChangedPage, PropertyChanges, SeriesTitles, SeriesDetails, TmdbImages};
+use crate::tmdb::views::{ChangedPage, PropertyChanges, SeasonDetails, SeriesTitles, SeriesDetails, TmdbImages};
 
 pub async fn details(series_id: i32) -> Result<SeriesDetails, Error> {
     let uri = constants::TMDB_URL.to_owned() + "tv/" + series_id.to_string().as_str() + "?languages=" + constants::TMDB_LANG;
@@ -48,6 +48,33 @@ pub async fn property_changes(series_id: i32, start_date: NaiveDate, end_date: N
     let uri = format!(
         "{}tv/{}/changes?start_date={}&end_date={}",
         constants::TMDB_URL, series_id, start_date, end_date
+    );
+    let resp = tmdb_get(&uri).await?;
+    assert_request!(resp);
+    Ok(deserialize!(PropertyChanges, resp))
+}
+
+pub async fn season_details(series_id: i32, season_number: i32) -> Result<SeasonDetails, Error> {
+    let uri = format!("{}tv/{}/season/{}", constants::TMDB_URL, series_id, season_number);
+    let resp = tmdb_get(&uri).await?;
+    assert_request!(resp);
+    Ok(deserialize!(SeasonDetails, resp))
+}
+
+pub async fn season_property_changes(season_id: i32, start_date: NaiveDate, end_date: NaiveDate) -> Result<PropertyChanges, Error> {
+    let uri = format!(
+        "{}tv/season/{}/changes?start_date={}&end_date={}",
+        constants::TMDB_URL, season_id, start_date, end_date
+    );
+    let resp = tmdb_get(&uri).await?;
+    assert_request!(resp);
+    Ok(deserialize!(PropertyChanges, resp))
+}
+
+pub async fn episode_property_changes(episode_id: i32, start_date: NaiveDate, end_date: NaiveDate) -> Result<PropertyChanges, Error> {
+    let uri = format!(
+        "{}tv/episode/{}/changes?start_date={}&end_date={}",
+        constants::TMDB_URL, episode_id, start_date, end_date
     );
     let resp = tmdb_get(&uri).await?;
     assert_request!(resp);

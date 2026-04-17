@@ -11,6 +11,7 @@ mod series_title;
 mod multi_results;
 mod images;
 mod changes;
+mod season_details;
 
 pub use movie_details::*;
 pub use language::*;
@@ -25,3 +26,4 @@ pub use series_title::*;
 pub use multi_results::*;
 pub use images::*;
 pub use changes::*;
+pub use season_details::*;

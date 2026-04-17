@@ -148,7 +148,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
                             return (0, 1);
                         }
                     };
-                    match series::apply_changes(&med, &changes, db).await {
+                    match series::apply_changes(&med, &changes, start_date, end_date, db).await {
                         Ok(_) => (1, 0),
                         Err(e) => {
                             error!("Failed to apply changes for series media_id={}: {}", med.id, e);
