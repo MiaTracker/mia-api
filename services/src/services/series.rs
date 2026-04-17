@@ -421,18 +421,6 @@ pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyCha
                     }
                 }
             }
-            "number_of_episodes" => {
-                if !series_locks.as_ref().map_or(false, |l| l.number_of_episodes) {
-                    series_am.number_of_episodes = Set(value.as_i64().map(|n| n as i32));
-                    any_change = true;
-                }
-            }
-            "number_of_seasons" => {
-                if !series_locks.as_ref().map_or(false, |l| l.number_of_seasons) {
-                    series_am.number_of_seasons = Set(value.as_i64().map(|n| n as i32));
-                    any_change = true;
-                }
-            }
             _ => {}
         }
     }

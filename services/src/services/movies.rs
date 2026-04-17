@@ -386,7 +386,7 @@ pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyCha
                     any_change = true;
                 }
             }
-            "releases" => {
+            "release_dates" => {
                 if !is_locked(&movie_locks, |l| l.release_date) {
                     let country = value.get("iso_3166_1").and_then(|v| v.as_str()).unwrap_or("");
                     if media.origin_country.as_ref().is_some_and(|c| c.iter().any(|c| c == country)) {

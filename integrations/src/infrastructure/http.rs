@@ -14,7 +14,7 @@ pub const TMDB_HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
     headers
 });
 
-const MAX_RETRIES: u32 = 3;
+const MAX_RETRIES: u32 = 5;
 
 fn is_network_error(e: &reqwest::Error) -> bool {
     e.is_connect() || e.is_timeout() || (e.is_request() && e.status().is_none())

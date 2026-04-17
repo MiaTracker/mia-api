@@ -25,6 +25,7 @@ use crate::infrastructure::traits::{IntoImage, IntoView, SortCompare};
 use crate::infrastructure::SrvErr;
 use crate::sources::delete_from_media;
 use crate::{movies, series, sources};
+use crate::genres::add_genre_to_media;
 
 pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(bool, i32), SrvErr> {
     let (created, id) = match media_type {
@@ -617,6 +618,23 @@ pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: 
     };
     let mut any_change = false;
 
+
+    async fn add_title(media_id: i32, title_str: &str, db: &DbConn) -> Result<(), SrvErr> {
+        let existing = Titles::find()
+            .filter(titles::Column::MediaId.eq(media_id))
+            .filter(titles::Column::Title.eq(title_str))
+            .count(db).await?;
+        if existing == 0 {
+            titles::ActiveModel {
+                id: sea_orm::NotSet,
+                media_id: Set(media_id),
+                primary: Set(false),
+                title: Set(title_str.to_string()),
+            }.insert(db).await?;
+        }
+        Ok(())
+    }
+
     for change in &changes.changes {
         let last_item = match change.items.last() {
             Some(item) => item,
@@ -647,7 +665,7 @@ pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: 
                     any_change = true;
                 }
             }
-            "original_language" => {
+            "iso_639_1" => {
                 if !is_locked(&locks, |l| l.original_language) {
                     media_am.original_language = Set(value.as_str().map(|s| s.to_string()));
                     any_change = true;
@@ -664,32 +682,10 @@ pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: 
                     }
                 }
             }
-            "vote_average" => {
+            "vote_average" => { //TODO
                 if !is_locked(&locks, |l| l.tmdb_vote_average) {
                     media_am.tmdb_vote_average = Set(value.as_f64().map(|f| f as f32));
                     any_change = true;
-                }
-            }
-            "poster" => {
-                if !is_locked(&locks, |l| l.poster_path) {
-                    if let Some(file_path) = value.get("file_path").and_then(|v| v.as_str()) {
-                        let new_id = save_tmdb_image(file_path, ImageType::Poster, db).await?;
-                        if Some(new_id) != media.poster_image_id {
-                            media_am.poster_image_id = Set(Some(new_id));
-                            any_change = true;
-                        }
-                    }
-                }
-            }
-            "backdrop" => {
-                if !is_locked(&locks, |l| l.backdrop_path) {
-                    if let Some(file_path) = value.get("file_path").and_then(|v| v.as_str()) {
-                        let new_id = save_tmdb_image(file_path, ImageType::Backdrop, db).await?;
-                        if Some(new_id) != media.backdrop_image_id {
-                            media_am.backdrop_image_id = Set(Some(new_id));
-                            any_change = true;
-                        }
-                    }
                 }
             }
             "images" => {
@@ -720,23 +716,25 @@ pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: 
                     }
                 }
             }
-            "title" | "name" => {
+            "title" | "original_title" | "name" | "original_name" => {
                 let lang = last_item.iso_639_1.as_deref().unwrap_or("");
                 if lang == "en" || media.original_language.as_ref().map(|l| l == lang).unwrap_or(false) {
                     if let Some(title_str) = value.as_str() {
-                        let existing = Titles::find()
-                            .filter(titles::Column::MediaId.eq(media.id))
-                            .filter(titles::Column::Title.eq(title_str))
-                            .count(db).await?;
-                        if existing == 0 {
-                            titles::ActiveModel {
-                                id: sea_orm::NotSet,
-                                media_id: Set(media.id),
-                                primary: Set(false),
-                                title: Set(title_str.to_string()),
-                            }.insert(db).await?;
-                        }
+                        add_title(media.id, title_str, db).await?;
                     }
+                }
+            }
+            "alternative_titles" => {
+                let lang = last_item.iso_639_1.as_deref().unwrap_or("");
+                if lang == "en" || media.original_language.as_ref().map(|l| l == lang).unwrap_or(false) {
+                    if let Some(title_str) = value.get("title").and_then(|t| t.as_str()) {
+                        add_title(media.id, title_str, db).await?;
+                    }
+                }
+            }
+            "genres" => {
+                if let Some(genre_str) = value.get("name").and_then(|n| n.as_str()) {
+                    add_genre_to_media(media, &genre_str, db).await?;
                 }
             }
             _ => {}

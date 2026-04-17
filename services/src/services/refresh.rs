@@ -35,7 +35,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
 
     let now = Utc::now();
 
-    let start = match last_state {
+    let start_date = match last_state {
         None => {
             let m = Media::find().order_by(media::Column::DateAdded, Order::Asc).one(db).await?;
             m.map(|m| m.date_added).unwrap_or(now.date_naive())
@@ -59,11 +59,11 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
             .collect())
     }
 
-    let within_window = end_date - start < Duration::days(14);
+    let within_window = end_date - start_date < Duration::days(14);
     let (movie_tmdb_ids, series_tmdb_ids) = futures::try_join!(
         async {
             if within_window {
-                match tmdb::services::movies::changed(start, end_date).await {
+                match tmdb::services::movies::changed(start_date, end_date).await {
                     Ok(ids) => Ok(ids),
                     Err(e) => {
                         info!("Failed to fetch changed movie IDs from TMDB: {} Falling back to full update", e);
@@ -76,7 +76,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
         },
         async {
             if within_window {
-                match tmdb::services::series::changed(start, end_date).await {
+                match tmdb::services::series::changed(start_date, end_date).await {
                     Ok(ids) => Ok(ids),
                     Err(e) => {
                         info!("Failed to fetch changed series IDs from TMDB: {} Falling back to full update", e);
@@ -89,8 +89,7 @@ pub async fn refresh(db: &DbConn) -> Result<RefreshResult, SrvErr> {
         }
     )?;
 
-    // Split [start, now] into 14-day chunks
-    let intervals = build_intervals(start, now.date_naive());
+    let intervals = build_intervals(start_date, now.date_naive());
 
     let mut updates = 0usize;
     let mut errors = 0usize;

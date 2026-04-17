@@ -16,38 +16,10 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
     }
     let media = media.unwrap();
 
-    let name = genre.name.to_title_case();
-
-    let existing = media.find_related(Genres).filter(genres::Column::Name.eq(&name)).one(db).await?;
-    if existing.is_some() {
-        return Ok(false);
-    }
-
-    let existing_db = genres::Entity::find().filter(genres::Column::Name.eq(&name))
-        .filter(genres::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
 
     let tran = db.begin().await?;
 
-    if let Some(existing) = existing_db {
-        let rel = media_genres::ActiveModel {
-            media_id: Set(media_id),
-            genre_id: Set(existing.id),
-        };
-        rel.insert(db).await?;
-    } else {
-        let model = genres::ActiveModel {
-            id: NotSet,
-            tmdb_id: NotSet,
-            name: Set(name),
-            r#type: Set(media_type.into()),
-        };
-        let model = model.insert(db).await?;
-        let rel = media_genres::ActiveModel {
-            media_id: Set(media_id),
-            genre_id: Set(model.id)
-        };
-        rel.insert(db).await?;
-    }
+    add_genre_to_media(&media, &genre.name, db).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
@@ -109,4 +81,39 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
     tran.commit().await?;
 
     Ok(())
+}
+
+pub async fn add_genre_to_media(media: &media::Model, genre: &str, db: &DbConn) -> Result<bool, SrvErr> {
+    let name = genre.to_title_case();
+
+    let existing = media.find_related(Genres).filter(genres::Column::Name.eq(&name)).one(db).await?;
+    if existing.is_some() {
+        return Ok(false);
+    }
+
+    let existing_db = genres::Entity::find().filter(genres::Column::Name.eq(&name))
+        .filter(genres::Column::Type.eq::<sea_orm_active_enums::MediaType>(media.r#type.clone())).one(db).await?;
+
+    if let Some(existing) = existing_db {
+        let rel = media_genres::ActiveModel {
+            media_id: Set(media.id),
+            genre_id: Set(existing.id),
+        };
+        rel.insert(db).await?;
+    } else {
+        let model = genres::ActiveModel {
+            id: NotSet,
+            tmdb_id: NotSet,
+            name: Set(name),
+            r#type: Set(media.r#type.clone()),
+        };
+        let model = model.insert(db).await?;
+        let rel = media_genres::ActiveModel {
+            media_id: Set(media.id),
+            genre_id: Set(model.id)
+        };
+        rel.insert(db).await?;
+    }
+
+    Ok(true)
 }
