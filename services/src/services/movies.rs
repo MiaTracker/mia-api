@@ -38,38 +38,35 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
         Err(err) => { return Err(SrvErr::DB(err)); }
     };
 
-    let tran = db.begin().await?; //TODO: properly handle transactions
 
     let tmdb_movie = match tmdb::services::movies::details(tmdb_id).await {
         Ok(movie) => { movie }
         Err(err) => { return Err(SrvErr::from(err)); }
     };
 
+    let titles = tmdb::services::movies::alternative_titles(tmdb_id).await?;
+
+    let backdrop_image_id = match &tmdb_movie.backdrop_path {
+        None => None,
+        Some(path) => Some(save_tmdb_image(path.as_str(), ImageType::Backdrop, db).await?),
+    };
+    let poster_image_id = match &tmdb_movie.poster_path {
+        None => None,
+        Some(path) => Some(save_tmdb_image(path.as_str(), ImageType::Poster, db).await?),
+    };
+
+    let tran = db.begin().await?;
+
     let mut media: media::ActiveModel = tmdb_movie.into_active_model();
     let mut movie: movies::ActiveModel = tmdb_movie.into_active_model();
 
-    media.backdrop_image_id = Set(
-        match tmdb_movie.backdrop_path {
-            None =>  None,
-            Some(path) => {
-                Some(save_tmdb_image(path.as_str(), ImageType::Backdrop, db).await?)
-            }
-        }
-    );
-    media.poster_image_id = Set(
-        match tmdb_movie.poster_path {
-            None =>  None,
-            Some(path) => {
-                Some(save_tmdb_image(path.as_str(), ImageType::Poster, db).await?)
-            }
-        }
-    );
-
+    media.backdrop_image_id = Set(backdrop_image_id);
+    media.poster_image_id = Set(poster_image_id);
     media.user_id = Set(user.id);
     media.bot_controllable = Set(user.though_bot);
-    let inserted_media = media.insert(db).await?;
+    let inserted_media = media.insert(&tran).await?;
     movie.id = Set(inserted_media.id);
-    movie.insert(db).await?;
+    movie.insert(&tran).await?;
 
     for genre in &tmdb_movie.genres {
         let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
@@ -82,7 +79,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
             media_id: Set(inserted_media.id),
             genre_id: Set(existing.unwrap().id),
         };
-        media_genre.insert(db).await?;
+        media_genre.insert(&tran).await?;
     }
 
 
@@ -92,9 +89,8 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
         primary: Set(true),
         title: Set(tmdb_movie.title)
     };
-    model.insert(db).await?;
+    model.insert(&tran).await?;
 
-    let titles = tmdb::services::movies::alternative_titles(tmdb_id).await?;
     for title in titles.titles {
         let model = titles::ActiveModel {
             id: NotSet,
@@ -102,7 +98,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
             primary: Set(false),
             title: Set(title.title)
         };
-        model.insert(db).await?;
+        model.insert(&tran).await?;
     }
 
     tran.commit().await?;

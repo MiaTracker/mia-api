@@ -9,7 +9,7 @@ use entities::prelude::Series;
 use entities::prelude::Genres;
 use entities::prelude::Tags;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder, QuerySelect};
+use sea_orm::{ActiveModelTrait, DatabaseTransaction, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder, QuerySelect};
 use sea_orm::sea_query::OnConflict;
 use entities::{episodes, functions, genres, image_sizes, media, media_genres, seasons, series, series_locks, titles};
 use integrations::tmdb::views::{SeasonDetails, SeriesTitle, TmdbEpisode};
@@ -49,50 +49,54 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
         Err(err) => { return Err(SrvErr::from(err)); }
     }
 
-    let tran = db.begin().await?;
-
+    // Pre-fetch all TMDB data and save images before opening the transaction so
+    // that slow/failing HTTP calls cannot leave partial rows committed.
     let tmdb_series = match tmdb::services::series::details(tmdb_id).await {
-        Ok(series) => { series }
+        Ok(series) => series,
         Err(err) => { return Err(SrvErr::from(err)); }
     };
 
-    let mut media: media::ActiveModel = tmdb_series.into_active_model();
-    let mut series: series::ActiveModel = tmdb_series.into_active_model();
+    let backdrop_image_id = match &tmdb_series.backdrop_path {
+        None => None,
+        Some(path) => Some(save_tmdb_image(path.as_str(), ImageType::Backdrop, db).await?),
+    };
+    let poster_image_id = match &tmdb_series.poster_path {
+        None => None,
+        Some(path) => Some(save_tmdb_image(path.as_str(), ImageType::Poster, db).await?),
+    };
 
-    media.backdrop_image_id = Set(
-        match tmdb_series.backdrop_path {
-            None =>  None,
-            Some(path) => {
-                Some(save_tmdb_image(path.as_str(), ImageType::Backdrop, db).await?)
-            }
-        }
-    );
-    media.poster_image_id = Set(
-        match tmdb_series.poster_path {
-            None =>  None,
-            Some(path) => {
-                Some(save_tmdb_image(path.as_str(), ImageType::Poster, db).await?)
-            }
-        }
-    );
-
-    media.user_id = Set(user.id);
-    media.bot_controllable = Set(user.though_bot);
-    let inserted_media = media.insert(db).await?;
-    series.id = Set(inserted_media.id);
-    series.insert(db).await?;
-
+    let mut seasons_data: Vec<(SeasonDetails, Option<i32>, Vec<Option<i32>>)> = Vec::new();
     if let Some(seasons) = &tmdb_series.seasons {
         for season in seasons {
             if let Some(sn) = season.season_number {
-                upsert_season_with_episodes(tmdb_id, inserted_media.id, sn, db).await?;
+                seasons_data.push(fetch_and_save_season(tmdb_id, sn, db).await?);
             }
         }
     }
 
+    let alt_titles = tmdb::services::series::alternative_titles(tmdb_id).await?;
+
+    // All HTTP calls are done. Open a short transaction for DB-only inserts.
+    let tran = db.begin().await?;
+
+    let mut media: media::ActiveModel = tmdb_series.into_active_model();
+    let mut series: series::ActiveModel = tmdb_series.into_active_model();
+
+    media.backdrop_image_id = Set(backdrop_image_id);
+    media.poster_image_id = Set(poster_image_id);
+    media.user_id = Set(user.id);
+    media.bot_controllable = Set(user.though_bot);
+    let inserted_media = media.insert(&tran).await?;
+    series.id = Set(inserted_media.id);
+    series.insert(&tran).await?;
+
+    for (season_details, poster_id, episode_still_ids) in &seasons_data {
+        insert_season_with_episodes(inserted_media.id, season_details, *poster_id, episode_still_ids, &tran).await?;
+    }
+
     for genre in &tmdb_series.genres {
         let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
-            .filter(genres::Column::Type.eq(MediaType::Series)).one(db).await?;
+            .filter(genres::Column::Type.eq(MediaType::Series)).one(&tran).await?;
         if existing.is_none() {
             return Err(SrvErr::MasterdataOutdated);
         }
@@ -101,9 +105,8 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
             media_id: Set(inserted_media.id),
             genre_id: Set(existing.unwrap().id),
         };
-        media_genre.insert(db).await?;
+        media_genre.insert(&tran).await?;
     }
-
 
     let model = titles::ActiveModel {
         id: NotSet,
@@ -111,24 +114,23 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn) -> Result<(bo
         primary: Set(true),
         title: Set(tmdb_series.name)
     };
-    model.insert(db).await?;
+    model.insert(&tran).await?;
 
-    let titles = tmdb::services::series::alternative_titles(tmdb_id).await?;
-    let titles = titles.results.iter().filter(|x| {
+    let filtered_titles = alt_titles.results.iter().filter(|x| {
         if x.iso_3166_1 == constants::TMDB_3166_1 { return true }
         if let Some(countries) = &tmdb_series.production_countries {
             return countries.iter().any(|y| { y.iso_3166_1 == x.iso_3166_1 })
         }
         true
     }).collect::<Vec<&SeriesTitle>>();
-    for title in titles {
+    for title in filtered_titles {
         let model = titles::ActiveModel {
             id: NotSet,
             media_id: Set(inserted_media.id),
             primary: Set(false),
             title: Set(title.title.clone())
         };
-        model.insert(db).await?;
+        model.insert(&tran).await?;
     }
 
     tran.commit().await?;
@@ -589,6 +591,69 @@ async fn upsert_season_with_episodes(
     }
 
     Ok(season_model)
+}
+
+async fn fetch_and_save_season(
+    series_tmdb_id: i32,
+    season_number: i32,
+    db: &DbConn,
+) -> Result<(SeasonDetails, Option<i32>, Vec<Option<i32>>), SrvErr> {
+    let season_details = tmdb::services::series::season_details(series_tmdb_id, season_number).await?;
+
+    let poster_image_id = if let Some(path) = &season_details.poster_path {
+        if !path.is_empty() { save_tmdb_image(path, ImageType::Poster, db).await.ok() } else { None }
+    } else {
+        None
+    };
+
+    let mut episode_still_ids = Vec::with_capacity(season_details.episodes.len());
+    for episode in &season_details.episodes {
+        let still_id = if let Some(path) = &episode.still_path {
+            if !path.is_empty() { save_tmdb_image(path, ImageType::Still, db).await.ok() } else { None }
+        } else {
+            None
+        };
+        episode_still_ids.push(still_id);
+    }
+
+    Ok((season_details, poster_image_id, episode_still_ids))
+}
+
+async fn insert_season_with_episodes(
+    series_db_id: i32,
+    season_details: &SeasonDetails,
+    poster_image_id: Option<i32>,
+    episode_still_ids: &[Option<i32>],
+    tran: &DatabaseTransaction,
+) -> Result<(), SrvErr> {
+    let mut am = <&SeasonDetails as IntoActiveModel<seasons::ActiveModel>>::into_active_model(season_details);
+    am.series_id = Set(series_db_id);
+    am.poster_image_id = Set(poster_image_id);
+    let season_model = am.insert(tran).await?;
+
+    for (episode, still_image_id) in season_details.episodes.iter().zip(episode_still_ids.iter()) {
+        let mut ep_am = <&TmdbEpisode as IntoActiveModel<episodes::ActiveModel>>::into_active_model(episode);
+        ep_am.season_id = Set(season_model.id);
+        ep_am.still_image_id = Set(*still_image_id);
+        episodes::Entity::insert(ep_am)
+            .on_conflict(
+                OnConflict::columns([episodes::Column::SeasonId, episodes::Column::TmdbId])
+                    .update_columns([
+                        episodes::Column::EpisodeNumber,
+                        episodes::Column::Name,
+                        episodes::Column::Overview,
+                        episodes::Column::AirDate,
+                        episodes::Column::Runtime,
+                        episodes::Column::TmdbVoteAverage,
+                        episodes::Column::StillImageId,
+                    ])
+                    .to_owned(),
+            )
+            .exec(tran)
+            .await?;
+    }
+
+    Ok(())
 }
 
 async fn apply_season_property_changes(
