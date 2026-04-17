@@ -24,6 +24,8 @@ mod m20251017_120428_images;
 mod m20260416_000001_sync_state;
 mod m20260416_000002_origin_country;
 mod m20260417_000001_episodes;
+mod m20260417_000002_add_still_image_type;
+mod m20260417_000003_season_episode_images;
 
 pub struct Migrator;
 
@@ -52,6 +54,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260416_000001_sync_state::Migration),
             Box::new(m20260416_000002_origin_country::Migration),
             Box::new(m20260417_000001_episodes::Migration),
+            Box::new(m20260417_000002_add_still_image_type::Migration),
+            Box::new(m20260417_000003_season_episode_images::Migration),
         ]
     }
 }

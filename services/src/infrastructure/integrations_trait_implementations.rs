@@ -172,7 +172,7 @@ impl IntoActiveModel<seasons::ActiveModel> for &Season {
             episode_count: Set(self.episode_count),
             name: Set(self.name.clone()),
             overview: Set(self.overview.clone()),
-            poster_path: Set(self.poster_path.clone()),
+            poster_image_id: NotSet,
             season_number: Set(self.season_number),
             tmdb_vote_average: Set(self.vote_average),
             tmdb_id: Set(Some(self.id)),
@@ -202,7 +202,7 @@ impl IntoActiveModel<seasons::ActiveModel> for &SeasonDetails {
             episode_count: Set(Some(self.episodes.len() as i32)),
             name: Set(self.name.clone()),
             overview: Set(self.overview.clone()),
-            poster_path: Set(self.poster_path.clone()),
+            poster_image_id: NotSet,
             season_number: Set(self.season_number),
             tmdb_vote_average: Set(self.vote_average),
             tmdb_id: Set(Some(self.id)),
@@ -234,7 +234,7 @@ impl IntoActiveModel<episodes::ActiveModel> for &TmdbEpisode {
             },
             runtime: Set(self.runtime),
             tmdb_vote_average: Set(self.vote_average),
-            still_path: Set(self.still_path.clone()),
+            still_image_id: NotSet,
         }
     }
 }

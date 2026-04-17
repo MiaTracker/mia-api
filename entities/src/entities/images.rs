@@ -19,10 +19,20 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::episodes::Entity")]
+    Episodes,
     #[sea_orm(has_many = "super::image_sizes::Entity")]
     ImageSizes,
     #[sea_orm(has_one = "super::manual_image_references::Entity")]
     ManualImageReferences,
+    #[sea_orm(has_many = "super::seasons::Entity")]
+    Seasons,
+}
+
+impl Related<super::episodes::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Episodes.def()
+    }
 }
 
 impl Related<super::image_sizes::Entity> for Entity {
@@ -34,6 +44,12 @@ impl Related<super::image_sizes::Entity> for Entity {
 impl Related<super::manual_image_references::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ManualImageReferences.def()
+    }
+}
+
+impl Related<super::seasons::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Seasons.def()
     }
 }
 

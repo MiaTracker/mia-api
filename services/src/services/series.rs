@@ -522,6 +522,7 @@ async fn upsert_season_with_episodes(
         .await?;
 
     let season_model = if let Some(existing_season) = existing {
+        let needs_poster = existing_season.poster_image_id.is_none();
         let mut am = existing_season.into_active_model();
         am.air_date = Set(season_details.air_date.as_deref()
             .filter(|s| !s.is_empty())
@@ -529,7 +530,13 @@ async fn upsert_season_with_episodes(
         am.episode_count = Set(Some(season_details.episodes.len() as i32));
         am.name = Set(season_details.name.clone());
         am.overview = Set(season_details.overview.clone());
-        am.poster_path = Set(season_details.poster_path.clone());
+        if needs_poster {
+            if let Some(path) = &season_details.poster_path {
+                if !path.is_empty() {
+                    am.poster_image_id = Set(Some(save_tmdb_image(path, ImageType::Poster, db).await?));
+                }
+            }
+        }
         am.tmdb_vote_average = Set(season_details.vote_average);
         am.tmdb_id = Set(Some(season_details.id));
         am.stars = NotSet;
@@ -537,12 +544,27 @@ async fn upsert_season_with_episodes(
     } else {
         let mut am = <&SeasonDetails as IntoActiveModel<seasons::ActiveModel>>::into_active_model(&season_details);
         am.series_id = Set(series_db_id);
+        if let Some(path) = &season_details.poster_path {
+            if !path.is_empty() {
+                am.poster_image_id = Set(Some(save_tmdb_image(path, ImageType::Poster, db).await?));
+            }
+        }
         am.insert(db).await?
     };
 
     for episode in &season_details.episodes {
         let mut ep_am = <&TmdbEpisode as IntoActiveModel<episodes::ActiveModel>>::into_active_model(episode);
         ep_am.season_id = Set(season_model.id);
+        let still_image_id = if let Some(path) = &episode.still_path {
+            if !path.is_empty() {
+                save_tmdb_image(path, ImageType::Still, db).await.ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        ep_am.still_image_id = Set(still_image_id);
         episodes::Entity::insert(ep_am)
             .on_conflict(
                 OnConflict::columns([episodes::Column::SeasonId, episodes::Column::TmdbId])
@@ -553,7 +575,7 @@ async fn upsert_season_with_episodes(
                         episodes::Column::AirDate,
                         episodes::Column::Runtime,
                         episodes::Column::TmdbVoteAverage,
-                        episodes::Column::StillPath,
+                        episodes::Column::StillImageId,
                     ])
                     .to_owned(),
             )
@@ -599,9 +621,12 @@ async fn apply_season_property_changes(
                 }
             }
             "poster_path" => {
-                if let Some(s) = value.as_str() {
-                    am.poster_path = Set(Some(s.to_string()));
-                    any_change = true;
+                if season.poster_image_id.is_none() {
+                    if let Some(s) = value.as_str() {
+                        let id = save_tmdb_image(s, ImageType::Poster, db).await?;
+                        am.poster_image_id = Set(Some(id));
+                        any_change = true;
+                    }
                 }
             }
             _ => {}
@@ -656,9 +681,12 @@ async fn apply_episode_changes(
                 }
             }
             "still_path" => {
-                if let Some(s) = value.as_str() {
-                    am.still_path = Set(Some(s.to_string()));
-                    any_change = true;
+                if episode.still_image_id.is_none() {
+                    if let Some(s) = value.as_str() {
+                        let id = save_tmdb_image(s, ImageType::Still, db).await?;
+                        am.still_image_id = Set(Some(id));
+                        any_change = true;
+                    }
                 }
             }
             _ => {}

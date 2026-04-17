@@ -26,6 +26,9 @@ cargo run -- migrate fresh       # Drop all tables and reapply from scratch
 cargo run -- migrate refresh     # Rollback all, then reapply all
 cargo run -- migrate reset       # Rollback all migrations
 cargo run -- migrate status      # Show pending/applied status
+
+# Entities regeneration after migration
+sea-orm-cli generate entity -u <connection_url> -o entities/src/entities
 ```
 
 The API listens on `127.0.0.1:3000`.

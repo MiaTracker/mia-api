@@ -27,6 +27,8 @@ pub enum ImageType {
     Backdrop,
     #[sea_orm(string_value = "poster")]
     Poster,
+    #[sea_orm(string_value = "still")]
+    Still,
 }
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "media_type")]

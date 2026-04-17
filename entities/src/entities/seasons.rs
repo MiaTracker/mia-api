@@ -12,19 +12,27 @@ pub struct Model {
     pub episode_count: Option<i32>,
     pub name: Option<String>,
     pub overview: Option<String>,
-    pub poster_path: Option<String>,
     pub season_number: Option<i32>,
     #[sea_orm(column_type = "Float", nullable)]
     pub tmdb_vote_average: Option<f32>,
     #[sea_orm(column_type = "Float", nullable)]
     pub stars: Option<f32>,
     pub tmdb_id: Option<i32>,
+    pub poster_image_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::episodes::Entity")]
     Episodes,
+    #[sea_orm(
+        belongs_to = "super::images::Entity",
+        from = "Column::PosterImageId",
+        to = "super::images::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Images,
     #[sea_orm(
         belongs_to = "super::series::Entity",
         from = "Column::SeriesId",
@@ -38,6 +46,12 @@ pub enum Relation {
 impl Related<super::episodes::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Episodes.def()
+    }
+}
+
+impl Related<super::images::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Images.def()
     }
 }
 

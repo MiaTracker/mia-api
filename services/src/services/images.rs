@@ -15,8 +15,8 @@ use tokio::fs::File;
 use tokio::io::{AsyncWriteExt};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
-use entities::{image_sizes, images, manual_image_references, media};
-use entities::prelude::{ImageSizes, Images, ManualImageReferences, Media};
+use entities::{episodes, image_sizes, images, manual_image_references, media, seasons};
+use entities::prelude::{Episodes, ImageSizes, Images, ManualImageReferences, Media, Seasons};
 use entities::sea_orm_active_enums::{ImageFileType, ImageSource, ImageType};
 use infrastructure::config;
 use integrations::tmdb;
@@ -201,6 +201,7 @@ pub(crate) async fn fetch_backdrop_and_poster(db_media: &media::Model, db: &DbCo
         match db_image.r#type {
             ImageType::Backdrop => { backdrop = Some(image) }
             ImageType::Poster => { poster = Some(image) }
+            ImageType::Still => {}
         }
     }
 
@@ -216,7 +217,15 @@ pub(crate) async fn delete_unused_image(id: i32, db: &DbConn) -> Result<(), SrvE
         .filter(manual_image_references::Column::ImageId.eq(id))
         .count(db).await?;
 
-    if usages > 0 || manual_references > 0 {
+    let season_usages = Seasons::find()
+        .filter(seasons::Column::PosterImageId.eq(id))
+        .count(db).await?;
+
+    let episode_usages = Episodes::find()
+        .filter(episodes::Column::StillImageId.eq(id))
+        .count(db).await?;
+
+    if usages > 0 || manual_references > 0 || season_usages > 0 || episode_usages > 0 {
         return Ok(())
     }
 

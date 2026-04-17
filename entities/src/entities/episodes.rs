@@ -18,12 +18,19 @@ pub struct Model {
     pub runtime: Option<i32>,
     #[sea_orm(column_type = "Float", nullable)]
     pub tmdb_vote_average: Option<f32>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub still_path: Option<String>,
+    pub still_image_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::images::Entity",
+        from = "Column::StillImageId",
+        to = "super::images::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Images,
     #[sea_orm(
         belongs_to = "super::seasons::Entity",
         from = "Column::SeasonId",
@@ -32,6 +39,12 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Seasons,
+}
+
+impl Related<super::images::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Images.def()
+    }
 }
 
 impl Related<super::seasons::Entity> for Entity {
