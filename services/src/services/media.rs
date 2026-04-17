@@ -682,12 +682,6 @@ pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: 
                     }
                 }
             }
-            "vote_average" => { //TODO
-                if !is_locked(&locks, |l| l.tmdb_vote_average) {
-                    media_am.tmdb_vote_average = Set(value.as_f64().map(|f| f as f32));
-                    any_change = true;
-                }
-            }
             "images" => {
                 if media.poster_image_id.is_none() && !is_locked(&locks, |l| l.poster_path) {
                     let poster = change.items.iter().filter(|i| i.value.as_ref()
