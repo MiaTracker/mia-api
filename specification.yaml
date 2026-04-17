@@ -3597,14 +3597,6 @@ components:
         imdb_id:
           type: string
           nullable: true
-        number_of_episodes:
-          type: integer
-          format: int32
-          nullable: true
-        number_of_seasons:
-          type: integer
-          format: int32
-          nullable: true
         original_language:
           type: string
           nullable: true

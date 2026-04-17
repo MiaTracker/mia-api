@@ -82,8 +82,6 @@ impl ToLocks for Option<series_locks::Model> {
         let mut list = Vec::new();
         if let Some(locks) = self {
             if locks.first_air_date { list.push(stringify!(first_air_date)) }
-            if locks.number_of_episodes { list.push(stringify!(number_of_episodes)) }
-            if locks.number_of_seasons { list.push(stringify!(number_of_seasons)) }
             if locks.status { list.push(stringify!(status)) }
             if locks.r#type { list.push(stringify!(type)) }
         }
@@ -94,16 +92,12 @@ impl ToLocks for Option<series_locks::Model> {
 impl SetLock for series_locks::ActiveModel {
     fn has_lock(property: &str) -> bool {
         property == stringify!(first_air_date) ||
-            property == stringify!(number_of_episodes) ||
-            property == stringify!(number_of_seasons) ||
             property == stringify!(status) ||
             property == stringify!(type)
     }
 
     fn set_lock(&mut self, property: &str, locked: bool) {
         if property == stringify!(first_air_date) { self.first_air_date = Set(locked) }
-        else if property == stringify!(number_of_episodes) { self.number_of_episodes = Set(locked) }
-        else if property == stringify!(number_of_seasons) { self.number_of_seasons = Set(locked) }
         else if property == stringify!(status) { self.status = Set(locked) }
         else if property == stringify!(type) { self.r#type = Set(locked) }
     }

@@ -26,6 +26,7 @@ mod m20260416_000002_origin_country;
 mod m20260417_000001_episodes;
 mod m20260417_000002_add_still_image_type;
 mod m20260417_000003_season_episode_images;
+mod m20260417_000004_drop_series_computed_fields;
 
 pub struct Migrator;
 
@@ -56,6 +57,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260417_000001_episodes::Migration),
             Box::new(m20260417_000002_add_still_image_type::Migration),
             Box::new(m20260417_000003_season_episode_images::Migration),
+            Box::new(m20260417_000004_drop_series_computed_fields::Migration),
         ]
     }
 }

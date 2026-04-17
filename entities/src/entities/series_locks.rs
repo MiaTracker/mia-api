@@ -8,8 +8,6 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub series_id: i32,
     pub first_air_date: bool,
-    pub number_of_episodes: bool,
-    pub number_of_seasons: bool,
     pub status: bool,
     pub r#type: bool,
 }

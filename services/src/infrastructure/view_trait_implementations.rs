@@ -103,8 +103,6 @@ impl IntoActiveModel<series::ActiveModel> for &SeriesMetadata {
         series::ActiveModel {
             id: sea_orm::Set(self.id),
             first_air_date: sea_orm::Set(self.first_air_date),
-            number_of_episodes: sea_orm::Set(self.number_of_episodes),
-            number_of_seasons: sea_orm::Set(self.number_of_seasons),
             status: sea_orm::Set(self.status.clone().map(|s| { s.to_title_case() })),
             r#type: sea_orm::Set(self.r#type.clone().map(|t| { t.to_title_case() })),
         }

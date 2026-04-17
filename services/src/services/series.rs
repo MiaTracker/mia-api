@@ -1,4 +1,4 @@
-use entities::prelude::{ImageSizes, MediaLocks, SeriesLocks};
+use entities::prelude::{Episodes, ImageSizes, MediaLocks, Seasons, SeriesLocks};
 use entities::prelude::Watchlist;
 use entities::prelude::Logs;
 use entities::prelude::Sources;
@@ -216,6 +216,15 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
 
     let (backdrop, poster) = fetch_backdrop_and_poster(&db_media, db).await?;
 
+    let number_of_seasons = Some(db_series.find_related(Seasons).count(db).await? as i32);
+    let number_of_episodes = Some(
+        Episodes::find()
+            .inner_join(seasons::Entity)
+            .filter(seasons::Column::SeriesId.eq(db_series.id))
+            .count(db)
+            .await? as i32
+    );
+
     let series = views::series::SeriesDetails {
         id: db_media.id,
         poster,
@@ -224,8 +233,8 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
         title,
         alternative_titles,
         first_air_date: db_series.first_air_date,
-        number_of_episodes: db_series.number_of_episodes,
-        number_of_seasons: db_series.number_of_seasons,
+        number_of_episodes,
+        number_of_seasons,
         status: db_series.status,
         r#type: db_series.r#type,
         overview: db_media.overview,
@@ -264,8 +273,6 @@ pub async fn metadata(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result
         original_language: db_media.original_language,
         origin_country: db_media.origin_country,
         first_air_date: series.first_air_date,
-        number_of_episodes: series.number_of_episodes,
-        number_of_seasons: series.number_of_seasons,
         status: series.status,
         r#type: series.r#type,
     };
@@ -360,8 +367,6 @@ async fn set_lock(series_id: i32, property: String, locked: bool, user: &Current
         let mut active_locks = series_locks::ActiveModel {
             series_id: Set(series_id),
             first_air_date: Set(false),
-            number_of_episodes: Set(false),
-            number_of_seasons: Set(false),
             status: Set(false),
             r#type: Set(false),
         };

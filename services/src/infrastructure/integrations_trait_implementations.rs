@@ -143,8 +143,6 @@ impl IntoActiveModel<series::ActiveModel> for &SeriesDetails {
             } else {
                 Set(None)
             },
-            number_of_episodes: Set(self.number_of_episodes),
-            number_of_seasons: Set(self.number_of_seasons),
             status: Set(self.status.clone()),
             r#type: Set(self.r#type.clone()),
         }
