@@ -1,6 +1,7 @@
 use std::env;
 use infrastructure::config;
 use migration::{migrate_down, migrate_fresh, migrate_refresh, migrate_reset, migrate_status, migrate_up};
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
@@ -19,6 +20,21 @@ async fn main() {
             },
             "refresh" => {
                 services::refresh::run_refresh().await;
+            },
+            "linearize-ratings" => {
+                let mut user_uuid: Option<Uuid> = None;
+                let mut dry_run = false;
+                while let Some(arg) = args.next() {
+                    match arg.as_str() {
+                        "--user" => {
+                            let raw = args.next().expect("--user requires a value");
+                            user_uuid = Some(Uuid::parse_str(&raw).expect("invalid uuid"));
+                        }
+                        "--dry-run" => dry_run = true,
+                        x => println!("Invalid flag for linearize-ratings: {}", x),
+                    }
+                }
+                services::ratings_linearization::run_linearize_ratings(user_uuid, dry_run).await;
             },
             "migrate" => {
                 if let Some(arg) = args.next() {

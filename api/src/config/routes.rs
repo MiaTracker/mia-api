@@ -1,6 +1,6 @@
 use axum::Router;
 use axum::routing::{delete, get, patch, post};
-use crate::endpoints::{app_tokens, configuration, genres, images, languages, logs, logset, masterdata, media, movies, ping, refresh, series, sources, statistics, tags, titles, users, watchlist};
+use crate::endpoints::{app_tokens, configuration, genres, images, languages, logs, logset, masterdata, media, movies, ping, ratings_linearization, refresh, series, sources, statistics, tags, titles, users, watchlist};
 use crate::infrastructure::AppState;
 
 
@@ -99,4 +99,5 @@ pub fn build_admin() -> Router<AppState> {
         .route("/users/{uuid}", delete(users::delete))
         .route("/masterdata/refresh", post(masterdata::refresh))
         .route("/refresh", post(refresh::refresh))
+        .route("/ratings/linearize", post(ratings_linearization::linearize))
 }

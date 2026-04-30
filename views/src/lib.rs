@@ -17,3 +17,4 @@ pub mod statistics;
 pub mod images;
 pub mod ping;
 pub mod refresh;
+pub mod ratings_linearization;

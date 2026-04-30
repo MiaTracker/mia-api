@@ -14,6 +14,8 @@ pub struct Model {
     pub completed: bool,
     pub comment: Option<String>,
     pub source_id: i32,
+    #[sea_orm(column_type = "Float", nullable)]
+    pub original_stars: Option<f32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
