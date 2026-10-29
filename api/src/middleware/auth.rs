@@ -56,7 +56,7 @@ pub async fn auth(State(state): State<AppState>, mut req: Request<Body>, next: N
     let res = match claims.r#type {
         TokenType::UserToken => {
             if let Some(exp) = claims.exp {
-                if exp < chrono::Utc::now().timestamp() as usize {
+                if exp < state.clock.now().timestamp() as usize {
                     return Err(ApiErr {
                         errors: vec![ApiErrView { key: ErrorKey::InvalidAuthenticationToken.to_string(), debug_message: "Authentication token expired!".to_string() }],
                         status: StatusCode::UNAUTHORIZED,

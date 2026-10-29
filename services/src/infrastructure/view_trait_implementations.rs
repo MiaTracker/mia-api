@@ -20,7 +20,7 @@ impl IntoActiveModel<users::ActiveModel> for &UserRegistration {
     fn into_active_model(self) -> users::ActiveModel {
         users::ActiveModel {
             id: NotSet,
-            uuid: Set(uuid::Uuid::new_v4()),
+            uuid: NotSet,
             email: Set(self.email.clone()),
             username: Set(self.username.clone()),
             password_hash: NotSet,

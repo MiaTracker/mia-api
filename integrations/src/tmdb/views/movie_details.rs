@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use crate::tmdb::views::{Collection, Genre, Languages, ProductionCompany, ProductionCountry};
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct MovieDetails {
     pub adult: Option<bool>,
     pub backdrop_path: Option<String>,

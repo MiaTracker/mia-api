@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct MultiResults {
     pub page: i32,
     pub results: Vec<MultiResult>,
@@ -8,7 +8,7 @@ pub struct MultiResults {
     pub total_results: i32
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(tag = "media_type")]
 pub enum MultiResult {
     #[serde(rename = "movie")]
@@ -21,7 +21,7 @@ pub enum MultiResult {
     Collection(MultiCollectionResult)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct MultiMovieResult {
     pub adult: Option<bool>,
     pub backdrop_path: Option<String>,
@@ -39,7 +39,7 @@ pub struct MultiMovieResult {
     pub vote_count: Option<i32>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct MultiTvResult {
     pub adult: Option<bool>,
     pub backdrop_path: Option<String>,
@@ -57,7 +57,7 @@ pub struct MultiTvResult {
     pub origin_country: Option<Vec<String>>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct MultiPersonResult {
     pub adult: Option<bool>,
     pub id: i32,
@@ -70,7 +70,7 @@ pub struct MultiPersonResult {
     pub known_for: Option<Vec<KnownForResult>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(tag = "media_type")]
 pub enum KnownForResult {
     #[serde(rename = "movie")]
@@ -79,7 +79,7 @@ pub enum KnownForResult {
     Tv(MultiTvResult)
 }
 
-#[derive(Deserialize, Eq, PartialEq)]
+#[derive(Deserialize, Eq, PartialEq, Debug, Clone)]
 pub enum MultiResultMediaType {
     #[serde(rename = "movie")]
     Movie,
@@ -89,7 +89,7 @@ pub enum MultiResultMediaType {
     Person,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct MultiCollectionResult {
     pub adult: Option<bool>,
     pub backdrop_path: Option<String>,

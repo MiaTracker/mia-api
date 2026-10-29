@@ -27,7 +27,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
 )]
 pub async fn add(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                     Json(params): Json<WatchlistParams>) -> impl IntoResponse {
-    let result = services::watchlist::add(params.media_id, &user, &state.conn).await;
+    let result = services::watchlist::add(params.media_id, &user, &state.conn, state.clock.as_ref()).await;
     result.map_to_status(|res| {
         if *res { StatusCode::CREATED }
         else { StatusCode::OK }

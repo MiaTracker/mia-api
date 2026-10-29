@@ -21,6 +21,6 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     security(("api_key" = []))
 )]
 pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>, Json(logset): Json<LogsetCreate>) -> impl IntoResponse {
-    let result = services::logset::create(&logset, &user, &state.conn).await;
+    let result = services::logset::create(&logset, &user, &state.conn, state.tmdb.as_ref(), state.image_store.as_ref(), state.jobs.as_ref(), state.clock.as_ref(), state.random.as_ref()).await;
     result.to_response(StatusCode::CREATED)
 }

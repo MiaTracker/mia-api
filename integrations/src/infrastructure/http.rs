@@ -1,18 +1,4 @@
-use infrastructure::config;
-use once_cell::unsync::Lazy;
-use reqwest::header::{HeaderMap, HeaderValue};
 use crate::infrastructure::Error;
-
-pub const CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    reqwest::Client::new()
-});
-
-pub const TMDB_HEADERS: Lazy<HeaderMap> = Lazy::new(|| {
-    let mut headers = HeaderMap::new();
-    headers.insert("Authorization", HeaderValue::from_str(("Bearer ".to_owned() + config().tmdb.authorization_token.as_str()).as_str()).expect("Invalid TMDB_TOKEN header value!"));
-    headers.insert("accept", HeaderValue::from_str("application/json").expect("Invalid header value!"));
-    headers
-});
 
 const MAX_RETRIES: u32 = 5;
 
@@ -20,7 +6,9 @@ fn is_network_error(e: &reqwest::Error) -> bool {
     e.is_connect() || e.is_timeout() || (e.is_request() && e.status().is_none())
 }
 
-async fn retry_get(request_fn: impl Fn() -> reqwest::RequestBuilder) -> Result<reqwest::Response, Error> {
+/// Sends the request built by `request_fn`, rebuilding and retrying it on rate limiting and
+/// network errors.
+pub(crate) async fn retry_get(request_fn: impl Fn() -> reqwest::RequestBuilder) -> Result<reqwest::Response, Error> {
     let mut attempt = 0u32;
     loop {
         match request_fn().send().await {
@@ -52,12 +40,4 @@ async fn retry_get(request_fn: impl Fn() -> reqwest::RequestBuilder) -> Result<r
             }
         }
     }
-}
-
-pub async fn tmdb_get(uri: &str) -> Result<reqwest::Response, Error> {
-    retry_get(|| CLIENT.get(uri).headers(TMDB_HEADERS.clone())).await
-}
-
-pub async fn client_get(uri: &str) -> Result<reqwest::Response, Error> {
-    retry_get(|| CLIENT.get(uri)).await
 }

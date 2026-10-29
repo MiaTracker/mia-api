@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct TmdbImages {
     pub id: i32,
     pub backdrops: Vec<TmdbImage>,
@@ -8,7 +8,7 @@ pub struct TmdbImages {
     pub posters: Vec<TmdbImage>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct TmdbImage {
     pub aspect_ratio: f32,
     pub height: i32,

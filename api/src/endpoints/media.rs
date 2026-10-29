@@ -42,7 +42,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 )]
 pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                     Query(params): Query<SearchParams>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
-    let result = services::media::search(search, params.committed, params.into(), MaybeRouteType::All.into(), &user, &state.conn).await;
+    let result = services::media::search(search, params.committed, params.into(), MaybeRouteType::All.into(), &user, &state.conn, state.tmdb.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 

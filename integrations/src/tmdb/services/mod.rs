@@ -1,7 +1,8 @@
-pub mod movies;
-pub mod configuration;
-pub mod initialize;
-pub mod series;
-pub mod genres;
-pub mod search;
-pub mod images;
+//! Request helpers behind `TmdbClient`, one module per TMDB area.
+
+pub(crate) mod movies;
+pub(crate) mod configuration;
+pub(crate) mod series;
+pub(crate) mod genres;
+pub(crate) mod search;
+pub(crate) mod images;

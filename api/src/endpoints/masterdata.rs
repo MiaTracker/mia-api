@@ -16,6 +16,6 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     security(("api_key" = ["admin"]))
 )]
 pub async fn refresh(state: State<AppState>) -> impl IntoResponse {
-    let result = services::masterdata::refresh(&state.conn).await;
+    let result = services::masterdata::refresh(&state.conn, state.tmdb.as_ref()).await;
     result.to_response(StatusCode::OK)
 }

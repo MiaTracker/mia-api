@@ -1,30 +1,30 @@
 use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ChangedItem {
     pub id: i32,
     pub adult: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ChangedPage {
     pub results: Vec<ChangedItem>,
     pub page: i32,
     pub total_pages: i32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct PropertyChanges {
     pub changes: Vec<PropertyChange>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct PropertyChange {
     pub key: String,
     pub items: Vec<ChangeItem>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ChangeItem {
     pub id: String,
     pub action: String,

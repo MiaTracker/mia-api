@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use crate::tmdb::views::{Genre, Languages, ProductionCompany, ProductionCountry};
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct SeriesDetails {
     pub adult: Option<bool>,
     pub backdrop_path: Option<String>,
@@ -37,7 +37,7 @@ pub struct SeriesDetails {
     pub vote_count: Option<i32>
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct SeriesCreator {
     pub id: i32,
     pub credit_id: Option<String>,
@@ -46,7 +46,7 @@ pub struct SeriesCreator {
     pub profile_path: Option<String>
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct SeriesEpisode {
     pub id: i32,
     pub name: String,
@@ -62,7 +62,7 @@ pub struct SeriesEpisode {
     pub still_path: Option<String>
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct SeriesNetwork {
     pub id: i32,
     pub logo_path: Option<String>,
@@ -70,7 +70,7 @@ pub struct SeriesNetwork {
     pub origin_country: Option<String>
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct Season {
     pub air_date: Option<String>,
     pub episode_count: Option<i32>,

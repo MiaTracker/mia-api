@@ -26,7 +26,7 @@ use views::images::ImageCandidate;
     security(("api_key" = []))
 )]
 pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUser>, Query(params): Query<MediaCreateParams>) -> impl IntoResponse {
-    let result = services::series::create(params.tmdb_id, &user, &state.conn).await;
+    let result = services::series::create(params.tmdb_id, &user, &state.conn, state.tmdb.as_ref(), state.image_store.as_ref(), state.jobs.as_ref(), state.clock.as_ref(), state.random.as_ref()).await;
     result.map_to_status_and_result(|&res| {
         if res.0 { (StatusCode::CREATED, res.1) }
         else { (StatusCode::OK, res.1) }
@@ -49,7 +49,7 @@ pub async fn create(state: State<AppState>, Extension(user): Extension<CurrentUs
 )]
 pub async fn create_w_source(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                              Json(json): Json<MediaSourceCreate>) -> impl IntoResponse {
-    let result = services::media::create_w_source(json, MediaType::Series, &user, &state.conn).await;
+    let result = services::media::create_w_source(json, MediaType::Series, &user, &state.conn, state.tmdb.as_ref(), state.image_store.as_ref(), state.jobs.as_ref(), state.clock.as_ref(), state.random.as_ref()).await;
     result.map_to_status_and_result(|&res| {
         if res.0 { (StatusCode::CREATED, res.1) }
         else { (StatusCode::OK, res.1) }
@@ -91,7 +91,7 @@ pub async fn index(state: State<AppState>, Extension(user): Extension<CurrentUse
 )]
 pub async fn search(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                     Query(params): Query<SearchParams>, Json(search): Json<SearchQuery>) -> impl IntoResponse {
-    let result = services::media::search(search, params.committed, params.into(), MaybeRouteType::Series.into(), &user, &state.conn).await;
+    let result = services::media::search(search, params.committed, params.into(), MaybeRouteType::Series.into(), &user, &state.conn, state.tmdb.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -218,7 +218,7 @@ pub async fn update(state: State<AppState>, Extension(user): Extension<CurrentUs
     security(("api_key" = []))
 )]
 pub async fn backdrops(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
-    let result = services::media::backdrops(series_id, MediaType::Series, &user, &state.conn).await;
+    let result = services::media::backdrops(series_id, MediaType::Series, &user, &state.conn, state.tmdb.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -241,7 +241,7 @@ pub async fn backdrops(state: State<AppState>, Extension(user): Extension<Curren
 )]
 pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                               Path(series_id): Path<i32>, Json(json): Json<BackdropUpdate>) -> impl IntoResponse {
-    let result = services::media::update_backdrop(series_id, MediaType::Series, json, &user, &state.conn).await;
+    let result = services::media::update_backdrop(series_id, MediaType::Series, json, &user, &state.conn, state.tmdb.as_ref(), state.image_store.as_ref(), state.jobs.as_ref(), state.random.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -262,7 +262,7 @@ pub async fn update_backdrop(state: State<AppState>, Extension(user): Extension<
     security(("api_key" = []))
 )]
 pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
-    let result = services::media::posters(series_id, MediaType::Series, &user, &state.conn).await;
+    let result = services::media::posters(series_id, MediaType::Series, &user, &state.conn, state.tmdb.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -285,7 +285,7 @@ pub async fn posters(state: State<AppState>, Extension(user): Extension<CurrentU
 )]
 pub async fn update_poster(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                             Path(series_id): Path<i32>, Json(json): Json<PosterUpdate>) -> impl IntoResponse {
-    let result = services::media::update_poster(series_id, MediaType::Series, json, &user, &state.conn).await;
+    let result = services::media::update_poster(series_id, MediaType::Series, json, &user, &state.conn, state.tmdb.as_ref(), state.image_store.as_ref(), state.jobs.as_ref(), state.random.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -306,7 +306,7 @@ pub async fn update_poster(state: State<AppState>, Extension(user): Extension<Cu
     security(("api_key" = []))
 )]
 pub async fn images(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(series_id): Path<i32>) -> impl IntoResponse {
-    let result = services::media::images(series_id, MediaType::Series, &user, &state.conn).await;
+    let result = services::media::images(series_id, MediaType::Series, &user, &state.conn, state.tmdb.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -329,7 +329,7 @@ pub async fn images(state: State<AppState>, Extension(user): Extension<CurrentUs
 )]
 pub async fn update_images(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                            Path(series_id): Path<i32>, Json(json): Json<ImagesUpdate>) -> impl IntoResponse {
-    let result = services::media::update_images(series_id, MediaType::Series, json, &user, &state.conn).await;
+    let result = services::media::update_images(series_id, MediaType::Series, json, &user, &state.conn, state.tmdb.as_ref(), state.image_store.as_ref(), state.jobs.as_ref(), state.random.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -394,7 +394,7 @@ pub async fn unlock_property(state: State<AppState>, Extension(user): Extension<
     security(("api_key" = []))
 )]
 pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(path): Path<SeriesDeletePathParams>) -> impl IntoResponse {
-    let result = services::media::delete(path.series_id, RouteType::Series.into(), &user, &state.conn).await;
+    let result = services::media::delete(path.series_id, RouteType::Series.into(), &user, &state.conn, state.image_store.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 

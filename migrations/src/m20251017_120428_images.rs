@@ -4,6 +4,8 @@ use crate::extension::postgres::Type;
 use crate::sea_orm::EnumIter;
 use crate::m20251017_120428_images::entities::images;
 use crate::m20251017_120428_images::services::save_tmdb_image;
+use infrastructure::config;
+use integrations::tmdb::TmdbClient;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -91,7 +93,7 @@ impl MigrationTrait for Migration {
             .cond_where(Expr::col(Media::TmdbId).is_not_null())
             .to_owned();
 
-        integrations::tmdb::services::initialize::initialize().await;
+        let tmdb = TmdbClient::new(config().tmdb.authorization_token.clone());
         let res = db.query_all(builder.build(&query)).await?;
         for row in res {
             let id = row.try_get_by_index::<i32>(0)?;
@@ -102,7 +104,7 @@ impl MigrationTrait for Migration {
 
             if let Some(backdrop_path) = backdrop_path {
                 let backdrop_id = save_tmdb_image(backdrop_path.as_str(), images::ImageType::Backdrop,
-                                                  db).await.map_err(|_| DbErr::Migration("Error during tmdb image saving".to_string()))?;
+                                                  db, &tmdb).await.map_err(|_| DbErr::Migration("Error during tmdb image saving".to_string()))?;
 
 
                 let update = Query::update()
@@ -116,7 +118,7 @@ impl MigrationTrait for Migration {
 
             if let Some(poster_path) = poster_path {
                 let poster_id = save_tmdb_image(poster_path.as_str(), images::ImageType::Poster,
-                                                  db).await.map_err(|_| DbErr::Migration("Error during tmdb image saving".to_string()))?;
+                                                  db, &tmdb).await.map_err(|_| DbErr::Migration("Error during tmdb image saving".to_string()))?;
 
 
                 let update = Query::update()
@@ -395,12 +397,12 @@ use std::io::Cursor;
     use tokio::io::AsyncWriteExt;
     use uuid::Uuid;
     use infrastructure::config;
-    use integrations::tmdb;
+    use integrations::tmdb::Tmdb;
     use crate::m20251017_120428_images::entities::{image_sizes, images};
     use crate::m20251017_120428_images::entities::images::{ImageFileType, ImageSource, ImageType};
 
-    pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &SchemaManagerConnection<'_>) -> Result<i32, DbErr> {
-        let backdrop_bytes = tmdb::services::images::image(tmdb_path).await
+    pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &SchemaManagerConnection<'_>, tmdb: &dyn Tmdb) -> Result<i32, DbErr> {
+        let backdrop_bytes = tmdb.image(tmdb_path).await
             .map_err(|e| DbErr::Custom(format!("Error during tmdb call {}", e)))?;
 
         let reader = match ImageReader::new(Cursor::new(backdrop_bytes)).with_guessed_format() {

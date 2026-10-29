@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct Configuration {
     pub images: ImagesConfiguration,
     pub change_keys: Vec<String>
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
 pub struct ImagesConfiguration {
     pub base_url: String,
     pub secure_base_url: String,

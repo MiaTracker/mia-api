@@ -47,7 +47,7 @@ impl IntoActiveModel<media::ActiveModel> for &MovieDetails {
             } else {
                 Set(Some(self.origin_country.clone()))
             },
-            date_added: Set(chrono::Utc::now().date_naive()),
+            date_added: NotSet,
             r#type: Set(MediaType::Movie),
             stars: Set(None),
             bot_controllable: Set(false)
@@ -118,7 +118,7 @@ impl IntoActiveModel<media::ActiveModel> for &SeriesDetails {
                 else { Set(Some(original_language)) }
             } else { Set(None) },
             origin_country: Set(self.origin_country.clone()),
-            date_added: Set(chrono::Utc::now().date_naive()),
+            date_added: NotSet,
             r#type: Set(MediaType::Series),
             stars: Set(None),
             bot_controllable: Set(false)

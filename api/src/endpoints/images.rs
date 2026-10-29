@@ -1,8 +1,9 @@
 use axum::body::Body;
-use axum::extract::Path;
+use axum::extract::{Path, State};
 use axum::http::header;
 use axum::response::IntoResponse;
 use views::api::ApiErrView;
+use crate::infrastructure::AppState;
 
 #[utoipa::path(
     get,
@@ -16,8 +17,8 @@ use views::api::ApiErrView;
     ),
     security(("api_key" = []))
 )]
-pub async fn get_local(Path((slug, name)): Path<(String, String)>) -> impl IntoResponse {
-    let res = services::images::get_local(slug, name).await;
+pub async fn get_local(state: State<AppState>, Path((slug, name)): Path<(String, String)>) -> impl IntoResponse {
+    let res = services::images::get_local(slug, name, state.image_store.as_ref()).await;
     match res {
         Ok(data) => {
             let header = [
@@ -45,8 +46,8 @@ pub async fn get_local(Path((slug, name)): Path<(String, String)>) -> impl IntoR
     ),
     security(("api_key" = []))
 )]
-pub async fn get_tmdb(Path((slug, path)): Path<(String, String)>) -> impl IntoResponse {
-    let res = services::images::get_tmdb(slug, path).await;
+pub async fn get_tmdb(state: State<AppState>, Path((slug, path)): Path<(String, String)>) -> impl IntoResponse {
+    let res = services::images::get_tmdb(slug, path, state.tmdb.as_ref()).await;
     match res {
         Ok(data) => {
             let header = [

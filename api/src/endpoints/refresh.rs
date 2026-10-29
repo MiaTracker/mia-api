@@ -16,6 +16,6 @@ use axum::response::IntoResponse;
     security(("api_key" = ["admin"]))
 )]
 pub async fn refresh(state: State<AppState>) -> impl IntoResponse {
-    let result = services::refresh::refresh(&state.conn).await;
+    let result = services::refresh::refresh(&state.conn, state.tmdb.as_ref(), state.image_store.as_ref(), state.jobs.as_ref(), state.clock.as_ref(), state.random.as_ref()).await;
     result.to_response(StatusCode::OK)
 }

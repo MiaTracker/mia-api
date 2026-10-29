@@ -1,17 +1,18 @@
 use crate::tmdb::views::{Configuration, Languages};
-use crate::{assert_request, constants, deserialize};
-use crate::infrastructure::{Error, tmdb_get};
+use crate::{assert_request, deserialize};
+use crate::infrastructure::Error;
+use crate::tmdb::TmdbClient;
 
-pub async fn languages() -> Result<Vec<Languages>, Error> {
-    let uri = constants::TMDB_URL.to_owned() + "configuration/languages";
-    let resp = tmdb_get(&uri).await?;
+pub(crate) async fn languages(client: &TmdbClient) -> Result<Vec<Languages>, Error> {
+    let uri = client.base_url().to_owned() + "configuration/languages";
+    let resp = client.tmdb_get(&uri).await?;
     assert_request!(resp);
     Ok(deserialize!(Vec<Languages>, resp))
 }
 
-pub async fn details() -> Result<Configuration, Error> {
-    let uri = constants::TMDB_URL.to_owned() + "configuration";
-    let resp = tmdb_get(&uri).await?;
+pub(crate) async fn details(client: &TmdbClient) -> Result<Configuration, Error> {
+    let uri = client.base_url().to_owned() + "configuration";
+    let resp = client.tmdb_get(&uri).await?;
     assert_request!(resp);
     Ok(deserialize!(Configuration, resp))
 }

@@ -16,7 +16,7 @@ fancy-regex = "0.16.0"
 uuid = "1.18.0"
 argon2 = "0.5.0"
 chrono = "0.4.0"
-jsonwebtoken = "10.0.0"
+jsonwebtoken = { version = "10.0.0", features = ["rust_crypto"] }
 cruet = "0.15.0"
 http = "1.3.0"
 log = "0.4.0"
@@ -25,6 +25,23 @@ futures = "0.3.0"
 image = "0.25.8"
 gcd = "2.3.0"
 tokio = "1.47.0"
-async-scoped = { version = "0.9.0", features = ["use-tokio"] }
 tokio-util = { version = "0.7.17", features = ["io"] }
 bytes = "1.10.1"
+async-trait = "0.1"
+mockall = { version = "0.13", optional = true }
+serde_json = { version = "1.0.0", optional = true }
+
+[features]
+test-support = ["dep:mockall", "dep:serde_json", "sea-orm/mock"]
+
+[dev-dependencies]
+services = { path = ".", features = ["test-support"] }
+mockall = "0.13"
+serde_json = "1.0.0"
+sea-orm = { version = "1.1.0", features = ["runtime-tokio-rustls", "sqlx-postgres", "mock"] }
+tokio = { version = "1.47.0", features = ["macros", "rt", "sync"] }
+tempfile = "3"
+testcontainers = { version = "0.27", features = ["blocking", "watchdog"] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
+migrations = { path = "../migrations" }
+libc = "0.2"

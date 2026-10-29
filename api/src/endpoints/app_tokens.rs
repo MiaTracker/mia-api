@@ -21,7 +21,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     security(("api_key" = []))
 )]
 pub async fn generate(state: State<AppState>, Extension(user): Extension<CurrentUser>, Json(req): Json<AppTokenGenerate>) -> impl IntoResponse {
-    let result = services::app_tokens::generate(req.name, &state.jwt_secret, &user, &state.conn).await;
+    let result = services::app_tokens::generate(req.name, &state.jwt_secret, &user, &state.conn, state.clock.as_ref(), state.random.as_ref()).await;
     result.to_response(StatusCode::CREATED)
 }
 

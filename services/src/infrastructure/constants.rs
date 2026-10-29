@@ -29,7 +29,7 @@ pub fn tmdb_config() -> Arc<TmdbConfiguration> {
     }
 }
 
-pub fn set_tmdb_config(config: &tmdb::views::Configuration) {
+fn parse_tmdb_config(config: &tmdb::views::Configuration) -> TmdbConfiguration {
     let images_config = match build_tmdb_images_config(&config.images) {
         Ok(i) => i,
         Err(err) => {
@@ -37,9 +37,19 @@ pub fn set_tmdb_config(config: &tmdb::views::Configuration) {
         }
     };
 
-    let tmdb_config = TmdbConfiguration {
+    TmdbConfiguration {
         images: images_config,
-    };
+    }
+}
+
+/// Like `set_tmdb_config`, but does nothing if the config has already been initialized.
+/// Safe to call repeatedly (e.g. from tests).
+pub fn init_tmdb_config_once(config: &tmdb::views::Configuration) {
+    TMDB_CONFIGURATION.get_or_init(|| Arc::new(parse_tmdb_config(config)));
+}
+
+pub fn set_tmdb_config(config: &tmdb::views::Configuration) {
+    let tmdb_config = parse_tmdb_config(config);
 
     match TMDB_CONFIGURATION.set(Arc::new(tmdb_config)) {
         Ok(_) => { }

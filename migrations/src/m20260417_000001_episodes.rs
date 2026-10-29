@@ -1,7 +1,8 @@
 use chrono::NaiveDate;
 use log::error;
 use sea_orm_migration::prelude::*;
-use integrations::tmdb;
+use infrastructure::config;
+use integrations::tmdb::{Tmdb, TmdbClient};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -51,7 +52,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         let builder = manager.get_database_backend();
 
-        integrations::tmdb::services::initialize::initialize().await;
+        let tmdb = TmdbClient::new(config().tmdb.authorization_token.clone());
 
         let query = Query::select()
             .column((Seasons::Table, Seasons::Id))
@@ -73,12 +74,19 @@ impl MigrationTrait for Migration {
 
         let rows = db.query_all(builder.build(&query)).await?;
 
+        // Per-season fetch failures below are only logged, so make sure TMDB is reachable with
+        // this token before skipping every season.
+        if !rows.is_empty() {
+            tmdb.configuration().await
+                .map_err(|e| DbErr::Migration(format!("Failed to load TMDB configuration: {}", e)))?;
+        }
+
         for row in rows {
             let season_db_id = row.try_get_by_index::<i32>(0)?;
             let season_number = row.try_get_by_index::<i32>(1)?;
             let media_tmdb_id = row.try_get_by_index::<i32>(2)?;
 
-            let details = match tmdb::services::series::season_details(media_tmdb_id, season_number).await {
+            let details = match tmdb.season_details(media_tmdb_id, season_number).await {
                 Ok(d) => d,
                 Err(e) => {
                     error!("Failed to fetch season details for media_tmdb_id={} season={}: {}", media_tmdb_id, season_number, e);

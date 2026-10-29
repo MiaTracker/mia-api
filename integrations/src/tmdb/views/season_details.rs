@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct SeasonDetails {
     pub id: i32,
     pub air_date: Option<String>,
@@ -12,7 +12,7 @@ pub struct SeasonDetails {
     pub vote_average: Option<f32>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct TmdbEpisode {
     pub id: i32,
     pub air_date: Option<String>,

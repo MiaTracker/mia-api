@@ -1,18 +1,19 @@
-use futures_util::stream::TryStreamExt;
+use futures_util::stream::{StreamExt, TryStreamExt};
 use bytes::Bytes;
 use reqwest::{header, Response, StatusCode};
-use crate::{assert_request, constants};
-use crate::infrastructure::{Error, client_get};
+use crate::assert_request;
+use crate::infrastructure::Error;
+use crate::tmdb::{ImageStream, TmdbClient};
 
-pub async fn image(path: &str) -> Result<Bytes, Error> {
-    let resp = image_request("original", path).await?;
+pub(crate) async fn image(client: &TmdbClient, path: &str) -> Result<Bytes, Error> {
+    let resp = image_request(client, "original", path).await?;
     assert_request!(resp);
     let bytes = resp.bytes().await?;
     Ok(bytes)
 }
 
-pub async fn image_stream(size_slug: String, path: String) -> Result<(StatusCode, String, Option<impl futures_core::Stream<Item = Result<Bytes, Error>>>), Error> {
-    let resp = image_request(size_slug.as_str(), path.as_str()).await?;
+pub(crate) async fn image_stream(client: &TmdbClient, size_slug: String, path: String) -> Result<(StatusCode, String, Option<ImageStream>), Error> {
+    let resp = image_request(client, size_slug.as_str(), path.as_str()).await?;
     let status_code = resp.status();
     let content_type = resp.headers().get(header::CONTENT_TYPE)
         .map_or("image/webp", |v| v.to_str().unwrap_or("image/webp"))
@@ -20,12 +21,12 @@ pub async fn image_stream(size_slug: String, path: String) -> Result<(StatusCode
     if status_code != StatusCode::OK {
         return Ok((status_code, content_type, None));
     }
-    let stream = resp.bytes_stream().map_err(|e| e.into());
+    let stream = resp.bytes_stream().map_err(|e| e.into()).boxed();
     Ok((status_code, content_type, Some(stream)))
 }
 
-async fn image_request(size_slug: &str, path: &str) -> Result<Response, Error> {
-    let conf = &constants::TMDB_CONFIGURATION.get().expect("Failed to get TMDB_CONFIGURATION").images;
+async fn image_request(client: &TmdbClient, size_slug: &str, path: &str) -> Result<Response, Error> {
+    let conf = &client.cached_configuration().await?.images;
     let uri = format!("{}{}{}", conf.secure_base_url.as_str(), size_slug, path);
-    client_get(&uri).await
+    client.client_get(&uri).await
 }

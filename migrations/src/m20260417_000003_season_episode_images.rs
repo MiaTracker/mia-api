@@ -3,6 +3,8 @@ use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::Statement;
 use crate::m20260417_000003_season_episode_images::entities::images;
 use crate::m20260417_000003_season_episode_images::services::save_tmdb_image;
+use infrastructure::config;
+use integrations::tmdb::{Tmdb, TmdbClient};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -26,7 +28,7 @@ impl MigrationTrait for Migration {
                 .to_owned(),
         ).await?;
 
-        integrations::tmdb::services::initialize::initialize().await;
+        let tmdb = TmdbClient::new(config().tmdb.authorization_token.clone());
 
         let builder = manager.get_database_backend();
 
@@ -36,7 +38,22 @@ impl MigrationTrait for Migration {
             .cond_where(Expr::col(Seasons::PosterPath).is_not_null())
             .to_owned();
 
+        let episodes_query = Query::select()
+            .columns([Episodes::Id, Episodes::StillPath])
+            .from(Episodes::Table)
+            .cond_where(Expr::col(Episodes::StillPath).is_not_null())
+            .to_owned();
+
         let season_rows = db.query_all(builder.build(&seasons_query)).await?;
+        let episode_rows = db.query_all(builder.build(&episodes_query)).await?;
+
+        // Per-row image failures below are only logged, and the path columns are dropped
+        // afterwards, so make sure TMDB is reachable with this token before touching any row.
+        if !season_rows.is_empty() || !episode_rows.is_empty() {
+            tmdb.configuration().await
+                .map_err(|e| DbErr::Migration(format!("Failed to load TMDB configuration: {}", e)))?;
+        }
+
         for row in season_rows {
             let id = row.try_get_by_index::<i32>(0)?;
             let poster_path = row.try_get_by_index::<String>(1)?;
@@ -44,7 +61,7 @@ impl MigrationTrait for Migration {
             debug!("Migrating season {} poster image", id);
 
             let result: Result<(), DbErr> = async {
-                let image_id = save_tmdb_image(poster_path.as_str(), images::ImageType::Poster, db).await?;
+                let image_id = save_tmdb_image(poster_path.as_str(), images::ImageType::Poster, db, &tmdb).await?;
                 let update = Query::update()
                     .table(Seasons::Table)
                     .values([(Seasons::PosterImageId, image_id.into())])
@@ -62,13 +79,6 @@ impl MigrationTrait for Migration {
             }
         }
 
-        let episodes_query = Query::select()
-            .columns([Episodes::Id, Episodes::StillPath])
-            .from(Episodes::Table)
-            .cond_where(Expr::col(Episodes::StillPath).is_not_null())
-            .to_owned();
-
-        let episode_rows = db.query_all(builder.build(&episodes_query)).await?;
         for row in episode_rows {
             let id = row.try_get_by_index::<i32>(0)?;
             let still_path = row.try_get_by_index::<String>(1)?;
@@ -76,7 +86,7 @@ impl MigrationTrait for Migration {
             debug!("Migrating episode {} still image", id);
 
             let result: Result<(), DbErr> = async {
-                let image_id = save_tmdb_image(still_path.as_str(), images::ImageType::Still, db).await?;
+                let image_id = save_tmdb_image(still_path.as_str(), images::ImageType::Still, db, &tmdb).await?;
                 let update = Query::update()
                     .table(Episodes::Table)
                     .values([(Episodes::StillImageId, image_id.into())])
@@ -311,11 +321,11 @@ mod services {
     use tokio::io::AsyncWriteExt;
     use uuid::Uuid;
     use infrastructure::config;
-    use integrations::tmdb;
+    use integrations::tmdb::Tmdb;
     use crate::m20260417_000003_season_episode_images::entities::{image_sizes, images};
     use crate::m20260417_000003_season_episode_images::entities::images::{ImageFileType, ImageSource, ImageType};
 
-    pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &SchemaManagerConnection<'_>) -> Result<i32, DbErr> {
+    pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &SchemaManagerConnection<'_>, tmdb: &dyn Tmdb) -> Result<i32, DbErr> {
         let existing = images::Entity::find()
             .filter(images::Column::SourcePath.eq(tmdb_path))
             .one(db)
@@ -325,7 +335,7 @@ mod services {
             return Ok(existing_image.id);
         }
 
-        let image_bytes = tmdb::services::images::image(tmdb_path).await
+        let image_bytes = tmdb.image(tmdb_path).await
             .map_err(|e| DbErr::Custom(format!("Error during tmdb call {}", e)))?;
 
         let reader = match ImageReader::new(Cursor::new(image_bytes)).with_guessed_format() {

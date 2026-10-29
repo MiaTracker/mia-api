@@ -39,6 +39,12 @@ pub(crate) async fn load_config() {
     set_config(config);
 }
 
+/// Initializes the global config with the value produced by `f`, unless it has already been
+/// initialized, in which case `f` is not called. Safe to call repeatedly (e.g. from tests).
+pub fn init_config_once(f: impl FnOnce() -> Configuration) -> Arc<Configuration> {
+    CONFIG.get_or_init(|| Arc::new(f())).clone()
+}
+
 fn set_config(config: Configuration) {
     match CONFIG.set(Arc::new(config)) {
         Ok(_) => { }

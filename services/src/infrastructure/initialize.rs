@@ -1,7 +1,8 @@
-use integrations::tmdb;
+use integrations::tmdb::Tmdb;
 use crate::infrastructure::constants::set_tmdb_config;
 
-pub async fn initialize() {
-    tmdb::services::initialize::initialize().await;
-    set_tmdb_config(integrations::constants::TMDB_CONFIGURATION.get().expect("Failed to load TMDB configuration"));
+/// Fetches the TMDB configuration and stores it for `tmdb_config()`. Call once at startup.
+pub async fn initialize(tmdb: &dyn Tmdb) {
+    let configuration = tmdb.configuration().await.expect("Failed to load TMDB configuration");
+    set_tmdb_config(&configuration);
 }

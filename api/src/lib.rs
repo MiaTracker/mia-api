@@ -7,18 +7,22 @@ mod middleware;
 mod openapi;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use sea_orm::Database;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use ::infrastructure::config;
+use services::infrastructure::{Clock, FsImageStore, ImageStore, OsRandom, Random, SystemClock, Tmdb, TmdbClient};
+use services::jobs::{JobDeps, Jobs, TokioJobs};
 use crate::config::routes;
 use crate::infrastructure::AppState;
 use crate::openapi::ApiDoc;
 
 pub async fn launch() {
-    services::infrastructure::initialize().await;
+    let tmdb: Arc<dyn Tmdb> = Arc::new(TmdbClient::new(config().tmdb.authorization_token.clone()));
+    services::infrastructure::initialize(tmdb.as_ref()).await;
 
     let jwt_secret = config().jwt.secret.clone();
 
@@ -26,8 +30,18 @@ pub async fn launch() {
     let conn = Database::connect(db_url.clone()).await
         .expect(format!("Failed to connect to database using connection string \"{}\"", db_url).as_str());
 
+    let conn = Arc::new(conn);
     let scheduler_conn = conn.clone();
-    let state = AppState { conn, jwt_secret };
+    let scheduler_tmdb = tmdb.clone();
+    let image_store: Arc<dyn ImageStore> = Arc::new(FsImageStore::new(config().images.store_path.clone()));
+    let scheduler_image_store = image_store.clone();
+    let jobs: Arc<dyn Jobs> = Arc::new(TokioJobs::new(JobDeps { db: conn.clone(), store: image_store.clone() }));
+    let scheduler_jobs = jobs.clone();
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let scheduler_clock = clock.clone();
+    let random: Arc<dyn Random> = Arc::new(OsRandom);
+    let scheduler_random = random.clone();
+    let state = AppState { conn, jwt_secret, tmdb, image_store, jobs, clock, random };
 
     let admin_serv = ServiceBuilder::new()
         .layer(axum::middleware::from_fn_with_state(state.clone(), middleware::auth))
@@ -55,7 +69,7 @@ pub async fn launch() {
             interval.tick().await; // First tick finishes immediately
             loop {
                 interval.tick().await;
-                match services::refresh::refresh(&scheduler_conn).await {
+                match services::refresh::refresh(&scheduler_conn, scheduler_tmdb.as_ref(), scheduler_image_store.as_ref(), scheduler_jobs.as_ref(), scheduler_clock.as_ref(), scheduler_random.as_ref()).await {
                     Ok(r) => tracing::info!("Scheduled refresh complete. Updates: {}, Errors: {}", r.updates, r.errors),
                     Err(e) => tracing::error!("Scheduled refresh failed: {}", e),
                 }

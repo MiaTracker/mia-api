@@ -8,10 +8,11 @@ use entities::{logs, media, users};
 use entities::prelude::{Logs, Media, Users};
 use infrastructure::config;
 use views::ratings_linearization::{LinearizeResult, UserSummary};
-use crate::infrastructure::SrvErr;
+use crate::infrastructure::{SrvErr, TmdbClient};
 
 pub async fn run_linearize_ratings(user_uuid: Option<Uuid>, dry_run: bool) {
-    crate::infrastructure::initialize().await;
+    let tmdb = TmdbClient::new(config().tmdb.authorization_token.clone());
+    crate::infrastructure::initialize(&tmdb).await;
 
     let db_url = config().db.connection_url.clone();
     let conn = Database::connect(db_url.clone()).await
@@ -420,7 +421,12 @@ fn round2(x: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use sea_orm::{MockDatabase, Value};
     use super::*;
+    use crate::test_support;
+    use crate::test_support::db::{assert_no_statement_starting_with, assert_statement_count, assert_wrote};
+    use crate::test_support::fixtures;
 
     #[test]
     fn test_uniform_six_ratings() {
@@ -467,5 +473,146 @@ mod tests {
         for i in 1..3 {
             assert!(positions[i] > positions[i - 1], "gap must be positive at {}", i);
         }
+    }
+
+    // ---------------------------------------------------------------- linearize_ratings
+
+    const MEDIA_ID: i32 = 10;
+
+    fn rated_log(id: i32, stars: f32, original_stars: Option<f32>) -> logs::Model {
+        logs::Model { stars: Some(stars), original_stars, ..fixtures::log_model(id, MEDIA_ID, 1) }
+    }
+
+    /// Queues what linearizing user 1 reads and writes when they have three rated logs on one
+    /// media, starting at the user query inside the transaction. The input stars are 2.0, 5.0 and
+    /// 9.0; the third log was linearized before (stored 7.5, original 9.0). Linearized they become
+    /// 0.0, 5.0 and 10.0. A single media keeps the order of the media recomputation fixed (the
+    /// affected media are kept in a `HashSet`).
+    fn with_three_rated_logs(db: MockDatabase) -> MockDatabase {
+        db.append_query_results([[fixtures::user_uuid_row(1)]])
+            .append_query_results([[
+                fixtures::rated_log_row(1, MEDIA_ID, 2.0),
+                fixtures::rated_log_row(2, MEDIA_ID, 5.0),
+                fixtures::rated_log_row(3, MEDIA_ID, 9.0),
+            ]])
+            .append_query_results([[rated_log(1, 2.0, None)]])
+            .append_query_results([[rated_log(1, 0.0, Some(2.0))]])
+            .append_query_results([[rated_log(2, 5.0, None)]])
+            .append_query_results([[rated_log(2, 5.0, Some(5.0))]])
+            .append_query_results([[rated_log(3, 7.5, Some(9.0))]])
+            .append_query_results([[rated_log(3, 10.0, Some(9.0))]])
+            .append_query_results([[fixtures::rating_row(15.0, 3)]])
+            .append_query_results([[fixtures::media_model(MEDIA_ID, 1, entities::sea_orm_active_enums::MediaType::Movie)]])
+            .append_query_results([[media::Model { stars: Some(5.0), ..fixtures::media_model(MEDIA_ID, 1, entities::sea_orm_active_enums::MediaType::Movie) }]])
+    }
+
+    #[tokio::test]
+    async fn linearize_ratings_returns_not_found_when_user_uuid_unknown() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<users::Model>::new()])
+            .into_connection();
+
+        let result = linearize_ratings(&db, Some(Uuid::from_u128(99)), false).await;
+
+        assert!(matches!(result, Err(SrvErr::NotFound)));
+        assert_statement_count(&test_support::db::log(db), 1);
+    }
+
+    #[tokio::test]
+    async fn linearize_ratings_dry_run_writes_nothing() {
+        // The linearization runs inside a transaction, so a dry run reports its result and rolls
+        // the transaction back instead of committing it.
+        test_support::init();
+        let db = with_three_rated_logs(test_support::db::mock()).into_connection();
+
+        let result = linearize_ratings(&db, None, true).await.ok().expect("linearize");
+
+        assert!(result.dry_run);
+        assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (1, 0, 3, 1));
+        let log = test_support::db::log(db);
+        assert_wrote(&log, "ROLLBACK", &[]);
+        assert_no_statement_starting_with(&log, "COMMIT");
+    }
+
+    #[tokio::test]
+    async fn linearize_ratings_updates_log_ratings_and_media_stars() {
+        test_support::init();
+        // The user lookup by uuid comes first when a uuid is given.
+        let lookup = test_support::db::mock().append_query_results([[fixtures::user_model(1)]]);
+        let db = with_three_rated_logs(lookup).into_connection();
+
+        let result = linearize_ratings(&db, Some(Uuid::from_u128(1)), false).await.ok().expect("linearize");
+
+        assert!(!result.dry_run);
+        assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (1, 0, 3, 1));
+        let user = &result.per_user[0];
+        assert_eq!((user.user_id, user.user_uuid, user.n, user.k, user.skip_reason.as_deref()), (1, Uuid::from_u128(1), 3, 3, None));
+        assert!((user.avg_before.expect("avg_before") - 16.0 / 3.0).abs() < 1e-4);
+        assert!((user.avg_after.expect("avg_after") - 5.0).abs() < 1e-4);
+        assert!((user.max_delta.expect("max_delta") - 2.0).abs() < 1e-4);
+        let log = test_support::db::log(db);
+        // Each log gets its linearized stars, and keeps (or gains) the stars it started from.
+        assert_wrote(&log, r#"UPDATE "logs""#, &[Value::from(0.0f32), Value::from(2.0f32), Value::from(1)]);
+        assert_wrote(&log, r#"UPDATE "logs""#, &[Value::from(5.0f32), Value::from(5.0f32), Value::from(2)]);
+        assert_wrote(&log, r#"UPDATE "logs""#, &[Value::from(10.0f32), Value::from(9.0f32), Value::from(3)]);
+        // The media's stars are the average of its logs: 15 / 3.
+        assert_wrote(&log, r#"UPDATE "media""#, &[Value::from(5.0f32), Value::from(MEDIA_ID)]);
+        assert_wrote(&log, "COMMIT", &[]);
+        assert_no_statement_starting_with(&log, "ROLLBACK");
+    }
+
+    #[tokio::test]
+    async fn linearize_ratings_skips_user_when_fewer_than_three_ratings() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[fixtures::user_uuid_row(1)]])
+            .append_query_results([[fixtures::rated_log_row(1, MEDIA_ID, 2.0), fixtures::rated_log_row(2, MEDIA_ID, 9.0)]])
+            .into_connection();
+
+        let result = linearize_ratings(&db, None, false).await.ok().expect("linearize");
+
+        assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (0, 1, 0, 0));
+        let user = &result.per_user[0];
+        assert_eq!((user.n, user.k, user.skip_reason.as_deref()), (2, 2, Some("n_lt_3")));
+        let log = test_support::db::log(db);
+        assert_no_statement_starting_with(&log, "UPDATE");
+        assert_wrote(&log, "COMMIT", &[]);
+    }
+
+    #[tokio::test]
+    async fn linearize_ratings_skips_user_when_fewer_than_three_distinct_ratings() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[fixtures::user_uuid_row(1)]])
+            .append_query_results([[
+                fixtures::rated_log_row(1, MEDIA_ID, 4.0), fixtures::rated_log_row(2, MEDIA_ID, 4.0),
+                fixtures::rated_log_row(3, MEDIA_ID, 8.0), fixtures::rated_log_row(4, MEDIA_ID, 8.0),
+            ]])
+            .into_connection();
+
+        let result = linearize_ratings(&db, None, false).await.ok().expect("linearize");
+
+        assert_eq!((result.users_processed, result.users_skipped, result.logs_updated), (0, 1, 0));
+        let user = &result.per_user[0];
+        assert_eq!((user.n, user.k, user.skip_reason.as_deref()), (4, 2, Some("k_lt_3")));
+        let log = test_support::db::log(db);
+        assert_no_statement_starting_with(&log, "UPDATE");
+        assert_statement_count(&log, 4);
+    }
+
+    #[tokio::test]
+    async fn linearize_ratings_leaves_user_out_of_summary_when_no_rated_logs() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[fixtures::user_uuid_row(1)]])
+            .append_query_results([Vec::<BTreeMap<&str, Value>>::new()])
+            .into_connection();
+
+        let result = linearize_ratings(&db, None, false).await.ok().expect("linearize");
+
+        assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (0, 0, 0, 0));
+        assert!(result.per_user.is_empty());
+        assert_statement_count(&test_support::db::log(db), 4);
     }
 }

@@ -20,7 +20,7 @@ use crate::infrastructure::{AppState, IntoApiResponse};
     security(("api_key" = ["admin"]))
 )]
 pub async fn register(state: State<AppState>, Json(user): Json<UserRegistration>) -> impl IntoResponse {
-    let result = services::users::register(&user, &state.conn).await;
+    let result = services::users::register(&user, &state.conn, state.random.as_ref()).await;
     result.to_response(StatusCode::CREATED)
 }
 
@@ -37,7 +37,7 @@ pub async fn register(state: State<AppState>, Json(user): Json<UserRegistration>
     )
 )]
 pub async fn login(state: State<AppState>, Json(user): Json<UserLogin>) -> impl IntoResponse {
-    let result = services::users::login(&user, &state.jwt_secret, &state.conn).await;
+    let result = services::users::login(&user, &state.jwt_secret, &state.conn, state.clock.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
@@ -90,7 +90,7 @@ pub async fn index(state: State<AppState>) -> impl IntoResponse {
 )]
 pub async fn change_password(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                              Json(params): Json<PasswordChange>) -> impl IntoResponse {
-    let result = services::users::change_password(params, &user, &state.conn).await;
+    let result = services::users::change_password(params, &user, &state.conn, state.random.as_ref()).await;
     result.to_response(StatusCode::OK)
 }
 
