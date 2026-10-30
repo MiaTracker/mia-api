@@ -1,6 +1,6 @@
 use axum::Router;
 use axum::routing::{delete, get, patch, post};
-use crate::endpoints::{app_tokens, configuration, genres, images, languages, logs, logset, masterdata, media, movies, ping, ratings_linearization, refresh, series, sources, statistics, tags, titles, users, watchlist};
+use crate::endpoints::{app_tokens, configuration, conversations, genres, images, languages, logs, logset, masterdata, media, movies, ping, ratings_linearization, refresh, series, sources, statistics, tags, titles, users, watchlist};
 use crate::infrastructure::AppState;
 
 
@@ -78,6 +78,12 @@ pub fn build() -> Router<AppState>
         .route("/watchlist/search", post(watchlist::search))
         .route("/watchlist/add", post(watchlist::add))
         .route("/watchlist/remove", post(watchlist::remove))
+        .route("/conversations", post(conversations::create))
+        .route("/conversations", get(conversations::index))
+        .route("/conversations/{conversation_id}", get(conversations::details))
+        .route("/conversations/{conversation_id}", delete(conversations::delete))
+        .route("/conversations/{conversation_id}/exchanges", post(conversations::create_exchange))
+        .route("/conversations/{conversation_id}/exchanges/{exchange_id}/stream", get(conversations::stream))
         .route("/logset", post(logset::create))
         .route("/statistics", get(statistics::stats))
         .route("/genres", get(genres::index))

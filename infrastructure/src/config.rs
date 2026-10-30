@@ -62,6 +62,7 @@ pub struct Configuration {
     pub logging: LoggingConfiguration,
     pub media: MediaConfiguration,
     pub images: ImagesConfiguration,
+    pub openrouter: OpenRouterConfiguration,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +91,18 @@ pub struct LoggingConfiguration {
 #[derive(Deserialize)]
 pub struct ImagesConfiguration {
     pub store_path: String
+}
+
+#[derive(Deserialize)]
+pub struct OpenRouterConfiguration {
+    pub api_key: String,
+    pub model: String,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32
+}
+
+fn default_max_tokens() -> u32 {
+    16384
 }
 
 #[derive(Deserialize, Clone)]

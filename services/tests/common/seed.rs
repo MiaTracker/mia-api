@@ -1,9 +1,11 @@
 //! Rows inserted straight into a test database, and checks on what's in it.
 
 use chrono::NaiveDate;
-use entities::sea_orm_active_enums::{MediaType, SourceType};
-use entities::{genres, languages, logs, media, media_genres, media_tags, movies, series, sources, tags, titles, users, watchlist};
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use entities::sea_orm_active_enums::{ExchangeStatus, LlmCallPurpose, MediaType, MessageRole, SourceType};
+use entities::{conversations, exchanges, genres, languages, llm_calls, logs, media, media_genres, media_tags, messages, movies, series, sources, tags, titles, users, watchlist};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DbConn, EntityTrait, NotSet, PaginatorTrait, Set};
+use serde_json::json;
 use uuid::Uuid;
 use views::users::CurrentUser;
 
@@ -134,6 +136,69 @@ pub async fn tmdb_genre(db: &DbConn, tmdb_id: i32, name: &str, media_type: Media
 pub async fn on_watchlist(db: &DbConn, media_id: i32) {
     watchlist::ActiveModel { media_id: Set(media_id), assessment: Set(None), date_added: Set(date_added()) }
         .insert(db).await.expect("inserting watchlist entry");
+}
+
+/// When seeded chat rows were created: 2024-01-01 12:00 UTC.
+pub fn chat_time() -> DateTime<FixedOffset> {
+    Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).single().expect("valid time").fixed_offset()
+}
+
+/// An untitled Conversation of the user.
+pub async fn conversation(db: &DbConn, user: &CurrentUser) -> conversations::Model {
+    conversations::ActiveModel {
+        id: NotSet,
+        user_id: Set(user.id),
+        title: Set(None),
+        created_at: Set(chat_time()),
+        updated_at: Set(chat_time()),
+    }.insert(db).await.expect("inserting conversation")
+}
+
+/// An Exchange of the Conversation with `status`; one that is not in progress is also completed.
+pub async fn exchange(db: &DbConn, conversation_id: i32, status: ExchangeStatus) -> exchanges::Model {
+    let completed_at = (status != ExchangeStatus::InProgress).then(chat_time);
+    exchanges::ActiveModel {
+        id: NotSet,
+        conversation_id: Set(conversation_id),
+        status: Set(status),
+        error: Set(None),
+        created_at: Set(chat_time()),
+        completed_at: Set(completed_at),
+    }.insert(db).await.expect("inserting exchange")
+}
+
+/// A user Message of the Exchange holding one text block.
+pub async fn user_message(db: &DbConn, exchange_id: i32, text: &str) -> messages::Model {
+    messages::ActiveModel {
+        id: NotSet,
+        exchange_id: Set(exchange_id),
+        role: Set(MessageRole::User),
+        content: Set(json!([{"type": "text", "text": text}])),
+        llm_call_id: Set(None),
+        created_at: Set(chat_time()),
+    }.insert(db).await.expect("inserting message")
+}
+
+/// An LLM call of the Exchange that has not completed.
+pub async fn llm_call(db: &DbConn, user: &CurrentUser, exchange_id: i32) -> llm_calls::Model {
+    let exchange = exchanges::Entity::find_by_id(exchange_id).one(db).await.expect("querying exchange").expect("exchange row");
+    llm_calls::ActiveModel {
+        id: NotSet,
+        user_id: Set(Some(user.id)),
+        conversation_id: Set(Some(exchange.conversation_id)),
+        exchange_id: Set(Some(exchange_id)),
+        purpose: Set(LlmCallPurpose::Exchange),
+        model: Set("test/model".into()),
+        stop_reason: Set(None),
+        input_tokens: Set(None),
+        output_tokens: Set(None),
+        cache_read_tokens: Set(None),
+        cache_creation_tokens: Set(None),
+        provider_request_id: Set(None),
+        error: Set(None),
+        created_at: Set(chat_time()),
+        completed_at: Set(None),
+    }.insert(db).await.expect("inserting LLM call")
 }
 
 pub async fn count<E: EntityTrait>(db: &DbConn, _entity: E) -> u64 where E::Model: Sync {

@@ -319,10 +319,10 @@ mod tests {
     use futures::StreamExt;
     use sea_orm::Value;
     use crate::test_support;
-    use crate::jobs::{self, Job, JobDeps};
+    use crate::jobs::{self, Job};
     use crate::test_support::{InMemoryImageStore, MockTmdb, RecordingJobs, SeqRandom};
     use uuid::Uuid;
-    use crate::test_support::jobs::sizes;
+    use crate::test_support::jobs::{job_deps, sizes};
     use crate::test_support::tmdb::png_bytes;
     use crate::test_support::db::{assert_no_statement_starting_with, assert_statement_count, assert_wrote};
     use crate::test_support::fixtures;
@@ -551,7 +551,9 @@ mod tests {
         assert_wrote(&log, "INSERT INTO \"image_sizes\"", &[Value::from(7), Value::from(1000), Value::from(1500)]);
         assert_eq!(sizes(&jobs), vec![(7, 100, 150), (7, 300, 450), (7, 500, 750), (7, 700, 1050)]);
         for job in &jobs {
-            let Job::SaveImageSize { directory: job_directory, extension, format, .. } = job;
+            let Job::SaveImageSize { directory: job_directory, extension, format, .. } = job else {
+                panic!("expected only SaveImageSize jobs, got {job:?}");
+            };
             assert_eq!(job_directory, directory);
             assert_eq!(*extension, "png");
             assert_eq!(*format, ImageFormat::Png);
@@ -606,7 +608,7 @@ mod tests {
         let db = Arc::new(test_support::db::mock()
             .append_query_results((1..=4).map(|id| [fixtures::image_size_model(id, 7, 0, 0)]))
             .into_connection());
-        let deps = JobDeps { db: db.clone(), store: Arc::new(store.clone()) };
+        let deps = job_deps(db.clone(), Arc::new(store.clone()));
 
         for job in jobs {
             jobs::run(job, &deps).await.ok().expect("the job should succeed");
@@ -637,7 +639,7 @@ mod tests {
         let store = InMemoryImageStore::new();
         store.insert(DIRECTORY, "100x150.png", b"existing".to_vec());
         let db = Arc::new(test_support::db::mock().into_connection());
-        let deps = JobDeps { db: db.clone(), store: Arc::new(store.clone()) };
+        let deps = job_deps(db.clone(), Arc::new(store.clone()));
         let job = Job::SaveImageSize {
             image_id: 7, width: 100, height: 150, directory: DIRECTORY.to_string(), extension: "png",
             format: ImageFormat::Png, image: Arc::new(DynamicImage::new_rgb8(200, 300)),

@@ -10,6 +10,7 @@ pub mod titles;
 pub mod sources;
 pub mod media;
 pub mod watchlist;
+pub mod conversations;
 pub mod logset;
 pub mod app_tokens;
 pub mod statistics;

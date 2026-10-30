@@ -1,0 +1,24 @@
+jwt:
+  secret: "some_secure_secret"
+
+db:
+  connection_url: "postgres://postgres:postgres@localhost/mia_development"
+  schema: "public"
+
+tmdb:
+  authorization_token: "some token"
+  refresh_interval: 24h
+
+openrouter:
+  api_key: "some key"
+  model: 'openrouter/free'
+  max_tokens: 1500
+
+logging:
+  level: "trace"
+
+media:
+  unset_title: "Title not found!"
+
+images:
+  store_path: "some path"

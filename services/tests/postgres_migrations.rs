@@ -42,9 +42,10 @@ async fn entities_match_schema() {
             )+
         };
     }
-    select_each!(AppTokens, Episodes, Genres, ImageSizes, Images, Languages, Logs, ManualImageReferences,
-        Media, MediaGenres, MediaLocks, MediaTags, MovieLocks, Movies, Seasons, Series, SeriesLocks,
-        Sources, SyncState, Tags, Titles, Users, Watchlist);
+    select_each!(AppTokens, Conversations, Episodes, Exchanges, Genres, ImageSizes, Images, Languages,
+        LlmCalls, Logs, ManualImageReferences, Media, MediaGenres, MediaLocks, MediaTags, Messages,
+        MovieLocks, Movies, Seasons, Series, SeriesLocks, Sources, SyncState, Tags, Titles, Users,
+        Watchlist);
 
     assert!(failures.is_empty(), "entities that don't match the schema:\n{}", failures.join("\n"));
 }

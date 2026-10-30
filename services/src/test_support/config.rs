@@ -1,4 +1,4 @@
-use infrastructure::{Configuration, DbConfiguration, ImagesConfiguration, JwtConfiguration, LogLevel, LoggingConfiguration, MediaConfiguration, TMDBConfiguration};
+use infrastructure::{Configuration, DbConfiguration, ImagesConfiguration, JwtConfiguration, LogLevel, LoggingConfiguration, MediaConfiguration, OpenRouterConfiguration, TMDBConfiguration};
 use integrations::tmdb;
 
 /// Application configuration with fixed values; nothing in it points at a real resource.
@@ -10,6 +10,7 @@ pub fn test_config() -> Configuration {
         logging: LoggingConfiguration { level: LogLevel::Debug },
         media: MediaConfiguration { unset_title: "Unknown".into() },
         images: ImagesConfiguration { store_path: "/nonexistent-test-store".into() },
+        openrouter: OpenRouterConfiguration { api_key: "test-key".into(), model: "test/model".into(), max_tokens: 16384 },
     }
 }
 

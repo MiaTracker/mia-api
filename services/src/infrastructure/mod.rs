@@ -15,4 +15,5 @@ pub use random::{OsRandom, Random};
 pub use image_store::{FsImageStore, ImageStore};
 pub use rule_violation::*;
 pub use initialize::*;
+pub use integrations::openrouter::{Llm, OpenRouterClient};
 pub use integrations::tmdb::{ImageStream, Tmdb, TmdbClient};

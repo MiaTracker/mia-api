@@ -1,6 +1,7 @@
 use sea_orm::{DatabaseBackend, DatabaseConnection, MockDatabase, MockExecResult, Statement, Value};
 use entities::images;
-use entities::sea_orm_active_enums::ImageType;
+use entities::sea_orm_active_enums::{ExchangeStatus, ImageType, MessageRole};
+use serde_json::json;
 use super::fixtures;
 
 /// A mock Postgres database. Queue results with `append_query_results` / `append_exec_results`,
@@ -66,6 +67,11 @@ pub fn deleted() -> MockExecResult {
     MockExecResult { last_insert_id: 0, rows_affected: 1 }
 }
 
+/// The result of an `UPDATE` that changed `rows` rows; queue it with `append_exec_results`.
+pub fn updated(rows: u64) -> MockExecResult {
+    MockExecResult { last_insert_id: 0, rows_affected: rows }
+}
+
 /// Queues what `images::save_tmdb_image` reads and writes for a new 300x450 image: the lookup by
 /// source path (nothing found), the directory clash check, the image row and its original size row.
 /// The image row has id `image_id` and type `image_type`; the size row has the same id.
@@ -86,6 +92,18 @@ pub fn with_deleted_unused_image(db: MockDatabase, image_id: i32) -> MockDatabas
         .append_query_results([[fixtures::count_row(0)]])
         .append_query_results([[fixtures::image_model(image_id)]])
         .append_exec_results([deleted(), deleted()])
+}
+
+/// Queues what `chat::exchange::run_exchange` reads and writes before it calls the model: in-progress
+/// Exchange `exchange_id` of Conversation 3 (user 1), that Conversation, its only Exchange, the
+/// Exchange's user Message (id 1, "Hi") and the inserted LLM call (id 11).
+pub fn with_started_exchange_run(db: MockDatabase, exchange_id: i32) -> MockDatabase {
+    let exchange = fixtures::exchange_model(exchange_id, 3, ExchangeStatus::InProgress);
+    db.append_query_results([[exchange.clone()]])
+        .append_query_results([[fixtures::conversation_model(3, 1)]])
+        .append_query_results([[exchange]])
+        .append_query_results([[fixtures::message_model(1, exchange_id, MessageRole::User, json!([{"type": "text", "text": "Hi"}]))]])
+        .append_query_results([[fixtures::llm_call_model(11, exchange_id)]])
 }
 
 fn describe(log: &[Statement]) -> String {

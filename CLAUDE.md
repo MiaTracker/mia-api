@@ -20,8 +20,9 @@ cargo clippy
 # Database migrations
 cargo run -- migrate up          # Apply all pending migrations
 cargo run -- migrate up 5        # Apply next 5 migrations
-cargo run -- migrate down        # Rollback last migration
+cargo run -- migrate down 1      # Rollback last migration
 cargo run -- migrate down 3      # Rollback last 3 migrations
+cargo run -- migrate down        # Rollback ALL migrations (no count means all, same as reset)
 cargo run -- migrate fresh       # Drop all tables and reapply from scratch
 cargo run -- migrate refresh     # Rollback all, then reapply all
 cargo run -- migrate reset       # Rollback all migrations
@@ -45,6 +46,10 @@ db:
   schema: public
 tmdb:
   authorization_token: <TMDB bearer token>
+openrouter:
+  api_key: <OpenRouter API key>
+  model: openrouter/free
+  max_tokens: 16384   # optional, default 16384
 logging:
   level: debug        # trace | debug | info | warning | error
 media:
@@ -64,7 +69,7 @@ services/            Business logic and all SeaORM database queries
 entities/            SeaORM entity definitions (auto-generated from DB schema)
 views/               Response DTOs (Serde serialization)
 transpiler/          Transpilation of search queries into SeaORM queries
-integrations/        External API clients (TMDB only)
+integrations/        External API clients (TMDB, OpenRouter)
 infrastructure/      Config loading, error types, shared initialisation
 migrations/          SeaORM migration files
 ```
@@ -79,7 +84,8 @@ Images are downloaded from TMDB, resized to multiple fixed dimensions, and store
 cargo test --workspace                              # unit tests only; touch nothing outside the process
 cargo test -p services --no-fail-fast --tests -- --ignored   # Postgres (needs Docker) and filesystem tests; known-bug tests fail by design
 cargo test -p services --test fs_image_store -- --ignored   # filesystem only (temp dir)
-cargo test -p integrations -- --ignored             # TMDB contract tests (live read-only GETs; needs config.yaml)
+cargo test -p integrations -- --ignored             # TMDB and OpenRouter contract tests (live; needs config.yaml)
+cargo test -p integrations --test openrouter_contract -- --ignored  # OpenRouter contract test (live, free model; needs config.yaml)
 cargo clippy --workspace --all-targets              # must add no new warnings
 ```
 
@@ -87,11 +93,12 @@ After changing code, run `cargo test --workspace` and clippy. Run the relevant `
 
 ### Dependencies and fakes
 
-`services` reaches the outside world only through five traits, passed as `&dyn` parameters (`Arc<dyn …>` in `AppState` and `JobDeps`). Each has a real implementation and a fake in `services::test_support` (gated by the `test-support` feature, which `services` enables for its own tests):
+`services` reaches the outside world only through six traits, passed as `&dyn` parameters (`Arc<dyn …>` in `AppState` and `JobDeps`). Each has a real implementation and a fake in `services::test_support` (gated by the `test-support` feature, which `services` enables for its own tests):
 
 | Trait | Real | Fake |
 |-------|------|------|
 | `integrations::tmdb::Tmdb` | `TmdbClient` | `MockTmdb` (mockall: `.expect_movie_details().withf(..).returning(..)`; a method without an expectation panics) |
+| `integrations::openrouter::Llm` | `OpenRouterClient` | `MockLlm` (mockall; builders in `test_support::llm`) |
 | `ImageStore` | `FsImageStore` | `InMemoryImageStore` (`insert`, `files`, `get`) |
 | `Jobs` (`services::jobs`) | `TokioJobs` | `RecordingJobs` (`take()` returns the recorded `Job`s), `InlineJobs` (runs jobs inline; used with real Postgres) |
 | `Clock` | `SystemClock` | `FixedClock` (`new`, `set`, `advance`), `fixed_clock(y, m, d, h, min, s)` |
@@ -101,15 +108,15 @@ After changing code, run `cargo test --workspace` and clippy. Run the relevant `
 
 ### Rules for services code
 
-- Parameter order: the function's own parameters ending with `db`, then `tmdb, store, jobs, clock, random`. A function takes only what it or a callee needs. Where clippy's `too_many_arguments` fires, add `#[allow(clippy::too_many_arguments)]`; do not bundle the dependencies into a struct.
+- Parameter order: the function's own parameters ending with `db`, then `llm, registry, tmdb, store, jobs, clock, random`. A function takes only what it or a callee needs. Where clippy's `too_many_arguments` fires, add `#[allow(clippy::too_many_arguments)]`; do not bundle the dependencies into a struct.
 - No direct `Utc::now`, `Uuid::new_v4`, `OsRng`, `tokio::spawn`/`task::spawn`, `tokio::fs` or `std::fs` in `services/src`. Use the traits. The exceptions are the real implementations (`SystemClock`, `OsRandom`, `FsImageStore`, `TokioJobs`) and the CLI entry points `run_refresh` and `run_linearize_ratings`.
-- Background work (image resizing) goes through `Jobs`. In tests, run with `RecordingJobs`, assert the recorded jobs (`test_support::jobs::sizes`), and if needed run each one sequentially with `services::jobs::run(job, &JobDeps { db, store })`. Never construct `TokioJobs` in a test.
+- Background work (image resizing, and `Job::RunExchange` for chat Exchanges) goes through `Jobs`. In tests, run with `RecordingJobs`, assert the recorded jobs (`test_support::jobs::sizes`), and if needed run each one sequentially with `services::jobs::run(job, &test_support::jobs::job_deps(db, store))`. Never construct `TokioJobs` in a test. `job_deps` holds a `MockLlm` without expectations, so a test that runs a `RunExchange` builds its own `JobDeps` with an expecting `MockLlm` (as `services/tests/postgres_chat.rs` does).
 
 ### Rules for tests
 
-- Unit tests go in `#[cfg(test)] mod tests` at the bottom of the file under test. Real integration tests go in `services/tests/` (Postgres, filesystem) and `integrations/tests/` (TMDB).
+- Unit tests go in `#[cfg(test)] mod tests` at the bottom of the file under test. Real integration tests go in `services/tests/` (Postgres, filesystem) and `integrations/tests/` (TMDB, OpenRouter).
 - Names are `<function>_<expected outcome>_when_<condition>`, e.g. `create_returns_existing_id_when_movie_already_added`.
-- Anything that touches the network, Docker, the filesystem, `config.yaml`, env vars or the wall clock is `#[ignore = "<reason>"]` with exactly one of: `"requires TMDB token"`, `"requires docker"`, `"touches filesystem"`. The only other ignore reason is `"known bug: <one line>"`.
+- Anything that touches the network, Docker, the filesystem, `config.yaml`, env vars or the wall clock is `#[ignore = "<reason>"]` with exactly one of: `"requires TMDB token"`, `"requires OpenRouter key"`, `"requires docker"`, `"touches filesystem"`. The only other ignore reason is `"known bug: <one line>"`.
 - Mock DB: queue only the results the code path consumes, in the order the queries run (futures in `try_join!` run in source order). Assert returned values first, and written values (`assert_wrote`) only when the write is the behaviour. Never assert full SQL strings. Early-return tests assert `assert_statement_count`.
 - Postgres inserts use `RETURNING`, so queue a query result, not an exec result.
 - `InMemoryImageStore::delete_directory` errors on a directory with no files; seed at least one file for any image a test deletes.

@@ -24,22 +24,22 @@ once_cell = "1.21.0"
 futures = "0.3.0"
 image = "0.25.8"
 gcd = "2.3.0"
-tokio = "1.47.0"
+tokio = { version = "1.47.0", features = ["time", "sync"] }
 tokio-util = { version = "0.7.17", features = ["io"] }
 bytes = "1.10.1"
 async-trait = "0.1"
 mockall = { version = "0.13", optional = true }
-serde_json = { version = "1.0.0", optional = true }
+serde_json = "1.0.0"
 
 [features]
-test-support = ["dep:mockall", "dep:serde_json", "sea-orm/mock"]
+test-support = ["dep:mockall", "sea-orm/mock"]
 
 [dev-dependencies]
 services = { path = ".", features = ["test-support"] }
 mockall = "0.13"
 serde_json = "1.0.0"
 sea-orm = { version = "1.1.0", features = ["runtime-tokio-rustls", "sqlx-postgres", "mock"] }
-tokio = { version = "1.47.0", features = ["macros", "rt", "sync"] }
+tokio = { version = "1.47.0", features = ["macros", "rt", "sync", "test-util"] }
 tempfile = "3"
 testcontainers = { version = "0.27", features = ["blocking", "watchdog"] }
 testcontainers-modules = { version = "0.15", features = ["postgres"] }

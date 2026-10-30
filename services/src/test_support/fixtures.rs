@@ -2,11 +2,11 @@
 //! struct-update syntax, e.g. `users::Model { admin: true, ..user_model(2) }`.
 
 use std::collections::BTreeMap;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use sea_orm::{IdenStatic, Iterable, ModelTrait, Value};
 use uuid::Uuid;
-use entities::sea_orm_active_enums::{ImageFileType, ImageSource, ImageType, MediaType, SourceType};
-use entities::{app_tokens, episodes, genres, image_sizes, images, languages, logs, manual_image_references, media, media_genres, media_locks, media_tags, movie_locks, movies, seasons, series, series_locks, sources, sync_state, tags, titles, users, watchlist};
+use entities::sea_orm_active_enums::{ExchangeStatus, ImageFileType, ImageSource, ImageType, LlmCallPurpose, MediaType, MessageRole, SourceType};
+use entities::{app_tokens, conversations, episodes, exchanges, genres, image_sizes, images, languages, llm_calls, logs, manual_image_references, media, media_genres, media_locks, media_tags, messages, movie_locks, movies, seasons, series, series_locks, sources, sync_state, tags, titles, users, watchlist};
 use views::users::{CurrentUser, UserRegistration};
 use super::time::SeqRandom;
 
@@ -319,4 +319,57 @@ pub fn media_index_row(media: media::Model, poster: Option<images::Model>, title
         }
     }
     row
+}
+
+/// A message of `exchange_id` with the given `role` and Anthropic `content` blocks, no LLM call,
+/// created at a fixed time.
+pub fn message_model(id: i32, exchange_id: i32, role: MessageRole, content: serde_json::Value) -> messages::Model {
+    messages::Model {
+        id,
+        exchange_id,
+        role,
+        content,
+        llm_call_id: None,
+        created_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).single().expect("valid time").fixed_offset(),
+    }
+}
+
+/// An Exchange of `conversation_id` with the given `status`, no error, created at a fixed time.
+pub fn exchange_model(id: i32, conversation_id: i32, status: ExchangeStatus) -> exchanges::Model {
+    exchanges::Model {
+        id,
+        conversation_id,
+        status,
+        error: None,
+        created_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).single().expect("valid time").fixed_offset(),
+        completed_at: None,
+    }
+}
+
+/// A titled Conversation of `user_id`, created and updated at a fixed time.
+pub fn conversation_model(id: i32, user_id: i32) -> conversations::Model {
+    let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).single().expect("valid time").fixed_offset();
+    conversations::Model { id, user_id, title: Some("A conversation".into()), created_at: at, updated_at: at }
+}
+
+/// An open `exchange` LLM call of `exchange_id` (user 1, conversation 3) to `test/model`: no
+/// result yet, created at a fixed time.
+pub fn llm_call_model(id: i32, exchange_id: i32) -> llm_calls::Model {
+    llm_calls::Model {
+        id,
+        user_id: Some(1),
+        conversation_id: Some(3),
+        exchange_id: Some(exchange_id),
+        purpose: LlmCallPurpose::Exchange,
+        model: "test/model".into(),
+        stop_reason: None,
+        input_tokens: None,
+        output_tokens: None,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
+        provider_request_id: None,
+        error: None,
+        created_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).single().expect("valid time").fixed_offset(),
+        completed_at: None,
+    }
 }

@@ -4,9 +4,13 @@
 //! each one with `jobs::run` **one at a time** against the mock DB and fakes. Integration tests
 //! against a real database use `InlineJobs`, which runs each job as it is submitted.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
+use sea_orm::DbConn;
+use crate::chat::registry::ExchangeRegistry;
+use crate::infrastructure::ImageStore;
 use crate::jobs::{run, Job, JobDeps, Jobs};
+use super::{fixed_clock, MockLlm};
 
 /// Keeps submitted jobs without running them.
 #[derive(Default)]
@@ -52,18 +56,30 @@ impl Jobs for InlineJobs {
     }
 }
 
-/// `(image_id, width, height)` of each job, in order.
+/// `JobDeps` for `db` and `store`, with a `MockLlm` expecting no calls, a new registry and the
+/// clock at 2024-01-01 12:00 UTC.
+pub fn job_deps(db: Arc<DbConn>, store: Arc<dyn ImageStore>) -> JobDeps {
+    JobDeps {
+        db,
+        store,
+        llm: Arc::new(MockLlm::new()),
+        registry: Arc::new(ExchangeRegistry::new()),
+        clock: Arc::new(fixed_clock(2024, 1, 1, 12, 0, 0)),
+    }
+}
+
+/// `(image_id, width, height)` of each `SaveImageSize` job, in order; other jobs are left out.
 pub fn sizes(jobs: &[Job]) -> Vec<(i32, u32, u32)> {
     jobs.iter()
-        .map(|job| match job {
-            Job::SaveImageSize { image_id, width, height, .. } => (*image_id, *width, *height),
+        .filter_map(|job| match job {
+            Job::SaveImageSize { image_id, width, height, .. } => Some((*image_id, *width, *height)),
+            Job::RunExchange { .. } => None,
         })
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use image::{DynamicImage, ImageFormat};
     use super::*;
     use crate::test_support;
@@ -93,7 +109,7 @@ mod tests {
         let db = test_support::db::mock()
             .append_query_results([[fixtures::image_size_model(1, 7, 100, 150)]])
             .into_connection();
-        let jobs = InlineJobs::new(JobDeps { db: Arc::new(db), store: Arc::new(store.clone()) });
+        let jobs = InlineJobs::new(job_deps(Arc::new(db), Arc::new(store.clone())));
 
         jobs.submit(job(100, 150)).await;
 
@@ -106,7 +122,7 @@ mod tests {
         let store = InMemoryImageStore::new();
         store.insert("image-7", "100x150.png", b"existing".to_vec());
         let db = test_support::db::mock().into_connection();
-        let jobs = InlineJobs::new(JobDeps { db: Arc::new(db), store: Arc::new(store) });
+        let jobs = InlineJobs::new(job_deps(Arc::new(db), Arc::new(store)));
 
         jobs.submit(job(100, 150)).await;
     }

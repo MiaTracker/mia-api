@@ -17,3 +17,4 @@ pub mod languages;
 pub mod images;
 pub mod refresh;
 pub mod ratings_linearization;
+pub mod chat;

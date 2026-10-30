@@ -10,8 +10,11 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use image::{DynamicImage, ImageFormat};
 use log::error;
+use integrations::openrouter::Llm;
 use sea_orm::DbConn;
-use crate::infrastructure::{ImageStore, SrvErr};
+use crate::chat::exchange::run_exchange;
+use crate::chat::registry::ExchangeRegistry;
+use crate::infrastructure::{Clock, ImageStore, SrvErr};
 use crate::images;
 
 /// A unit of background work. Each variant owns the data its handler needs.
@@ -29,6 +32,8 @@ pub enum Job {
         format: ImageFormat,
         image: Arc<DynamicImage>,
     },
+    /// Stream the model's answer for Exchange `exchange_id`, store it and end the Exchange.
+    RunExchange { exchange_id: i32 },
 }
 
 impl Job {
@@ -38,6 +43,7 @@ impl Job {
             Job::SaveImageSize { image_id, width, height, .. } => {
                 format!("SaveImageSize (image {image_id}, {width}x{height})")
             }
+            Job::RunExchange { exchange_id } => format!("RunExchange (exchange {exchange_id})"),
         }
     }
 }
@@ -59,6 +65,9 @@ pub struct JobDeps {
     /// Shared because `DatabaseConnection` is not `Clone` when sea-orm's `mock` feature is on (test builds).
     pub db: Arc<DbConn>,
     pub store: Arc<dyn ImageStore>,
+    pub llm: Arc<dyn Llm>,
+    pub registry: Arc<ExchangeRegistry>,
+    pub clock: Arc<dyn Clock>,
 }
 
 /// Runs `job` to completion.
@@ -67,6 +76,9 @@ pub async fn run(job: Job, deps: &JobDeps) -> Result<(), SrvErr> {
         Job::SaveImageSize { image_id, width, height, directory, extension, format, image } => {
             images::save_image_size(image_id, width, height, &directory, extension, format, &image,
                                     &deps.db, deps.store.as_ref()).await
+        }
+        Job::RunExchange { exchange_id } => {
+            run_exchange(exchange_id, &deps.db, deps.llm.as_ref(), &deps.registry, deps.clock.as_ref()).await
         }
     }
 }
@@ -116,5 +128,11 @@ mod tests {
         };
 
         assert_eq!(format!("{job:?}"), "SaveImageSize (image 7, 100x150)");
+    }
+
+    #[test]
+    fn job_debug_names_exchange_when_run_exchange_formatted() {
+        crate::test_support::init();
+        assert_eq!(format!("{:?}", Job::RunExchange { exchange_id: 7 }), "RunExchange (exchange 7)");
     }
 }

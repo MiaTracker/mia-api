@@ -28,6 +28,7 @@ mod m20260417_000002_add_still_image_type;
 mod m20260417_000003_season_episode_images;
 mod m20260417_000004_drop_series_computed_fields;
 mod m20260430_000001_add_logs_original_stars;
+mod m20261029_000001_llm_chat;
 
 pub struct Migrator;
 
@@ -60,6 +61,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260417_000003_season_episode_images::Migration),
             Box::new(m20260417_000004_drop_series_computed_fields::Migration),
             Box::new(m20260430_000001_add_logs_original_stars::Migration),
+            Box::new(m20261029_000001_llm_chat::Migration),
         ]
     }
 }
