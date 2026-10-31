@@ -25,7 +25,12 @@ pub async fn run_refresh() {
     let conn = Arc::new(conn);
     let store: Arc<dyn ImageStore> = Arc::new(FsImageStore::new(config().images.store_path.clone()));
     let openrouter = &config().openrouter;
-    let llm: Arc<dyn Llm> = Arc::new(OpenRouterClient::new(openrouter.api_key.clone(), openrouter.model.clone(), openrouter.max_tokens));
+    let llm: Arc<dyn Llm> = Arc::new(OpenRouterClient::new(
+        openrouter.api_key.clone(),
+        openrouter.model.clone(),
+        openrouter.max_tokens,
+        openrouter.reasoning.as_ref().map(|reasoning| reasoning.budget_tokens),
+    ));
     let jobs = TokioJobs::new(JobDeps {
         db: conn.clone(), store: store.clone(), llm, registry: Arc::new(ExchangeRegistry::new()), clock: Arc::new(SystemClock),
     });

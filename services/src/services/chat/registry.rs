@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use views::conversations::ExchangeEvent;
+use views::conversations::{DisplayBlock, ExchangeEvent};
 
 pub struct ExchangeSubscription {
     pub replay: Vec<ExchangeEvent>,
@@ -16,8 +16,8 @@ pub struct ExchangeSubscription {
 
 /// State of one running Exchange. A cancel handle will live here later.
 struct Entry {
-    /// Text so far, indexed by the Exchange-wide block number.
-    blocks: Vec<String>,
+    /// Content so far, indexed by the Exchange-wide block number; `None` for a number not yet seen.
+    blocks: Vec<Option<DisplayBlock>>,
     /// The `Completed` or `Failed` event, kept until `close` so late joiners still see it.
     terminal: Option<ExchangeEvent>,
     subscribers: Vec<UnboundedSender<ExchangeEvent>>,
@@ -49,8 +49,7 @@ impl ExchangeRegistry {
             .blocks
             .iter()
             .enumerate()
-            .filter(|(_, text)| !text.is_empty())
-            .map(|(block, text)| ExchangeEvent::TextDelta { block: block as u32, text: text.clone() })
+            .filter_map(|(block, shown)| Some(ExchangeEvent::replay(block as u32, shown.clone()?)))
             .collect();
         if let Some(terminal) = &entry.terminal {
             replay.push(terminal.clone());
@@ -66,12 +65,18 @@ impl ExchangeRegistry {
         let Some(entry) = self.entry(exchange_id) else { return };
         let mut entry = lock(&entry);
         match &event {
-            ExchangeEvent::TextDelta { block, text } => {
+            ExchangeEvent::TextDelta { block, text } | ExchangeEvent::ThinkingDelta { block, text } => {
                 let block = *block as usize;
                 if entry.blocks.len() <= block {
-                    entry.blocks.resize(block + 1, String::new());
+                    entry.blocks.resize(block + 1, None);
                 }
-                entry.blocks[block].push_str(text);
+                let empty = match event {
+                    ExchangeEvent::ThinkingDelta { .. } => DisplayBlock::Thinking { thinking: String::new() },
+                    _ => DisplayBlock::Text { text: String::new() },
+                };
+                match entry.blocks[block].get_or_insert(empty) {
+                    DisplayBlock::Text { text: stored } | DisplayBlock::Thinking { thinking: stored } => stored.push_str(text),
+                }
             }
             ExchangeEvent::Completed { .. } | ExchangeEvent::Failed { .. } => entry.terminal = Some(event.clone())
         }
@@ -130,6 +135,21 @@ mod tests {
 
         assert_eq!(subscription.replay, vec![delta(0, "Hello"), delta(1, "!")]);
         assert!(subscription.live.is_some());
+    }
+
+    #[test]
+    fn subscribe_replays_thinking_as_thinking_delta_when_joining_mid_thinking() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        registry.open(1);
+        registry.publish(1, ExchangeEvent::ThinkingDelta { block: 0, text: "hm".into() });
+        registry.publish(1, ExchangeEvent::ThinkingDelta { block: 0, text: "m".into() });
+
+        let mut subscription = registry.subscribe(1).unwrap();
+        registry.publish(1, delta(1, "Hi"));
+
+        assert_eq!(subscription.replay, vec![ExchangeEvent::ThinkingDelta { block: 0, text: "hmm".into() }]);
+        assert_eq!(subscription.live.take().unwrap().try_recv().unwrap(), delta(1, "Hi"));
     }
 
     #[test]

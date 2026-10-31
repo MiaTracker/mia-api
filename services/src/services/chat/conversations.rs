@@ -124,9 +124,7 @@ pub async fn subscribe(conversation_id: i32, exchange_id: i32, user: &CurrentUse
     let mut replay: Vec<ExchangeEvent> = display_blocks(&stored)
         .into_iter()
         .enumerate()
-        .map(|(block, shown)| match shown {
-            views::conversations::DisplayBlock::Text { text } => ExchangeEvent::TextDelta { block: block as u32, text },
-        })
+        .map(|(block, shown)| ExchangeEvent::replay(block as u32, shown))
         .collect();
     match exchange.status {
         ExchangeStatus::Completed => replay.push(ExchangeEvent::Completed { exchange_id }),
@@ -316,7 +314,7 @@ mod tests {
         assert!(first.error.is_none());
         let second = &found.exchanges[1];
         assert_eq!((second.id, second.status, second.content.as_str()), (7, ExchangeStatusView::Failed, "Hi"));
-        assert_eq!(second.blocks, vec![DisplayBlock::Text { text: "Hel".into() }]);
+        assert_eq!(second.blocks, vec![DisplayBlock::Thinking { thinking: "hmm".into() }, DisplayBlock::Text { text: "Hel".into() }]);
         assert_eq!(second.error, Some(ExchangeError { key: "ProviderUnavailable".into(), debug_message: "overloaded".into() }));
     }
 
@@ -425,6 +423,29 @@ mod tests {
             ExchangeEvent::Failed { exchange_id: 7, key: "Refused".into(), debug_message: "no".into() },
         ]);
         assert!(subscription.live.is_none());
+    }
+
+    #[tokio::test]
+    async fn subscribe_replays_thinking_then_text_when_exchange_finished() {
+        test_support::init();
+        let completed = exchange_model(7, 3, ExchangeStatus::Completed);
+        let db = test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([[completed.clone()]])
+            .append_query_results([[completed]])
+            .append_query_results([vec![
+                message_model(1, 7, MessageRole::User, text("Hi")),
+                message_model(2, 7, MessageRole::Assistant, json!([{"type": "thinking", "thinking": "hmm", "signature": ""}, {"type": "text", "text": "Hi"}])),
+            ]])
+            .into_connection();
+
+        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.ok().expect("subscribe should succeed");
+
+        assert_eq!(subscription.replay, vec![
+            ExchangeEvent::ThinkingDelta { block: 0, text: "hmm".into() },
+            ExchangeEvent::TextDelta { block: 1, text: "Hi".into() },
+            ExchangeEvent::Completed { exchange_id: 7 },
+        ]);
     }
 
     #[tokio::test]

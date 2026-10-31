@@ -44,7 +44,12 @@ pub async fn launch() {
     }
 
     let openrouter = &config().openrouter;
-    let llm: Arc<dyn Llm> = Arc::new(OpenRouterClient::new(openrouter.api_key.clone(), openrouter.model.clone(), openrouter.max_tokens));
+    let llm: Arc<dyn Llm> = Arc::new(OpenRouterClient::new(
+        openrouter.api_key.clone(),
+        openrouter.model.clone(),
+        openrouter.max_tokens,
+        openrouter.reasoning.as_ref().map(|reasoning| reasoning.budget_tokens),
+    ));
     let registry = Arc::new(ExchangeRegistry::new());
     let jobs: Arc<dyn Jobs> = Arc::new(TokioJobs::new(JobDeps {
         db: conn.clone(), store: image_store.clone(), llm: llm.clone(), registry: registry.clone(), clock: clock.clone(),

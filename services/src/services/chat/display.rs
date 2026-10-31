@@ -2,18 +2,30 @@
 
 use entities::messages;
 use entities::sea_orm_active_enums::MessageRole;
+use serde_json::Value;
 use views::conversations::DisplayBlock;
 
-/// The text blocks with non-empty text of `assistant_messages`, in message order and then block
-/// order. This is the numbering the stream uses for `text_delta.block`.
+/// The non-empty text and thinking blocks of `assistant_messages`, in message order and then
+/// block order. This is the numbering the stream uses for the `block` of `text_delta` and
+/// `thinking_delta`.
 pub fn display_blocks(assistant_messages: &[messages::Model]) -> Vec<DisplayBlock> {
     assistant_messages
         .iter()
         .filter(|message| message.role == MessageRole::Assistant)
-        .flat_map(text_blocks)
-        .filter(|text| !text.is_empty())
-        .map(|text| DisplayBlock::Text { text: text.to_string() })
+        .flat_map(|message| message.content.as_array().into_iter().flatten())
+        .filter_map(display_block)
         .collect()
+}
+
+/// The displayed form of one stored content block; `None` for other kinds and for empty blocks.
+fn display_block(block: &Value) -> Option<DisplayBlock> {
+    let (field, shown): (&str, fn(String) -> DisplayBlock) = match block["type"].as_str()? {
+        "text" => ("text", |text| DisplayBlock::Text { text }),
+        "thinking" => ("thinking", |thinking| DisplayBlock::Thinking { thinking }),
+        _ => return None,
+    };
+    let text = block[field].as_str().filter(|text| !text.is_empty())?;
+    Some(shown(text.to_string()))
 }
 
 /// The text of a user message: all its text blocks concatenated.
@@ -40,6 +52,7 @@ mod tests {
     use crate::services::chat::accumulator::Accumulator;
     use crate::test_support::fixtures::message_model;
     use crate::test_support::init;
+    use views::conversations::ExchangeEvent;
 
     fn text_event(index: u32, text: &str) -> LlmEvent {
         LlmEvent::TextDelta { index, text: text.into() }
@@ -63,23 +76,37 @@ mod tests {
             LlmEvent::BlockStop { index: 3 },
         ];
         let mut accumulator = Accumulator::new(0);
-        let mut streamed = std::collections::BTreeMap::<u32, String>::new();
+        let mut streamed = std::collections::BTreeMap::<u32, DisplayBlock>::new();
         for event in events {
-            for (block, text) in accumulator.apply(event) {
-                streamed.entry(block).or_default().push_str(&text);
+            for delta in accumulator.apply(event) {
+                match delta {
+                    ExchangeEvent::TextDelta { block, text } => match streamed.entry(block).or_insert(DisplayBlock::Text { text: String::new() }) {
+                        DisplayBlock::Text { text: stored } => stored.push_str(&text),
+                        other => panic!("text delta for {other:?}"),
+                    },
+                    ExchangeEvent::ThinkingDelta { block, text } => match streamed.entry(block).or_insert(DisplayBlock::Thinking { thinking: String::new() }) {
+                        DisplayBlock::Thinking { thinking } => thinking.push_str(&text),
+                        other => panic!("thinking delta for {other:?}"),
+                    },
+                    other => panic!("unexpected event {other:?}"),
+                }
             }
         }
         let message = message_model(1, 1, MessageRole::Assistant, accumulator.content());
 
         let blocks = display_blocks(&[message]);
 
-        let expected: Vec<DisplayBlock> = streamed.into_values().map(|text| DisplayBlock::Text { text }).collect();
+        let expected: Vec<DisplayBlock> = streamed.into_values().collect();
         assert_eq!(blocks, expected);
-        assert_eq!(blocks, vec![DisplayBlock::Text { text: "Hello".into() }, DisplayBlock::Text { text: "World".into() }]);
+        assert_eq!(blocks, vec![
+            DisplayBlock::Thinking { thinking: "hmm".into() },
+            DisplayBlock::Text { text: "Hello".into() },
+            DisplayBlock::Text { text: "World".into() },
+        ]);
     }
 
     #[test]
-    fn display_blocks_skips_non_assistant_messages_and_empty_text_when_stored() {
+    fn display_blocks_includes_thinking_and_skips_empty_blocks_when_stored() {
         init();
         let user = message_model(1, 1, MessageRole::User, json!([{"type": "text", "text": "question"}]));
         let tool = message_model(2, 1, MessageRole::Tool, json!([{"type": "text", "text": "tool output"}]));
@@ -87,12 +114,17 @@ mod tests {
             3,
             1,
             MessageRole::Assistant,
-            json!([{"type": "thinking", "thinking": "hmm", "signature": ""}, {"type": "text", "text": ""}, {"type": "text", "text": "answer"}]),
+            json!([
+                {"type": "thinking", "thinking": "hmm", "signature": ""},
+                {"type": "thinking", "thinking": "", "signature": "s"},
+                {"type": "text", "text": ""},
+                {"type": "text", "text": "answer"}
+            ]),
         );
 
         let blocks = display_blocks(&[user, tool, assistant]);
 
-        assert_eq!(blocks, vec![DisplayBlock::Text { text: "answer".into() }]);
+        assert_eq!(blocks, vec![DisplayBlock::Thinking { thinking: "hmm".into() }, DisplayBlock::Text { text: "answer".into() }]);
     }
 
     #[test]

@@ -216,8 +216,8 @@ impl Run {
             if !self.write(db, clock).await? {
                 return Ok(None);
             }
-            for (block, text) in merge(deltas) {
-                registry.publish(self.exchange_id, ExchangeEvent::TextDelta { block, text });
+            for delta in merge(deltas) {
+                registry.publish(self.exchange_id, delta);
             }
             if stop.is_some() {
                 return Ok(stop);
@@ -367,16 +367,26 @@ async fn exchange_exists(exchange_id: i32, db: &DbConn) -> Result<bool, SrvErr> 
     Ok(exchanges::Entity::find_by_id(exchange_id).one(db).await?.is_some())
 }
 
-/// Joins the deltas of each block, in the order the blocks first appear.
-fn merge(deltas: Vec<(u32, String)>) -> Vec<(u32, String)> {
-    let mut merged: Vec<(u32, String)> = Vec::new();
-    for (block, text) in deltas {
-        match merged.iter_mut().find(|(merged_block, _)| *merged_block == block) {
-            Some((_, joined)) => joined.push_str(&text),
-            None => merged.push((block, text)),
+/// Joins the deltas of each block, in the order the blocks first appear. A block has one kind,
+/// so its number identifies it.
+fn merge(deltas: Vec<ExchangeEvent>) -> Vec<ExchangeEvent> {
+    let mut merged: Vec<ExchangeEvent> = Vec::new();
+    for delta in deltas {
+        let Some((block, text)) = delta_parts(&delta) else { continue };
+        match merged.iter_mut().find(|merged| delta_parts(merged).is_some_and(|(merged_block, _)| merged_block == block)) {
+            Some(ExchangeEvent::TextDelta { text: joined, .. } | ExchangeEvent::ThinkingDelta { text: joined, .. }) => joined.push_str(text),
+            _ => merged.push(delta),
         }
     }
     merged
+}
+
+/// The block and text of a `TextDelta` or `ThinkingDelta`.
+fn delta_parts(event: &ExchangeEvent) -> Option<(u32, &str)> {
+    match event {
+        ExchangeEvent::TextDelta { block, text } | ExchangeEvent::ThinkingDelta { block, text } => Some((*block, text)),
+        _ => None,
+    }
 }
 
 /// The error of a request or stream that stayed silent for `IDLE_TIMEOUT`. Having neither status
@@ -417,7 +427,7 @@ mod tests {
     use crate::test_support::db::{assert_no_statement_starting_with, assert_wrote, updated, with_started_exchange_run};
     use crate::test_support::fixtures::message_model;
     use crate::test_support::llm::{
-        http_error, panicking_stream, stalled_stream, stream_error, text_answer, thinking_answer, trickled_stream, with_answer, with_error, with_stream,
+        http_error, panicking_stream, stalled_stream, stream_error, text_answer, thinking_answer, thinking_then_text_answer, trickled_stream, with_answer, with_error, with_stream,
         UnansweringLlm,
     };
 
@@ -454,6 +464,10 @@ mod tests {
 
     fn delta(block: u32, text: &str) -> ExchangeEvent {
         ExchangeEvent::TextDelta { block, text: text.into() }
+    }
+
+    fn thinking_delta(block: u32, text: &str) -> ExchangeEvent {
+        ExchangeEvent::ThinkingDelta { block, text: text.into() }
     }
 
     fn failed(key: &str, debug_message: &str) -> ExchangeEvent {
@@ -613,8 +627,39 @@ mod tests {
         let (ok, events, log) = run(answering_db(), with_answer(thinking_answer("hmm", StopReason::EndTurn))).await;
 
         assert!(ok);
-        assert_eq!(events, vec![failed("EmptyResponse", "the model ended its answer without text")]);
+        assert_eq!(events, vec![thinking_delta(0, "hmm"), failed("EmptyResponse", "the model ended its answer without text")]);
         assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(json!([{"type": "thinking", "thinking": "hmm", "signature": ""}]))]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_publishes_thinking_then_text_in_block_order_when_buffered() {
+        test_support::init();
+
+        let (ok, events, log) = run(answering_db(), with_answer(thinking_then_text_answer("hmm", &["Hi"], StopReason::EndTurn))).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![thinking_delta(0, "hmm"), delta(1, "Hi"), ExchangeEvent::Completed { exchange_id: 7 }]);
+        assert_eq!(statements_starting_with(&log, r#"INSERT INTO "messages""#), 1);
+        assert_wrote(
+            &log,
+            r#"INSERT INTO "messages""#,
+            &[Value::from(json!([{"type": "thinking", "thinking": "hmm", "signature": ""}, {"type": "text", "text": "Hi"}]))],
+        );
+    }
+
+    #[tokio::test]
+    async fn run_exchange_keeps_thinking_as_partial_message_when_stream_fails_mid_thinking() {
+        test_support::init();
+        let mut events = thinking_answer("hmm", StopReason::EndTurn);
+        events.truncate(3);
+        events.push(Err(stream_error("provider_overloaded", "overloaded")));
+
+        let (ok, events, log) = run(answering_db(), with_answer(events)).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![thinking_delta(0, "hmm"), failed("ProviderUnavailable", "provider_overloaded: overloaded")]);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(json!([{"type": "thinking", "thinking": "hmm", "signature": ""}]))]);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Failed)]);
     }
 
     #[tokio::test]

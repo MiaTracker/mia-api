@@ -50,6 +50,8 @@ openrouter:
   api_key: <OpenRouter API key>
   model: openrouter/free
   max_tokens: 16384   # optional, default 16384
+  reasoning:          # optional; absent disables reasoning
+    budget_tokens: 8000   # must be below max_tokens
 logging:
   level: debug        # trace | debug | info | warning | error
 media:

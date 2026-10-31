@@ -10,7 +10,7 @@ pub fn test_config() -> Configuration {
         logging: LoggingConfiguration { level: LogLevel::Debug },
         media: MediaConfiguration { unset_title: "Unknown".into() },
         images: ImagesConfiguration { store_path: "/nonexistent-test-store".into() },
-        openrouter: OpenRouterConfiguration { api_key: "test-key".into(), model: "test/model".into(), max_tokens: 16384 },
+        openrouter: OpenRouterConfiguration { api_key: "test-key".into(), model: "test/model".into(), max_tokens: 16384, reasoning: None },
     }
 }
 

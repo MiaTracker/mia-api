@@ -29,15 +29,17 @@ pub struct OpenRouterClient {
     client: RsClient,
     model: String,
     max_tokens: u32,
+    /// Reasoning token budget; `None` disables reasoning.
+    thinking_budget: Option<u32>,
 }
 
 impl OpenRouterClient {
-    pub fn new(api_key: String, model: String, max_tokens: u32) -> Self {
+    pub fn new(api_key: String, model: String, max_tokens: u32, thinking_budget: Option<u32>) -> Self {
         let client = RsClient::builder()
             .api_key(api_key)
             .build()
             .expect("OpenRouter client builds from an API key");
-        Self { client, model, max_tokens }
+        Self { client, model, max_tokens, thinking_budget }
     }
 
     fn build_request(&self, request: LlmRequest) -> Result<AnthropicMessagesRequest, LlmError> {
@@ -50,7 +52,10 @@ impl OpenRouterClient {
             .model(self.model.clone())
             .max_tokens(self.max_tokens)
             .messages(messages)
-            .thinking(AnthropicThinking::Disabled);
+            .thinking(match self.thinking_budget {
+                Some(budget_tokens) => AnthropicThinking::Enabled { budget_tokens },
+                None => AnthropicThinking::Disabled,
+            });
         if !request.system.is_empty() {
             builder.system(AnthropicSystemPrompt::Text(request.system));
         }
@@ -361,6 +366,22 @@ mod tests {
         let error = translate_message(user(json!([{"type": "text"}]))).expect_err("translated");
 
         assert_eq!(error.error_type.as_deref(), Some(UNPARSEABLE_RESPONSE));
+    }
+
+    fn request_json(thinking_budget: Option<u32>) -> Value {
+        let client = OpenRouterClient::new("key".into(), "test/model".into(), 4096, thinking_budget);
+        let request = client.build_request(LlmRequest { system: String::new(), messages: vec![user(json!([{"type": "text", "text": "Hi"}]))] });
+        serde_json::to_value(request.expect("built")).unwrap()
+    }
+
+    #[test]
+    fn build_request_disables_thinking_when_no_budget() {
+        assert_eq!(request_json(None)["thinking"], json!({"type": "disabled"}));
+    }
+
+    #[test]
+    fn build_request_enables_thinking_with_budget_when_budget_set() {
+        assert_eq!(request_json(Some(2048))["thinking"], json!({"type": "enabled", "budget_tokens": 2048}));
     }
 
     #[test]

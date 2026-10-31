@@ -93,7 +93,7 @@ pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUs
     params(ConversationParams),
     request_body = ExchangeCreate,
     responses(
-        (status = 200, description = "Server-sent events of the new exchange: text_delta, then exchange_completed or exchange_failed", body = ExchangeEvent, content_type = "text/event-stream"),
+        (status = 200, description = "Server-sent events of the new exchange: thinking_delta and text_delta, then exchange_completed or exchange_failed", body = ExchangeEvent, content_type = "text/event-stream"),
         (status = 400, description = "The request is invalid, or the conversation already has an exchange in progress (ConversationExchangeInProgress)", body = [Vec<ApiErrView>]),
         (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
         (status = 404, description = "The conversation was not found", body = [Vec<ApiErrView>]),

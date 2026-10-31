@@ -51,6 +51,23 @@ pub fn thinking_answer(thinking: &str, stop: StopReason) -> Vec<Result<LlmEvent,
     ]
 }
 
+/// The events of an answer with one thinking block (index 0) and then one text block (index 1)
+/// streamed in `chunks`, ending with `stop`.
+pub fn thinking_then_text_answer(thinking: &str, chunks: &[&str], stop: StopReason) -> Vec<Result<LlmEvent, LlmError>> {
+    let mut events = vec![
+        Ok(LlmEvent::MessageStart { request_id: Some("gen-test".into()), usage: LlmUsage::default() }),
+        Ok(LlmEvent::BlockStart { index: 0, kind: BlockKind::Thinking }),
+        Ok(LlmEvent::ThinkingDelta { index: 0, thinking: thinking.into() }),
+        Ok(LlmEvent::BlockStop { index: 0 }),
+        Ok(LlmEvent::BlockStart { index: 1, kind: BlockKind::Text }),
+    ];
+    events.extend(chunks.iter().map(|chunk| Ok(LlmEvent::TextDelta { index: 1, text: chunk.to_string() })));
+    events.push(Ok(LlmEvent::BlockStop { index: 1 }));
+    events.push(Ok(LlmEvent::MessageDelta { stop_reason: Some(stop), usage: LlmUsage::default() }));
+    events.push(Ok(LlmEvent::MessageStop));
+    events
+}
+
 /// A stream that yields `events` in order and then ends.
 pub fn event_stream(events: Vec<Result<LlmEvent, LlmError>>) -> LlmEventStream {
     futures::stream::iter(events).boxed()

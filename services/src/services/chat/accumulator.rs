@@ -5,6 +5,7 @@
 
 use integrations::openrouter::{BlockKind, LlmEvent, LlmUsage, StopReason};
 use serde_json::{json, Value};
+use views::conversations::ExchangeEvent;
 
 enum Body {
     Text {
@@ -15,6 +16,8 @@ enum Body {
     Thinking {
         thinking: String,
         signature: String,
+        /// The Exchange-wide number, set when the first non-empty thinking delta arrives.
+        block: Option<u32>,
     },
 }
 
@@ -35,13 +38,14 @@ pub struct Accumulator {
 }
 
 impl Accumulator {
-    /// `first_block` is the Exchange-wide number of the first text block this call produces.
+    /// `first_block` is the Exchange-wide number of the first displayed block this call produces.
     pub fn new(first_block: u32) -> Self {
         Self { next_block: first_block, blocks: Vec::new(), stop_reason: None, message_stopped: false, usage: LlmUsage::default(), request_id: None }
     }
 
-    /// Applies one event and returns the display deltas `(block, text)` to forward to the client.
-    pub fn apply(&mut self, event: LlmEvent) -> Vec<(u32, String)> {
+    /// Applies one event and returns the `TextDelta` and `ThinkingDelta` events to forward to the
+    /// client.
+    pub fn apply(&mut self, event: LlmEvent) -> Vec<ExchangeEvent> {
         match event {
             LlmEvent::MessageStart { request_id, usage } => {
                 self.request_id = request_id.or(self.request_id.take());
@@ -50,7 +54,7 @@ impl Accumulator {
             LlmEvent::BlockStart { index, kind } => {
                 let body = match kind {
                     BlockKind::Text => Body::Text { text: String::new(), block: None },
-                    BlockKind::Thinking => Body::Thinking { thinking: String::new(), signature: String::new() },
+                    BlockKind::Thinking => Body::Thinking { thinking: String::new(), signature: String::new(), block: None },
                     BlockKind::Other(_) => return Vec::new(),
                 };
                 self.blocks.push(Block { index, body });
@@ -60,18 +64,19 @@ impl Accumulator {
                     return Vec::new();
                 }
                 if let Some(Block { body: Body::Text { text: stored, block }, .. }) = self.blocks.iter_mut().find(|block| block.index == index) {
-                    let number = *block.get_or_insert_with(|| {
-                        let number = self.next_block;
-                        self.next_block += 1;
-                        number
-                    });
+                    let block = number(block, &mut self.next_block);
                     stored.push_str(&text);
-                    return vec![(number, text)];
+                    return vec![ExchangeEvent::TextDelta { block, text }];
                 }
             }
             LlmEvent::ThinkingDelta { index, thinking } => {
-                if let Some(Block { body: Body::Thinking { thinking: stored, .. }, .. }) = self.blocks.iter_mut().find(|block| block.index == index) {
+                if thinking.is_empty() {
+                    return Vec::new();
+                }
+                if let Some(Block { body: Body::Thinking { thinking: stored, block, .. }, .. }) = self.blocks.iter_mut().find(|block| block.index == index) {
+                    let block = number(block, &mut self.next_block);
                     stored.push_str(&thinking);
+                    return vec![ExchangeEvent::ThinkingDelta { block, text: thinking }];
                 }
             }
             LlmEvent::SignatureDelta { index, signature } => {
@@ -105,7 +110,7 @@ impl Accumulator {
                 .iter()
                 .filter_map(|block| match &block.body {
                     Body::Text { text, .. } if !text.is_empty() => Some(json!({"type": "text", "text": text})),
-                    Body::Thinking { thinking, signature } if !thinking.is_empty() => {
+                    Body::Thinking { thinking, signature, .. } if !thinking.is_empty() => {
                         Some(json!({"type": "thinking", "thinking": thinking, "signature": signature}))
                     }
                     _ => None,
@@ -147,9 +152,19 @@ impl Accumulator {
     }
 }
 
+/// The Exchange-wide number of a block, taking the next one from `next_block` the first time.
+fn number(block: &mut Option<u32>, next_block: &mut u32) -> u32 {
+    *block.get_or_insert_with(|| {
+        let number = *next_block;
+        *next_block += 1;
+        number
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use views::conversations::ExchangeEvent;
     use super::*;
     use crate::test_support::init;
     use crate::test_support::llm::text_answer;
@@ -160,6 +175,14 @@ mod tests {
 
     fn text(index: u32, text: &str) -> LlmEvent {
         LlmEvent::TextDelta { index, text: text.into() }
+    }
+
+    fn delta(block: u32, text: &str) -> ExchangeEvent {
+        ExchangeEvent::TextDelta { block, text: text.into() }
+    }
+
+    fn thinking_delta(block: u32, text: &str) -> ExchangeEvent {
+        ExchangeEvent::ThinkingDelta { block, text: text.into() }
     }
 
     fn message_start(usage: LlmUsage) -> LlmEvent {
@@ -174,11 +197,11 @@ mod tests {
 
         let deltas = accumulator.apply(text(0, "Hi"));
 
-        assert_eq!(deltas, vec![(2, "Hi".to_string())]);
+        assert_eq!(deltas, vec![delta(2, "Hi")]);
     }
 
     #[test]
-    fn apply_numbers_second_text_block_next_when_provider_index_skips_thinking() {
+    fn apply_numbers_text_after_thinking_when_thinking_came_first() {
         init();
         let mut accumulator = Accumulator::new(0);
         accumulator.apply(start(0, BlockKind::Thinking));
@@ -187,7 +210,30 @@ mod tests {
 
         let deltas = accumulator.apply(text(1, "Answer"));
 
-        assert_eq!(deltas, vec![(0, "Answer".to_string())]);
+        assert_eq!(deltas, vec![delta(1, "Answer")]);
+    }
+
+    #[test]
+    fn apply_returns_thinking_delta_with_block_when_thinking_delta() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        accumulator.apply(start(0, BlockKind::Thinking));
+
+        let deltas = accumulator.apply(LlmEvent::ThinkingDelta { index: 0, thinking: "hmm".into() });
+
+        assert_eq!(deltas, vec![thinking_delta(0, "hmm")]);
+    }
+
+    #[test]
+    fn apply_returns_nothing_when_thinking_block_gets_only_signature_or_empty_deltas() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        accumulator.apply(start(0, BlockKind::Thinking));
+
+        assert_eq!(accumulator.apply(LlmEvent::ThinkingDelta { index: 0, thinking: "".into() }), vec![]);
+        assert_eq!(accumulator.apply(LlmEvent::SignatureDelta { index: 0, signature: "s".into() }), vec![]);
+        accumulator.apply(start(1, BlockKind::Text));
+        assert_eq!(accumulator.apply(text(1, "Hi")), vec![delta(0, "Hi")]);
     }
 
     #[test]
@@ -198,9 +244,9 @@ mod tests {
         accumulator.apply(start(1, BlockKind::Text));
 
         assert_eq!(accumulator.apply(text(0, "")), vec![]);
-        assert_eq!(accumulator.apply(text(1, "B")), vec![(0, "B".to_string())]);
-        assert_eq!(accumulator.apply(text(0, "A")), vec![(1, "A".to_string())]);
-        assert_eq!(accumulator.apply(text(1, "b")), vec![(0, "b".to_string())]);
+        assert_eq!(accumulator.apply(text(1, "B")), vec![delta(0, "B")]);
+        assert_eq!(accumulator.apply(text(0, "A")), vec![delta(1, "A")]);
+        assert_eq!(accumulator.apply(text(1, "b")), vec![delta(0, "b")]);
     }
 
     #[test]
@@ -323,7 +369,7 @@ mod tests {
             deltas.extend(accumulator.apply(event.expect("event")));
         }
 
-        assert_eq!(deltas, vec![(0, "Hel".to_string()), (0, "lo".to_string())]);
+        assert_eq!(deltas, vec![delta(0, "Hel"), delta(0, "lo")]);
         assert_eq!(accumulator.content(), json!([{"type": "text", "text": "Hello"}]));
         assert!(accumulator.has_text());
         assert!(accumulator.finished());

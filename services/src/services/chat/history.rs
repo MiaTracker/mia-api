@@ -3,7 +3,7 @@
 use entities::sea_orm_active_enums::{ExchangeStatus, MessageRole};
 use entities::{exchanges, messages};
 use integrations::openrouter::{LlmMessage, LlmRequest, LlmRole};
-use serde_json::json;
+use serde_json::{json, Value};
 
 pub const SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
 
@@ -11,19 +11,23 @@ pub const SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
 ///
 /// `exchanges` are ordered by Exchange id, each with its Messages ordered by id. Completed
 /// Exchanges and the current one are kept; all others (failed, or any other in-progress one) are
-/// skipped. Content is passed through unchanged, except that the last block of the last Message
-/// gets a cache marker, on the request copy only.
+/// skipped. Content is passed through unchanged, except that earlier Exchanges lose their thinking
+/// blocks (a Message left empty by that is dropped) and the last block of the last Message gets a
+/// cache marker, on the request copy only.
 pub fn build_request(current_exchange_id: i32, exchanges: &[(exchanges::Model, Vec<messages::Model>)]) -> LlmRequest {
     let mut messages: Vec<LlmMessage> = exchanges
         .iter()
         .filter(|(exchange, _)| exchange.status == ExchangeStatus::Completed || exchange.id == current_exchange_id)
-        .flat_map(|(_, messages)| messages)
-        .map(|message| LlmMessage {
-            role: match message.role {
-                MessageRole::User | MessageRole::Tool => LlmRole::User,
-                MessageRole::Assistant => LlmRole::Assistant,
-            },
-            content: message.content.clone(),
+        .flat_map(|(exchange, messages)| messages.iter().map(move |message| (exchange.id == current_exchange_id, message)))
+        .filter_map(|(current, message)| {
+            let content = if current { message.content.clone() } else { without_thinking(&message.content)? };
+            Some(LlmMessage {
+                role: match message.role {
+                    MessageRole::User | MessageRole::Tool => LlmRole::User,
+                    MessageRole::Assistant => LlmRole::Assistant,
+                },
+                content,
+            })
         })
         .collect();
     let last_block = messages
@@ -35,6 +39,20 @@ pub fn build_request(current_exchange_id: i32, exchanges: &[(exchanges::Model, V
         block.insert("cache_control".to_owned(), json!({"type": "ephemeral"}));
     }
     LlmRequest { system: SYSTEM_PROMPT.to_owned(), messages }
+}
+
+/// `content` without its `thinking` and `redacted_thinking` blocks; `None` when that removed every
+/// block. Content that is not an array, or was already empty, is kept as it is.
+fn without_thinking(content: &Value) -> Option<Value> {
+    let Some(blocks) = content.as_array().filter(|blocks| !blocks.is_empty()) else {
+        return Some(content.clone());
+    };
+    let kept: Vec<Value> = blocks
+        .iter()
+        .filter(|block| !matches!(block["type"].as_str(), Some("thinking" | "redacted_thinking")))
+        .cloned()
+        .collect();
+    (!kept.is_empty()).then_some(Value::Array(kept))
 }
 
 #[cfg(test)]
@@ -149,6 +167,79 @@ mod tests {
         let request = build_request(1, &exchanges);
 
         assert_eq!(request.messages[0].content, json!([]));
+    }
+
+    #[test]
+    fn build_request_strips_thinking_when_exchange_is_earlier() {
+        test_support::init();
+        let exchanges = vec![
+            (exchange_model(1, 1, ExchangeStatus::Completed), vec![
+                message_model(1, 1, MessageRole::User, text("one")),
+                message_model(2, 1, MessageRole::Assistant, json!([
+                    {"type": "thinking", "thinking": "hmm", "signature": ""},
+                    {"type": "redacted_thinking", "data": "x"},
+                    {"type": "text", "text": "reply"},
+                ])),
+            ]),
+            (exchange_model(2, 1, ExchangeStatus::InProgress), vec![message_model(3, 2, MessageRole::User, text("two"))]),
+        ];
+
+        let request = build_request(2, &exchanges);
+
+        assert_eq!(request.messages[1].content, json!([{"type": "text", "text": "reply"}]));
+        assert_eq!(exchanges[0].1[1].content[0]["type"], "thinking");
+    }
+
+    #[test]
+    fn build_request_keeps_thinking_when_exchange_is_current() {
+        test_support::init();
+        let exchanges = vec![(exchange_model(1, 1, ExchangeStatus::InProgress), vec![
+            message_model(1, 1, MessageRole::User, text("q")),
+            message_model(2, 1, MessageRole::Assistant, json!([
+                {"type": "thinking", "thinking": "hmm", "signature": ""},
+                {"type": "text", "text": "a"},
+            ])),
+        ])];
+
+        let request = build_request(1, &exchanges);
+
+        assert_eq!(request.messages[1].content[0]["type"], "thinking");
+        assert_eq!(request.messages[1].content[0]["thinking"], "hmm");
+    }
+
+    #[test]
+    fn build_request_drops_message_when_stripping_leaves_it_empty() {
+        test_support::init();
+        let exchanges = vec![
+            (exchange_model(1, 1, ExchangeStatus::Completed), vec![
+                message_model(1, 1, MessageRole::User, text("one")),
+                message_model(2, 1, MessageRole::Assistant, json!([{"type": "thinking", "thinking": "hmm", "signature": ""}])),
+            ]),
+            (exchange_model(2, 1, ExchangeStatus::InProgress), vec![message_model(3, 2, MessageRole::User, text("two"))]),
+        ];
+
+        let request = build_request(2, &exchanges);
+
+        let texts: Vec<&str> = request.messages.iter().map(|m| m.content[0]["text"].as_str().expect("text")).collect();
+        assert_eq!(texts, vec!["one", "two"]);
+    }
+
+    #[test]
+    fn build_request_marks_last_block_after_stripping() {
+        test_support::init();
+        let exchanges = vec![
+            (exchange_model(1, 1, ExchangeStatus::Completed), vec![
+                message_model(1, 1, MessageRole::User, text("one")),
+                message_model(2, 1, MessageRole::Assistant, json!([
+                    {"type": "text", "text": "reply"},
+                    {"type": "thinking", "thinking": "late", "signature": ""},
+                ])),
+            ]),
+        ];
+
+        let request = build_request(2, &exchanges);
+
+        assert_eq!(request.messages[1].content, json!([{"type": "text", "text": "reply", "cache_control": {"type": "ephemeral"}}]));
     }
 
     #[test]

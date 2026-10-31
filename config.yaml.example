@@ -13,6 +13,8 @@ openrouter:
   api_key: "some key"
   model: 'openrouter/free'
   max_tokens: 1500
+  reasoning:            # optional; absent disables reasoning
+    budget_tokens: 1024 # must be below max_tokens
 
 logging:
   level: "trace"
