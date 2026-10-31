@@ -15,8 +15,8 @@ use crate::jobs::{JobDeps, Jobs, TokioJobs};
 use crate::{movies, series};
 
 pub async fn run_refresh() {
-    let tmdb = TmdbClient::new(config().tmdb.authorization_token.clone());
-    crate::infrastructure::initialize(&tmdb).await;
+    let tmdb: Arc<dyn Tmdb> = Arc::new(TmdbClient::new(config().tmdb.authorization_token.clone()));
+    crate::infrastructure::initialize(tmdb.as_ref()).await;
 
     let db_url = config().db.connection_url.clone();
     let conn = Database::connect(db_url.clone()).await
@@ -32,10 +32,11 @@ pub async fn run_refresh() {
         openrouter.reasoning.as_ref().map(|reasoning| reasoning.budget_tokens),
     ));
     let jobs = TokioJobs::new(JobDeps {
-        db: conn.clone(), store: store.clone(), llm, registry: Arc::new(ExchangeRegistry::new()), clock: Arc::new(SystemClock),
+        db: conn.clone(), store: store.clone(), llm, registry: Arc::new(ExchangeRegistry::new()), tmdb: tmdb.clone(),
+        clock: Arc::new(SystemClock),
     });
 
-    match refresh(&conn, &tmdb, store.as_ref(), &jobs, &SystemClock, &OsRandom).await {
+    match refresh(&conn, tmdb.as_ref(), store.as_ref(), &jobs, &SystemClock, &OsRandom).await {
         Ok(result) => {
             println!("Refresh complete. Updated: {}, Errors: {}", result.updates, result.errors);
         }

@@ -1,5 +1,5 @@
-//! Movie and series creation and media deletion against a real Postgres, with images saved
-//! through `InlineJobs` into an in-memory store. Needs Docker:
+//! Movie and series creation, the batched details loaders and media deletion against a real
+//! Postgres, with images saved through `InlineJobs` into an in-memory store. Needs Docker:
 //! `cargo test -p services --test postgres_media -- --ignored`.
 
 mod common;
@@ -10,12 +10,12 @@ use common::postgres::database;
 use common::{fakes, seed};
 use entities::prelude::{Episodes, Genres, ImageSizes, Images, Media, MediaGenres, Movies, Seasons, Series, Tags, Titles};
 use entities::sea_orm_active_enums::{ImageType, MediaType};
-use entities::{episodes, genres, image_sizes, images, seasons, titles};
+use entities::{episodes, genres, image_sizes, images, media as media_entity, seasons, titles};
 use integrations::tmdb::views::{Genre, MovieDetails, MovieTitle, MovieTitles, Season, SeasonDetails, SeriesDetails, SeriesTitles};
-use sea_orm::{ColumnTrait, DbConn, EntityTrait, ModelTrait, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, DbConn, EntityTrait, ModelTrait, QueryFilter, QueryOrder, Set};
 use services::test_support::tmdb::{movie_details, png_bytes, season_details, series_details, tmdb_episode};
 use services::test_support::{date, MockTmdb};
-use services::{media, movies, series};
+use services::{media, media_details, movies, series};
 use views::media::MediaType as ViewMediaType;
 
 /// A `MockTmdb` for `movies::create`: `movie_details` from `details`, one German alternative
@@ -119,6 +119,90 @@ async fn series_create_persists_seasons_and_episodes() {
     let types: Vec<ImageType> = images.iter().map(|(image, _)| image.r#type.clone()).collect();
     assert_eq!(types, vec![ImageType::Backdrop, ImageType::Poster, ImageType::Poster, ImageType::Still, ImageType::Still]);
     assert!(images.iter().all(|(_, sizes)| sizes.len() == 2), "a 300x450 image has two sizes");
+}
+
+/// Names of `items`, in order.
+fn names<T>(items: &[T], name: fn(&T) -> &str) -> Vec<&str> {
+    items.iter().map(name).collect()
+}
+
+/// One batched `load_parts` over two movies: the junction and `IN (...)` queries hand each movie
+/// only its own titles, language, genres, tags, sources, logs and watchlist entry.
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn load_parts_gives_each_media_only_its_own_parts_when_given_two_movies() {
+    let db = database().await;
+    let db: &DbConn = &db;
+    seed::language(db, "en", "English").await;
+    seed::language(db, "de", "German").await;
+    let user = seed::user(db, 1).await;
+    let alien = seed::movie(db, &user, 348, "Alien").await;
+    let scream = seed::movie(db, &user, 4232, "Scream").await;
+    seed::update_media(db, alien.id, media_entity::ActiveModel { original_language: Set(Some("en".into())), ..Default::default() }).await;
+    seed::update_media(db, scream.id, media_entity::ActiveModel { original_language: Set(Some("de".into())), ..Default::default() }).await;
+    seed::title(db, alien.id, "Alien: The Eighth Passenger", false).await;
+    seed::genre(db, alien.id, "Science Fiction", MediaType::Movie, None).await;
+    seed::genre(db, alien.id, "Thriller", MediaType::Movie, None).await;
+    seed::genre(db, scream.id, "Horror", MediaType::Movie, None).await;
+    let classic = seed::tag(db, alien.id, "classic").await;
+    seed::add_tag(db, scream.id, &classic).await;
+    seed::tag(db, scream.id, "slasher").await;
+    let blu_ray = seed::source(db, alien.id, "Blu-ray").await;
+    let netflix = seed::source(db, scream.id, "Netflix").await;
+    seed::log(db, alien.id, blu_ray.id, Some(4.5), true).await;
+    seed::log(db, scream.id, netflix.id, Some(3.0), true).await;
+    seed::log(db, scream.id, netflix.id, None, false).await;
+    seed::on_watchlist(db, scream.id).await;
+    let media = Media::find().filter(media_entity::Column::Id.is_in([alien.id, scream.id]))
+        .order_by_asc(media_entity::Column::Id).all(db).await.expect("querying media");
+
+    let parts = media_details::load_parts(&media, db).await.ok().expect("load_parts should succeed");
+
+    assert_eq!(parts.len(), 2);
+    let alien = &parts[&alien.id];
+    assert_eq!(alien.title, "Alien");
+    assert_eq!(names(&alien.alternative_titles, |t| &t.title), vec!["Alien: The Eighth Passenger"]);
+    assert_eq!(alien.original_language.as_ref().map(|l| l.english_name.as_str()), Some("English"));
+    assert_eq!(names(&alien.genres, |g| &g.name), vec!["Science Fiction", "Thriller"]);
+    assert_eq!(names(&alien.tags, |t| &t.name), vec!["classic"]);
+    assert_eq!(names(&alien.sources, |s| &s.name), vec!["Blu-ray"]);
+    assert_eq!(alien.logs.iter().map(|l| (l.source.as_str(), l.stars)).collect::<Vec<_>>(), vec![("Blu-ray", Some(4.5))]);
+    assert!(!alien.on_watchlist);
+    let scream = &parts[&scream.id];
+    assert_eq!(scream.title, "Scream");
+    assert!(scream.alternative_titles.is_empty());
+    assert_eq!(scream.original_language.as_ref().map(|l| l.english_name.as_str()), Some("German"));
+    assert_eq!(names(&scream.genres, |g| &g.name), vec!["Horror"]);
+    assert_eq!(names(&scream.tags, |t| &t.name), vec!["classic", "slasher"]);
+    assert_eq!(names(&scream.sources, |s| &s.name), vec!["Netflix"]);
+    assert_eq!(scream.logs.iter().map(|l| (l.source.as_str(), l.stars)).collect::<Vec<_>>(), vec![("Netflix", Some(3.0)), ("Netflix", None)]);
+    assert!(scream.on_watchlist);
+}
+
+/// One pair of grouped `load_counts` queries over three series: two seasons with three episodes,
+/// one season without episodes, and no seasons at all.
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn load_counts_gives_each_series_only_its_own_counts_when_given_three_series() {
+    let db = database().await;
+    let db: &DbConn = &db;
+    let user = seed::user(db, 1).await;
+    let andor = seed::series(db, &user, 83867, "Andor").await;
+    let pilot_only = seed::series(db, &user, 1, "Pilot Only").await;
+    let announced = seed::series(db, &user, 2, "Announced").await;
+    let andor_1 = seed::season(db, andor.id, 1).await;
+    let andor_2 = seed::season(db, andor.id, 2).await;
+    seed::episode(db, andor_1.id, 1).await;
+    seed::episode(db, andor_1.id, 2).await;
+    seed::episode(db, andor_2.id, 1).await;
+    seed::season(db, pilot_only.id, 1).await;
+
+    let counts = series::load_counts(&[andor.id, pilot_only.id, announced.id], db).await.ok().expect("load_counts should succeed");
+
+    assert_eq!(counts.len(), 3);
+    assert_eq!(counts[&andor.id], (2, 3));
+    assert_eq!(counts[&pilot_only.id], (1, 0), "a season without episodes");
+    assert_eq!(counts[&announced.id], (0, 0), "a series without seasons");
 }
 
 /// Movie 1 and movie 2 share a poster; movie 1 also has its own backdrop, a tag and a

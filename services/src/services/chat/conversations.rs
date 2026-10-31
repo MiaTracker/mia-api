@@ -241,7 +241,7 @@ fn stored_error(exchange: &exchanges::Model) -> ExchangeError {
 mod tests {
     use sea_orm::Value;
     use serde_json::json;
-    use views::conversations::DisplayBlock;
+    use views::conversations::{DisplayBlock, ToolCallView};
     use super::*;
     use crate::test_support::db::{assert_statement_count, assert_wrote, updated};
     use crate::test_support::{self, assert_single_violation, fixed_clock, RecordingJobs};
@@ -444,6 +444,38 @@ mod tests {
         assert_eq!(subscription.replay, vec![
             ExchangeEvent::ThinkingDelta { block: 0, text: "hmm".into() },
             ExchangeEvent::TextDelta { block: 1, text: "Hi".into() },
+            ExchangeEvent::Completed { exchange_id: 7 },
+        ]);
+    }
+
+    #[tokio::test]
+    async fn subscribe_replays_tool_blocks_from_database_when_exchange_finished() {
+        test_support::init();
+        let completed = exchange_model(7, 3, ExchangeStatus::Completed);
+        let db = test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([[completed.clone()]])
+            .append_query_results([[completed]])
+            .append_query_results([vec![
+                message_model(1, 7, MessageRole::User, text("Hi")),
+                message_model(2, 7, MessageRole::Assistant, json!([
+                    {"type": "thinking", "thinking": "hmm", "signature": ""},
+                    {"type": "tool_use", "id": "t1", "name": "mia_search", "input": {"query": "Alien"}}
+                ])),
+                message_model(3, 7, MessageRole::Tool, json!([
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "found", "mia_display": {"name": "mia_search", "query": "Alien", "count": 2, "failed": false}}
+                ])),
+                message_model(4, 7, MessageRole::Assistant, json!([{"type": "text", "text": "Found it"}])),
+            ]])
+            .into_connection();
+
+        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.ok().expect("subscribe should succeed");
+
+        let call = ToolCallView { name: "mia_search".into(), query: Some("Alien".into()), media_type: None, count: Some(2), titles: None, failed: false };
+        assert_eq!(subscription.replay, vec![
+            ExchangeEvent::ThinkingDelta { block: 0, text: "hmm".into() },
+            ExchangeEvent::ToolCall { block: 1, call },
+            ExchangeEvent::TextDelta { block: 2, text: "Found it".into() },
             ExchangeEvent::Completed { exchange_id: 7 },
         ]);
     }

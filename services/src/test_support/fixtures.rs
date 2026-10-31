@@ -156,6 +156,16 @@ pub fn count_row(n: i64) -> BTreeMap<&'static str, Value> {
     BTreeMap::from([("num_items", Value::from(n))])
 }
 
+/// A row of `series::load_counts`' grouped queries: `n` seasons (or episodes) of series `series_id`.
+pub fn series_count_row(series_id: i32, n: i64) -> BTreeMap<&'static str, Value> {
+    BTreeMap::from([("series_id", Value::from(series_id)), ("count", Value::from(n))])
+}
+
+/// No rows for one of `series::load_counts`' grouped queries (no series has seasons or episodes).
+pub fn no_series_count_rows() -> Vec<BTreeMap<&'static str, Value>> {
+    Vec::new()
+}
+
 /// No rows for `logs::update_media_rating`'s aggregate query (the media has no rated logs).
 pub fn no_rating_rows() -> Vec<BTreeMap<&'static str, Value>> {
     Vec::new()

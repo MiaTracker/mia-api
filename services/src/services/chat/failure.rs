@@ -19,6 +19,10 @@ pub enum ExchangeFailure {
     Refused,
     ProviderError,
     EmptyResponse,
+    /// The token limit cut through a tool call.
+    OutputTruncated,
+    /// The model asked for tools again after its calls were refused at the tool round limit.
+    ToolRoundLimit,
     Interrupted,
     Internal,
 }
@@ -148,6 +152,13 @@ mod tests {
             response: None,
         };
         assert_eq!(classify(&error), ExchangeFailure::ProviderError);
+    }
+
+    #[test]
+    fn to_string_returns_key_when_failure_is_output_truncated_or_tool_round_limit() {
+        test_support::init();
+        assert_eq!(ExchangeFailure::OutputTruncated.to_string(), "OutputTruncated");
+        assert_eq!(ExchangeFailure::ToolRoundLimit.to_string(), "ToolRoundLimit");
     }
 
     #[test]

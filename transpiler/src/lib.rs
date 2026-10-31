@@ -11,6 +11,8 @@ mod parser;
 mod lexer;
 mod constructor;
 
+pub use constructor::{FILTER_FIELDS, SORT_TARGETS};
+
 pub enum ErrorSource {
     Lexing,
     Parsing,
@@ -64,5 +66,27 @@ pub fn transpile(search: SearchQuery, page_req: PageReq, user: &CurrentUser, med
     match construct(q, search, page_req, user.id, media_type) {
         Ok(s) => { Ok(s) }
         Err(err) => { Err(vec![err.into()]) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::prelude::Uuid;
+
+    fn user() -> CurrentUser {
+        CurrentUser { id: 1, uuid: Uuid::nil(), email: "tester@example.test".into(), username: "tester".into(), admin: false, though_bot: false }
+    }
+
+    fn search(query: &str) -> SearchQuery {
+        SearchQuery { query: query.into(), genres: None, only_watched: false, min_stars: None, sort_by: Default::default() }
+    }
+
+    #[test]
+    #[ignore = "known bug: parser ignores text after a complete filter condition"]
+    fn transpile_returns_error_when_filter_has_trailing_text() {
+        let result = transpile(search(" : stars > 5 rated = true"), PageReq { offset: None, limit: None }, &user(), None);
+
+        assert!(result.is_err());
     }
 }

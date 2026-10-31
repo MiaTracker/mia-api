@@ -1,4 +1,4 @@
-use entities::prelude::{Genres, ImageSizes, Languages, Logs, Media, MediaLocks, MovieLocks, Movies, Sources, Tags, Titles, Watchlist};
+use entities::prelude::{ImageSizes, Languages, Media, MediaLocks, MovieLocks, Movies, Titles};
 use entities::sea_orm_active_enums::{ImageType, MediaType};
 use entities::traits::linked::MediaPosters;
 use entities::{functions, genres, image_sizes, media, media_genres, movie_locks, movies, titles};
@@ -6,14 +6,8 @@ use chrono::NaiveDate;
 use integrations::tmdb::views::PropertyChanges;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
-use views::genres::Genre;
-use views::languages::Language;
-use views::logs::Log;
 use views::media::{MediaIndex, PageReq};
 use views::movies::{MovieDetails, MovieMetadata};
-use views::sources::Source;
-use views::tags::Tag;
-use views::titles::AlternativeTitle;
 use views::users::CurrentUser;
 
 use crate::infrastructure::traits::IntoActiveModel;
@@ -22,8 +16,10 @@ use crate::jobs::Jobs;
 use crate::media::{fetch_media, is_locked, try_set_media_lock};
 use crate::services;
 use entities::traits::locks::{SetLock, ToLocks};
-use infrastructure::config;
 use crate::services::images::{fetch_backdrop_and_poster, save_tmdb_image};
+use crate::services::media_details::{load_parts, MediaParts};
+use std::collections::HashMap;
+use views::images::Image;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tmdb, store: &dyn ImageStore, jobs: &dyn Jobs, clock: &dyn Clock, random: &dyn Random) -> Result<(bool, i32), SrvErr> {
@@ -134,53 +130,8 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
     }
     let db_media = db_media.unwrap();
 
-    let db_movie = db_media.find_related(Movies).one(db).await?;
-    let db_movie = db_movie.expect("DB in invalid state!");
-
-    let db_titles = db_media.find_related(Titles).all(db).await?;
-
-    let language = if let Some(language_id) = db_media.original_language.clone() {
-        Languages::find_by_id(language_id).one(db).await?.map(|l| {
-            Language::from(l)
-        })
-    } else {
-        None
-    };
-
-    let genres = db_media.find_related(Genres).all(db).await?.iter().map(|m| {
-        Genre::from(m)
-    }).collect();
-    let tags = db_media.find_related(Tags).all(db).await?.iter().map(|m| {
-        Tag::from(m)
-    }).collect();
-    let sources: Vec<Source> = db_media.find_related(Sources).all(db).await?.iter().map(|m| {
-        Source::from(m)
-    }).collect();
-    let logs = db_media.find_related(Logs).all(db).await?.iter().map(|m| {
-        let mut log = Log::from(m);
-        let source = sources.iter().find(|&x| { x.id == m.source_id });
-        if let Some(source) = source {
-            log.source = source.name.clone();
-        }
-        log
-    }).collect();
-
-    let mut title = None;
-    let alternative_titles = db_titles.iter().filter_map(|t| {
-        if t.primary {
-            title = Some(t);
-            None
-        } else {
-            Some(AlternativeTitle::from(t))
-        }
-    }).collect();
-    let title = if let Some(t) = title {
-        t.title.clone()
-    } else {
-        config().media.unset_title.clone()
-    };
-
-    let on_watchlist = db_media.find_related(Watchlist).count(db).await? != 0;
+    let db_movie = load_movies(&[db_media.id], db).await?.remove(&db_media.id).expect("DB in invalid state!");
+    let parts = load_parts(std::slice::from_ref(&db_media), db).await?.remove(&db_media.id).expect("parts of every media");
 
     let media_locks = db_media.find_related(MediaLocks).one(db).await?;
     let movie_locks = db_movie.find_related(MovieLocks).one(db).await?;
@@ -189,29 +140,39 @@ pub async fn details(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<O
 
     let (backdrop, poster) = fetch_backdrop_and_poster(&db_media, db).await?;
 
-    let movie = MovieDetails {
-        id: movie_id,
+    Ok(Some(details_view(db_media, db_movie, parts, locks, backdrop, poster)))
+}
+
+/// The movie rows of the media `media_ids`, keyed by id, in one query. The caller passes ids of
+/// media already filtered by user and type; no ownership is checked here.
+pub(crate) async fn load_movies(media_ids: &[i32], db: &DbConn) -> Result<HashMap<i32, movies::Model>, SrvErr> {
+    let movies = Movies::find().filter(movies::Column::Id.is_in(media_ids.to_vec())).all(db).await?;
+    Ok(movies.into_iter().map(|m| (m.id, m)).collect())
+}
+
+/// The details of a movie from its rows and its loaded parts.
+pub(crate) fn details_view(media: media::Model, movie: movies::Model, parts: MediaParts, locks: Vec<&'static str>, backdrop: Option<Image>, poster: Option<Image>) -> MovieDetails {
+    MovieDetails {
+        id: media.id,
         poster,
         backdrop,
-        stars: db_media.stars,
-        title,
-        alternative_titles,
-        release_date: db_movie.release_date,
-        runtime: db_movie.runtime,
-        status: db_movie.status,
-        overview: db_media.overview,
-        tmdb_id: db_media.tmdb_id,
-        tmdb_vote_average: db_media.tmdb_vote_average,
-        on_watchlist,
-        original_language: language,
-        genres,
-        tags,
-        sources,
-        logs,
+        stars: media.stars,
+        title: parts.title,
+        alternative_titles: parts.alternative_titles,
+        release_date: movie.release_date,
+        runtime: movie.runtime,
+        status: movie.status,
+        overview: media.overview,
+        tmdb_id: media.tmdb_id,
+        tmdb_vote_average: media.tmdb_vote_average,
+        on_watchlist: parts.on_watchlist,
+        original_language: parts.original_language,
+        genres: parts.genres,
+        tags: parts.tags,
+        sources: parts.sources,
+        logs: parts.logs,
         locks
-    };
-
-    Ok(Some(movie))
+    }
 }
 
 pub async fn metadata(movie_id: i32, user: &CurrentUser, db: &DbConn) -> Result<MovieMetadata, SrvErr> {
@@ -660,11 +621,11 @@ mod tests {
                 fixtures::title_model(2, 1, "Matrix", false),
             ]])
             .append_query_results([[fixtures::language_model("en", "English")]])
-            .append_query_results([[fixtures::genre_model(3, "Action", MediaType::Movie)]])
-            .append_query_results([[fixtures::tag_model(4, "classic")]])
+            .append_query_results([[(fixtures::media_genre_model(1, 3), Some(fixtures::genre_model(3, "Action", MediaType::Movie)))]])
+            .append_query_results([[(fixtures::media_tag_model(1, 4), Some(fixtures::tag_model(4, "classic")))]])
             .append_query_results([[fixtures::source_model(9, 1, "Blu-ray")]])
             .append_query_results([[log_row]])
-            .append_query_results([[fixtures::count_row(1)]])
+            .append_query_results([[fixtures::watchlist_model(1)]])
             .append_query_results([[entities::media_locks::Model { overview: true, ..fixtures::media_locks_model(1) }]])
             .append_query_results([[entities::movie_locks::Model { runtime: true, ..fixtures::movie_locks_model(1) }]])
             .append_query_results([[(fixtures::image_model(2), Some(fixtures::image_size_model(1, 2, 300, 450)))]])
@@ -710,11 +671,11 @@ mod tests {
             .append_query_results([[fixtures::movie_media_model(1, 1)]])
             .append_query_results([[fixtures::movie_model(1)]])
             .append_query_results([[fixtures::title_model(2, 1, "Only Alternative", false)]])
-            .append_query_results([Vec::<genres::Model>::new()])
-            .append_query_results([Vec::<entities::tags::Model>::new()])
+            .append_query_results([Vec::<(media_genres::Model, Option<genres::Model>)>::new()])
+            .append_query_results([Vec::<(entities::media_tags::Model, Option<entities::tags::Model>)>::new()])
             .append_query_results([Vec::<entities::sources::Model>::new()])
             .append_query_results([Vec::<entities::logs::Model>::new()])
-            .append_query_results([[fixtures::count_row(0)]])
+            .append_query_results([Vec::<entities::watchlist::Model>::new()])
             .append_query_results([Vec::<entities::media_locks::Model>::new()])
             .append_query_results([Vec::<movie_locks::Model>::new()])
             .append_query_results([Vec::<(images::Model, Option<image_sizes::Model>)>::new()])

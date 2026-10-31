@@ -13,7 +13,7 @@ use http::StatusCode;
 use image::{ImageFormat, RgbImage};
 use integrations::infrastructure::Error;
 use integrations::tmdb::{ImageStream, Tmdb};
-use integrations::tmdb::views::{ChangeItem, Configuration, Genre, GenreList, Languages, MovieDetails, MovieTitles, MultiResults, PropertyChange, PropertyChanges, SeasonDetails, SeriesDetails, SeriesTitles, TmdbEpisode, TmdbImage, TmdbImages};
+use integrations::tmdb::views::{ChangeItem, Configuration, Genre, GenreList, Languages, MovieDetails, MovieTitles, MultiMovieResult, MultiResult, MultiResults, MultiTvResult, PropertyChange, PropertyChanges, SeasonDetails, SeriesDetails, SeriesTitles, TmdbEpisode, TmdbImage, TmdbImages};
 
 mockall::mock! {
     pub Tmdb {}
@@ -186,4 +186,117 @@ pub fn png_bytes(width: u32, height: u32) -> Bytes {
         .write_to(&mut Cursor::new(&mut buffer), ImageFormat::Png)
         .expect("encoding a test PNG");
     Bytes::from(buffer)
+}
+
+/// A movie search result with a title and a poster path, nothing else.
+pub fn multi_movie(id: i32, title: &str) -> MultiResult {
+    MultiResult::Movie(MultiMovieResult { id, title: Some(title.into()), poster_path: Some(format!("/poster-{id}.jpg")), ..Default::default() })
+}
+
+/// A series search result with a name and a poster path, nothing else.
+pub fn multi_tv(id: i32, name: &str) -> MultiResult {
+    MultiResult::Tv(MultiTvResult { id, name: Some(name.into()), poster_path: Some(format!("/poster-{id}.jpg")), ..Default::default() })
+}
+
+/// A search result page holding `results`.
+pub fn multi_results(results: Vec<MultiResult>) -> MultiResults {
+    MultiResults { results, ..Default::default() }
+}
+
+/// A movie search result with every field the `tmdb_search` tool reads filled in.
+pub fn full_multi_movie(id: i32) -> MultiResult {
+    MultiResult::Movie(MultiMovieResult {
+        id,
+        title: Some(format!("Movie {id}")),
+        original_title: Some(format!("Original movie {id}")),
+        overview: Some(format!("Overview of movie {id}")),
+        release_date: Some("1979-05-25".into()),
+        original_language: Some("en".into()),
+        vote_average: Some(8.2),
+        vote_count: Some(1000),
+        ..Default::default()
+    })
+}
+
+/// A series search result with every field the `tmdb_search` tool reads filled in.
+pub fn full_multi_tv(id: i32) -> MultiResult {
+    MultiResult::Tv(MultiTvResult {
+        id,
+        name: Some(format!("Series {id}")),
+        original_name: Some(format!("Original series {id}")),
+        overview: Some(format!("Overview of series {id}")),
+        first_air_date: Some("2011-04-17".into()),
+        original_language: Some("en".into()),
+        vote_average: Some(8.4),
+        vote_count: Some(2000),
+        ..Default::default()
+    })
+}
+
+/// A `Tmdb` whose `search_multi` never resolves, like a TMDB request that stalls. mockall cannot
+/// express a call that never returns. Every other method panics.
+pub struct UnansweringTmdb;
+
+#[async_trait]
+impl Tmdb for UnansweringTmdb {
+    async fn movie_details(&self, _movie_id: i32) -> Result<MovieDetails, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn movie_alternative_titles(&self, _movie_id: i32) -> Result<MovieTitles, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn movie_changed(&self, _start: NaiveDate, _end: NaiveDate) -> Result<Vec<i32>, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn movie_property_changes(&self, _movie_id: i32, _start: NaiveDate, _end: NaiveDate) -> Result<PropertyChanges, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn movie_images(&self, _movie_id: i32, _original_language: &Option<String>) -> Result<TmdbImages, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn series_details(&self, _series_id: i32) -> Result<SeriesDetails, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn series_alternative_titles(&self, _series_id: i32) -> Result<SeriesTitles, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn series_changed(&self, _start: NaiveDate, _end: NaiveDate) -> Result<Vec<i32>, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn series_property_changes(&self, _series_id: i32, _start: NaiveDate, _end: NaiveDate) -> Result<PropertyChanges, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn season_details(&self, _series_id: i32, _season_number: i32) -> Result<SeasonDetails, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn season_property_changes(&self, _season_id: i32, _start: NaiveDate, _end: NaiveDate) -> Result<PropertyChanges, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn episode_property_changes(&self, _episode_id: i32, _start: NaiveDate, _end: NaiveDate) -> Result<PropertyChanges, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn series_images(&self, _series_id: i32, _original_language: &Option<String>) -> Result<TmdbImages, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn search_multi(&self, _query: String) -> Result<MultiResults, Error> {
+        std::future::pending().await
+    }
+    async fn movie_genres(&self) -> Result<GenreList, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn tv_genres(&self) -> Result<GenreList, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn languages(&self) -> Result<Vec<Languages>, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn configuration(&self) -> Result<Configuration, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn image(&self, _path: &str) -> Result<Bytes, Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
+    async fn image_stream(&self, _size_slug: String, _path: String) -> Result<(StatusCode, String, Option<ImageStream>), Error> {
+        unimplemented!("UnansweringTmdb answers only search_multi")
+    }
 }

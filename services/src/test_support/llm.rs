@@ -68,6 +68,74 @@ pub fn thinking_then_text_answer(thinking: &str, chunks: &[&str], stop: StopReas
     events
 }
 
+/// The events of an answer with one tool_use block per `(id, name, input)` in `calls`, at indexes
+/// 0.., each input streamed as one `InputJsonDelta` (none for an empty object), ending with `stop`.
+pub fn tool_use_answer(calls: &[(&str, &str, serde_json::Value)], stop: StopReason) -> Vec<Result<LlmEvent, LlmError>> {
+    let mut events = vec![Ok(LlmEvent::MessageStart { request_id: Some("gen-test".into()), usage: LlmUsage::default() })];
+    push_tool_uses(&mut events, 0, calls);
+    events.push(Ok(LlmEvent::MessageDelta { stop_reason: Some(stop), usage: LlmUsage::default() }));
+    events.push(Ok(LlmEvent::MessageStop));
+    events
+}
+
+/// The events of an answer with one text block (index 0) streamed in `chunks` and then one tool_use
+/// block per `(id, name, input)` in `calls`, ending with `stop`.
+pub fn text_then_tool_use_answer(chunks: &[&str], calls: &[(&str, &str, serde_json::Value)], stop: StopReason) -> Vec<Result<LlmEvent, LlmError>> {
+    let mut events = vec![
+        Ok(LlmEvent::MessageStart { request_id: Some("gen-test".into()), usage: LlmUsage::default() }),
+        Ok(LlmEvent::BlockStart { index: 0, kind: BlockKind::Text }),
+    ];
+    events.extend(chunks.iter().map(|chunk| Ok(LlmEvent::TextDelta { index: 0, text: chunk.to_string() })));
+    events.push(Ok(LlmEvent::BlockStop { index: 0 }));
+    push_tool_uses(&mut events, 1, calls);
+    events.push(Ok(LlmEvent::MessageDelta { stop_reason: Some(stop), usage: LlmUsage::default() }));
+    events.push(Ok(LlmEvent::MessageStop));
+    events
+}
+
+/// The events of an answer with one thinking block (index 0) holding `thinking` and then one
+/// tool_use block per `(id, name, input)` in `calls`, ending with `stop`.
+pub fn thinking_then_tool_use_answer(thinking: &str, calls: &[(&str, &str, serde_json::Value)], stop: StopReason) -> Vec<Result<LlmEvent, LlmError>> {
+    let mut events = vec![
+        Ok(LlmEvent::MessageStart { request_id: Some("gen-test".into()), usage: LlmUsage::default() }),
+        Ok(LlmEvent::BlockStart { index: 0, kind: BlockKind::Thinking }),
+        Ok(LlmEvent::ThinkingDelta { index: 0, thinking: thinking.into() }),
+        Ok(LlmEvent::BlockStop { index: 0 }),
+    ];
+    push_tool_uses(&mut events, 1, calls);
+    events.push(Ok(LlmEvent::MessageDelta { stop_reason: Some(stop), usage: LlmUsage::default() }));
+    events.push(Ok(LlmEvent::MessageStop));
+    events
+}
+
+fn push_tool_uses(events: &mut Vec<Result<LlmEvent, LlmError>>, first_index: u32, calls: &[(&str, &str, serde_json::Value)]) {
+    for (offset, (id, name, input)) in calls.iter().enumerate() {
+        let index = first_index + offset as u32;
+        events.push(Ok(LlmEvent::BlockStart { index, kind: BlockKind::ToolUse { id: id.to_string(), name: name.to_string() } }));
+        // A tool without arguments streams no input, like the real client.
+        if input.as_object().is_none_or(|object| !object.is_empty()) {
+            events.push(Ok(LlmEvent::InputJsonDelta { index, partial_json: input.to_string() }));
+        }
+        events.push(Ok(LlmEvent::BlockStop { index }));
+    }
+}
+
+/// A `date_time` call `id` for `tool_use_answer`, which takes no input.
+pub fn date_time_call(id: &str) -> (&str, &'static str, serde_json::Value) {
+    (id, "date_time", serde_json::json!({}))
+}
+
+/// The stored `tool_result` block answering `date_time` call `tool_use_id` at the time of
+/// `fixed_clock(2024, 1, 1, 12, 0, 0)`.
+pub fn date_time_result(tool_use_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": r#"{"utc":"2024-01-01T12:00:00Z","timezone":"UTC"}"#,
+        "mia_display": {"name": "date_time", "failed": false},
+    })
+}
+
 /// A stream that yields `events` in order and then ends.
 pub fn event_stream(events: Vec<Result<LlmEvent, LlmError>>) -> LlmEventStream {
     futures::stream::iter(events).boxed()
@@ -136,6 +204,36 @@ pub fn with_stream(stream: LlmEventStream) -> MockLlm {
     llm
 }
 
+/// A `MockLlm` named `test/model` that expects exactly `answers.len()` `stream_message` calls and
+/// answers them in order, one element of `answers` per call.
+pub fn with_answers(answers: Vec<Vec<Result<LlmEvent, LlmError>>>) -> MockLlm {
+    let mut llm = MockLlm::new();
+    llm.expect_model().returning(|| "test/model".into());
+    let calls = answers.len();
+    let answers = std::sync::Mutex::new(std::collections::VecDeque::from(answers));
+    llm.expect_stream_message().times(calls).returning(move |_| {
+        let events = answers.lock().expect("answers lock").pop_front().expect("more stream_message calls than answers");
+        Ok(event_stream(events))
+    });
+    llm
+}
+
+/// Like `with_answers`, and also returns the requests the mock received, in call order.
+pub fn with_recorded_answers(answers: Vec<Vec<Result<LlmEvent, LlmError>>>) -> (MockLlm, std::sync::Arc<std::sync::Mutex<Vec<LlmRequest>>>) {
+    let mut llm = MockLlm::new();
+    llm.expect_model().returning(|| "test/model".into());
+    let calls = answers.len();
+    let answers = std::sync::Mutex::new(std::collections::VecDeque::from(answers));
+    let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = requests.clone();
+    llm.expect_stream_message().times(calls).returning(move |request| {
+        recorded.lock().expect("requests lock").push(request);
+        let events = answers.lock().expect("answers lock").pop_front().expect("more stream_message calls than answers");
+        Ok(event_stream(events))
+    });
+    (llm, requests)
+}
+
 /// A `MockLlm` named `test/model` that expects exactly one `stream_message` and rejects it
 /// with `error` before streaming.
 pub fn with_error(error: LlmError) -> MockLlm {
@@ -173,5 +271,17 @@ mod tests {
         assert_eq!(events[2], Ok(LlmEvent::TextDelta { index: 0, text: "Hel".into() }));
         assert_eq!(events[3], Ok(LlmEvent::TextDelta { index: 0, text: "lo".into() }));
         assert_eq!(events.last(), Some(&Ok(LlmEvent::MessageStop)));
+    }
+
+    #[tokio::test]
+    async fn with_answers_answers_calls_in_order() {
+        let llm = with_answers(vec![text_answer(&["one"], StopReason::EndTurn), text_answer(&["two"], StopReason::EndTurn)]);
+        let request = || LlmRequest { system: String::new(), messages: Vec::new(), tools: Vec::new() };
+
+        let first: Vec<_> = llm.stream_message(request()).await.expect("first").collect().await;
+        let second: Vec<_> = llm.stream_message(request()).await.expect("second").collect().await;
+
+        assert_eq!(first[2], Ok(LlmEvent::TextDelta { index: 0, text: "one".into() }));
+        assert_eq!(second[2], Ok(LlmEvent::TextDelta { index: 0, text: "two".into() }));
     }
 }

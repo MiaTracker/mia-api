@@ -19,6 +19,37 @@ enum Body {
         /// The Exchange-wide number, set when the first non-empty thinking delta arrives.
         block: Option<u32>,
     },
+    ToolUse {
+        id: String,
+        name: String,
+        /// The concatenated `InputJsonDelta`s.
+        json: String,
+        /// Whether `BlockStop` arrived.
+        stopped: bool,
+    },
+    RedactedThinking {
+        data: String,
+    },
+}
+
+impl Body {
+    /// The input of a tool_use body when its JSON parses to an object. Empty JSON is the empty
+    /// object: the provider streams no input for a tool without arguments.
+    fn tool_input(json: &str) -> Option<Value> {
+        if json.trim().is_empty() {
+            return Some(json!({}));
+        }
+        serde_json::from_str::<Value>(json).ok().filter(Value::is_object)
+    }
+}
+
+/// One tool_use block the model produced.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ToolUse {
+    pub id: String,
+    pub name: String,
+    /// `None` when the streamed JSON does not parse to an object.
+    pub input: Option<Value>,
 }
 
 struct Block {
@@ -55,6 +86,8 @@ impl Accumulator {
                 let body = match kind {
                     BlockKind::Text => Body::Text { text: String::new(), block: None },
                     BlockKind::Thinking => Body::Thinking { thinking: String::new(), signature: String::new(), block: None },
+                    BlockKind::ToolUse { id, name } => Body::ToolUse { id, name, json: String::new(), stopped: false },
+                    BlockKind::RedactedThinking { data } => Body::RedactedThinking { data },
                     BlockKind::Other(_) => return Vec::new(),
                 };
                 self.blocks.push(Block { index, body });
@@ -84,7 +117,16 @@ impl Accumulator {
                     stored.push_str(&signature);
                 }
             }
-            LlmEvent::BlockStop { .. } => {}
+            LlmEvent::InputJsonDelta { index, partial_json } => {
+                if let Some(Block { body: Body::ToolUse { json, .. }, .. }) = self.blocks.iter_mut().find(|block| block.index == index) {
+                    json.push_str(&partial_json);
+                }
+            }
+            LlmEvent::BlockStop { index } => {
+                if let Some(Block { body: Body::ToolUse { stopped, .. }, .. }) = self.blocks.iter_mut().find(|block| block.index == index) {
+                    *stopped = true;
+                }
+            }
             LlmEvent::MessageStop => self.message_stopped = true,
             LlmEvent::MessageDelta { stop_reason, usage } => {
                 self.stop_reason = stop_reason.or(self.stop_reason.take());
@@ -103,7 +145,8 @@ impl Accumulator {
         };
     }
 
-    /// The Anthropic content block array; blocks without text are left out.
+    /// The Anthropic content block array; text and thinking blocks without text are left out. A
+    /// tool_use block whose input is not (yet) a JSON object is stored with the input `{}`.
     pub fn content(&self) -> Value {
         Value::Array(
             self.blocks
@@ -113,18 +156,41 @@ impl Accumulator {
                     Body::Thinking { thinking, signature, .. } if !thinking.is_empty() => {
                         Some(json!({"type": "thinking", "thinking": thinking, "signature": signature}))
                     }
+                    Body::ToolUse { id, name, json, .. } => {
+                        Some(json!({"type": "tool_use", "id": id, "name": name, "input": Body::tool_input(json).unwrap_or_else(|| json!({}))}))
+                    }
+                    Body::RedactedThinking { data } => Some(json!({"type": "redacted_thinking", "data": data})),
                     _ => None,
                 })
                 .collect(),
         )
     }
 
-    /// Whether any text or thinking block holds text.
+    /// Whether any text block holds text, or any thinking, tool_use or redacted_thinking block exists.
     pub fn has_content(&self) -> bool {
         self.blocks.iter().any(|block| match &block.body {
             Body::Text { text, .. } => !text.is_empty(),
             Body::Thinking { thinking, .. } => !thinking.is_empty(),
+            Body::ToolUse { .. } | Body::RedactedThinking { .. } => true,
         })
+    }
+
+    /// Every tool_use block, in the order the provider sent them.
+    pub fn tool_uses(&self) -> Vec<ToolUse> {
+        self.blocks
+            .iter()
+            .filter_map(|block| match &block.body {
+                Body::ToolUse { id, name, json, .. } => Some(ToolUse { id: id.clone(), name: name.clone(), input: Body::tool_input(json) }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Whether the model hit the token limit while writing a tool call: the stop reason is
+    /// `MaxTokens` and some tool_use block never stopped or holds no JSON object.
+    pub fn tool_use_cut(&self) -> bool {
+        self.stop_reason == Some(StopReason::MaxTokens)
+            && self.blocks.iter().any(|block| matches!(&block.body, Body::ToolUse { json, stopped, .. } if !stopped || Body::tool_input(json).is_none()))
     }
 
     /// Whether any text block holds text.
@@ -167,7 +233,7 @@ mod tests {
     use views::conversations::ExchangeEvent;
     use super::*;
     use crate::test_support::init;
-    use crate::test_support::llm::text_answer;
+    use crate::test_support::llm::{text_answer, text_then_tool_use_answer, tool_use_answer};
 
     fn start(index: u32, kind: BlockKind) -> LlmEvent {
         LlmEvent::BlockStart { index, kind }
@@ -374,5 +440,139 @@ mod tests {
         assert!(accumulator.has_text());
         assert!(accumulator.finished());
         assert_eq!(accumulator.request_id(), Some("gen-test"));
+    }
+
+    fn feed(accumulator: &mut Accumulator, events: Vec<Result<LlmEvent, integrations::openrouter::LlmError>>) -> Vec<ExchangeEvent> {
+        events.into_iter().flat_map(|event| accumulator.apply(event.expect("event"))).collect()
+    }
+
+    #[test]
+    fn content_includes_tool_use_with_parsed_input_when_block_stops() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        feed(&mut accumulator, tool_use_answer(&[("tu_1", "mia_search", json!({"query": "Alien"}))], StopReason::ToolUse));
+
+        assert_eq!(accumulator.content(), json!([{"type": "tool_use", "id": "tu_1", "name": "mia_search", "input": {"query": "Alien"}}]));
+        let tool_uses = accumulator.tool_uses();
+        assert_eq!(tool_uses.len(), 1);
+        assert_eq!(tool_uses[0].id, "tu_1");
+        assert_eq!(tool_uses[0].name, "mia_search");
+        assert_eq!(tool_uses[0].input, Some(json!({"query": "Alien"})));
+    }
+
+    #[test]
+    fn content_includes_tool_use_with_empty_input_when_input_is_not_an_object() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        accumulator.apply(start(0, BlockKind::ToolUse { id: "tu_1".into(), name: "mia_search".into() }));
+        accumulator.apply(LlmEvent::InputJsonDelta { index: 0, partial_json: "[1,2".into() });
+        accumulator.apply(LlmEvent::BlockStop { index: 0 });
+
+        assert_eq!(accumulator.content(), json!([{"type": "tool_use", "id": "tu_1", "name": "mia_search", "input": {}}]));
+        assert_eq!(accumulator.tool_uses()[0].input, None);
+    }
+
+    #[test]
+    fn tool_uses_returns_every_call_in_order_when_several_tool_use_blocks_arrive() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        feed(
+            &mut accumulator,
+            text_then_tool_use_answer(
+                &["Let me look."],
+                &[("tu_1", "mia_search", json!({"query": "a"})), ("tu_2", "date_time", json!({}))],
+                StopReason::ToolUse,
+            ),
+        );
+
+        let ids: Vec<_> = accumulator.tool_uses().into_iter().map(|tool_use| tool_use.id).collect();
+        assert_eq!(ids, vec!["tu_1", "tu_2"]);
+        assert_eq!(
+            accumulator.content(),
+            json!([
+                {"type": "text", "text": "Let me look."},
+                {"type": "tool_use", "id": "tu_1", "name": "mia_search", "input": {"query": "a"}},
+                {"type": "tool_use", "id": "tu_2", "name": "date_time", "input": {}},
+            ])
+        );
+    }
+
+    #[test]
+    fn apply_returns_no_deltas_and_numbers_nothing_when_tool_use_streams() {
+        init();
+        let mut accumulator = Accumulator::new(3);
+        let deltas = feed(&mut accumulator, tool_use_answer(&[("tu_1", "mia_search", json!({"query": "x"}))], StopReason::ToolUse));
+        assert_eq!(deltas, vec![]);
+
+        accumulator.apply(start(1, BlockKind::Text));
+
+        assert_eq!(accumulator.apply(text(1, "Hi")), vec![delta(3, "Hi")]);
+    }
+
+    #[test]
+    fn has_content_is_true_and_has_text_false_when_only_tool_use_arrived() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        accumulator.apply(start(0, BlockKind::ToolUse { id: "tu_1".into(), name: "date_time".into() }));
+
+        assert!(accumulator.has_content());
+        assert!(!accumulator.has_text());
+    }
+
+    #[test]
+    fn tool_use_cut_is_true_when_max_tokens_stops_unfinished_tool_use() {
+        init();
+        let mut cut = Accumulator::new(0);
+        cut.apply(start(0, BlockKind::ToolUse { id: "tu_1".into(), name: "mia_search".into() }));
+        cut.apply(LlmEvent::InputJsonDelta { index: 0, partial_json: "{\"query\": \"Al".into() });
+        cut.apply(LlmEvent::MessageDelta { stop_reason: Some(StopReason::MaxTokens), usage: LlmUsage::default() });
+        assert!(cut.tool_use_cut());
+
+        let mut complete = Accumulator::new(0);
+        feed(&mut complete, tool_use_answer(&[("tu_1", "mia_search", json!({"query": "Alien"}))], StopReason::MaxTokens));
+        assert!(!complete.tool_use_cut());
+
+        let mut invalid = Accumulator::new(0);
+        invalid.apply(start(0, BlockKind::ToolUse { id: "tu_1".into(), name: "mia_search".into() }));
+        invalid.apply(LlmEvent::InputJsonDelta { index: 0, partial_json: "[1,2".into() });
+        invalid.apply(LlmEvent::BlockStop { index: 0 });
+        invalid.apply(LlmEvent::MessageDelta { stop_reason: Some(StopReason::EndTurn), usage: LlmUsage::default() });
+        assert!(!invalid.tool_use_cut());
+    }
+
+    #[test]
+    fn tool_use_cut_is_true_when_max_tokens_stops_tool_use_with_unparseable_input() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        accumulator.apply(start(0, BlockKind::ToolUse { id: "tu_1".into(), name: "mia_search".into() }));
+        accumulator.apply(LlmEvent::InputJsonDelta { index: 0, partial_json: "[1,2".into() });
+        accumulator.apply(LlmEvent::BlockStop { index: 0 });
+        accumulator.apply(LlmEvent::MessageDelta { stop_reason: Some(StopReason::MaxTokens), usage: LlmUsage::default() });
+
+        assert!(accumulator.tool_use_cut());
+    }
+
+    #[test]
+    fn tool_uses_returns_empty_object_input_when_no_input_delta_arrived() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        accumulator.apply(start(0, BlockKind::ToolUse { id: "tu_1".into(), name: "date_time".into() }));
+        accumulator.apply(LlmEvent::BlockStop { index: 0 });
+        accumulator.apply(LlmEvent::MessageDelta { stop_reason: Some(StopReason::MaxTokens), usage: LlmUsage::default() });
+
+        assert_eq!(accumulator.tool_uses()[0].input, Some(json!({})));
+        assert_eq!(accumulator.content(), json!([{"type": "tool_use", "id": "tu_1", "name": "date_time", "input": {}}]));
+        assert!(!accumulator.tool_use_cut());
+    }
+
+    #[test]
+    fn content_includes_redacted_thinking_when_block_starts() {
+        init();
+        let mut accumulator = Accumulator::new(0);
+        assert_eq!(accumulator.apply(start(0, BlockKind::RedactedThinking { data: "x".into() })), vec![]);
+
+        assert_eq!(accumulator.content(), json!([{"type": "redacted_thinking", "data": "x"}]));
+        assert!(accumulator.has_content());
+        assert!(!accumulator.has_text());
     }
 }

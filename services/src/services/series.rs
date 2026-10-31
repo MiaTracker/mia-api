@@ -1,16 +1,15 @@
 use entities::prelude::{Episodes, ImageSizes, MediaLocks, Seasons, SeriesLocks};
-use entities::prelude::Watchlist;
-use entities::prelude::Logs;
-use entities::prelude::Sources;
 use entities::prelude::Titles;
 use entities::prelude::Languages;
 use entities::prelude::Media;
 use entities::prelude::Series;
-use entities::prelude::Genres;
-use entities::prelude::Tags;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, DatabaseTransaction, DbConn, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, TransactionTrait, PaginatorTrait, IntoActiveModel as SeaOrmIntoActiveModel, QueryOrder, QuerySelect};
 use sea_orm::sea_query::OnConflict;
+use sea_orm::prelude::Expr;
+use sea_orm::FromQueryResult;
+use std::collections::HashMap;
+use views::images::Image;
 use entities::{episodes, functions, genres, image_sizes, media, media_genres, seasons, series, series_locks, titles};
 use integrations::tmdb::views::{SeasonDetails, SeriesTitle, TmdbEpisode};
 use views::users::CurrentUser;
@@ -20,20 +19,15 @@ use entities::sea_orm_active_enums::{ImageType, MediaType};
 use entities::traits::linked::MediaPosters;
 use chrono::NaiveDate;
 use integrations::tmdb::views::PropertyChanges;
-use views::languages::Language;
-use views::logs::Log;
 use views::media::{MediaIndex, PageReq};
 use views::series::SeriesMetadata;
-use views::sources::Source;
-use views::tags::Tag;
-use views::titles::AlternativeTitle;
 use entities::traits::locks::{SetLock, ToLocks};
-use infrastructure::config;
 use log::error;
 use crate::infrastructure::traits::IntoActiveModel;
 use crate::media::{fetch_media, try_set_media_lock};
 use crate::services;
 use crate::services::images::{fetch_backdrop_and_poster, save_tmdb_image};
+use crate::services::media_details::{load_parts, MediaParts};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tmdb, store: &dyn ImageStore, jobs: &dyn Jobs, clock: &dyn Clock, random: &dyn Random) -> Result<(bool, i32), SrvErr> {
@@ -165,53 +159,8 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
     }
     let db_media = db_media.unwrap();
 
-    let db_series =  db_media.find_related(Series).one(db).await?;
-    let db_series = db_series.expect("DB in invalid state!");
-
-    let db_titles = db_media.find_related(Titles).all(db).await?;
-
-    let language = if let Some(language_id) = db_media.original_language.clone() {
-        Languages::find_by_id(language_id).one(db).await?.map(|l| {
-            Language::from(l)
-        })
-    } else {
-        None
-    };
-
-    let genres = db_media.find_related(Genres).all(db).await?.iter().map(|m| {
-        views::genres::Genre::from(m)
-    }).collect();
-    let tags = db_media.find_related(Tags).all(db).await?.iter().map(|m| {
-        Tag::from(m)
-    }).collect();
-    let sources: Vec<Source> = db_media.find_related(Sources).all(db).await?.iter().map(|m| {
-        Source::from(m)
-    }).collect();
-    let logs = db_media.find_related(Logs).all(db).await?.iter().map(|m| {
-        let mut log = Log::from(m);
-        let source = sources.iter().find(|&x| { x.id == m.source_id });
-        if let Some(source) = source {
-            log.source = source.name.clone();
-        }
-        log
-    }).collect();
-
-    let mut title = None;
-    let alternative_titles = db_titles.iter().filter_map(|t| {
-        if t.primary {
-            title = Some(t);
-            None
-        } else {
-            Some(AlternativeTitle::from(t))
-        }
-    }).collect();
-    let title = if let Some(t) = title {
-        t.title.clone()
-    } else {
-        config().media.unset_title.clone()
-    };
-
-    let on_watchlist = db_media.find_related(Watchlist).count(db).await? != 0;
+    let db_series = load_series(&[db_media.id], db).await?.remove(&db_media.id).expect("DB in invalid state!");
+    let parts = load_parts(std::slice::from_ref(&db_media), db).await?.remove(&db_media.id).expect("parts of every media");
 
     let media_locks = db_media.find_related(MediaLocks).one(db).await?;
     let series_locks = db_series.find_related(SeriesLocks).one(db).await?;
@@ -220,40 +169,89 @@ pub async fn details(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<
 
     let (backdrop, poster) = fetch_backdrop_and_poster(&db_media, db).await?;
 
-    let number_of_seasons = Some(db_series.find_related(Seasons).count(db).await? as i32);
-    let number_of_episodes = Some(
-        Episodes::find()
-            .inner_join(seasons::Entity)
-            .filter(seasons::Column::SeriesId.eq(db_series.id))
-            .count(db)
-            .await? as i32
-    );
+    let counts = load_counts(&[db_series.id], db).await?[&db_series.id];
 
-    let series = views::series::SeriesDetails {
-        id: db_media.id,
+    Ok(Some(details_view(db_media, db_series, parts, counts, locks, backdrop, poster)))
+}
+
+/// The series rows of the media `media_ids`, keyed by id, in one query. The caller passes ids of
+/// media already filtered by user and type; no ownership is checked here.
+pub(crate) async fn load_series(media_ids: &[i32], db: &DbConn) -> Result<HashMap<i32, series::Model>, SrvErr> {
+    let series = Series::find().filter(series::Column::Id.is_in(media_ids.to_vec())).all(db).await?;
+    Ok(series.into_iter().map(|s| (s.id, s)).collect())
+}
+
+/// `(number_of_seasons, number_of_episodes)` of every series in `series_ids`, `(0, 0)` for one
+/// without seasons. Two grouped queries whatever the number of series, none for an empty slice.
+///
+/// The caller passes ids of series already filtered by user; no ownership is checked here.
+/// `pub` so the Postgres tests can check the grouped queries directly.
+pub async fn load_counts(series_ids: &[i32], db: &DbConn) -> Result<HashMap<i32, (i32, i32)>, SrvErr> {
+    #[derive(FromQueryResult)]
+    struct SeriesCount {
+        series_id: i32,
+        count: i64,
+    }
+
+    if series_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let seasons = Seasons::find().filter(seasons::Column::SeriesId.is_in(series_ids.to_vec()))
+        .select_only()
+        .column(seasons::Column::SeriesId)
+        .column_as(Expr::col((seasons::Entity, seasons::Column::Id)).count(), "count")
+        .group_by(seasons::Column::SeriesId)
+        .into_model::<SeriesCount>().all(db).await?;
+    let episodes = Episodes::find().inner_join(seasons::Entity)
+        .filter(seasons::Column::SeriesId.is_in(series_ids.to_vec()))
+        .select_only()
+        .column(seasons::Column::SeriesId)
+        .column_as(Expr::col((episodes::Entity, episodes::Column::Id)).count(), "count")
+        .group_by(seasons::Column::SeriesId)
+        .into_model::<SeriesCount>().all(db).await?;
+
+    let mut counts: HashMap<i32, (i32, i32)> = series_ids.iter().map(|id| (*id, (0, 0))).collect();
+    for row in seasons {
+        if let Some(c) = counts.get_mut(&row.series_id) {
+            c.0 = row.count as i32;
+        }
+    }
+    for row in episodes {
+        if let Some(c) = counts.get_mut(&row.series_id) {
+            c.1 = row.count as i32;
+        }
+    }
+    Ok(counts)
+}
+
+/// The details of a series from its rows and its loaded parts, `counts` being
+/// `(number_of_seasons, number_of_episodes)`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn details_view(media: media::Model, series: series::Model, parts: MediaParts, counts: (i32, i32), locks: Vec<&'static str>, backdrop: Option<Image>, poster: Option<Image>) -> views::series::SeriesDetails {
+    views::series::SeriesDetails {
+        id: media.id,
         poster,
         backdrop,
-        stars: db_media.stars,
-        title,
-        alternative_titles,
-        first_air_date: db_series.first_air_date,
-        number_of_episodes,
-        number_of_seasons,
-        status: db_series.status,
-        r#type: db_series.r#type,
-        overview: db_media.overview,
-        tmdb_id: db_media.tmdb_id,
-        tmdb_vote_average: db_media.tmdb_vote_average,
-        on_watchlist,
-        original_language: language,
-        genres,
-        tags,
-        sources,
-        logs,
+        stars: media.stars,
+        title: parts.title,
+        alternative_titles: parts.alternative_titles,
+        first_air_date: series.first_air_date,
+        number_of_episodes: Some(counts.1),
+        number_of_seasons: Some(counts.0),
+        status: series.status,
+        r#type: series.r#type,
+        overview: media.overview,
+        tmdb_id: media.tmdb_id,
+        tmdb_vote_average: media.tmdb_vote_average,
+        on_watchlist: parts.on_watchlist,
+        original_language: parts.original_language,
+        genres: parts.genres,
+        tags: parts.tags,
+        sources: parts.sources,
+        logs: parts.logs,
         locks
-    };
-
-    Ok(Some(series))
+    }
 }
 
 pub async fn metadata(series_id: i32, user: &CurrentUser, db: &DbConn) -> Result<SeriesMetadata, SrvErr> {
@@ -1198,16 +1196,16 @@ mod tests {
                 fixtures::title_model(2, 1, "Star Wars: Andor", false),
             ]])
             .append_query_results([[fixtures::language_model("en", "English")]])
-            .append_query_results([[fixtures::genre_model(3, "Drama", MediaType::Series)]])
-            .append_query_results([[fixtures::tag_model(4, "space")]])
+            .append_query_results([[(fixtures::media_genre_model(1, 3), Some(fixtures::genre_model(3, "Drama", MediaType::Series)))]])
+            .append_query_results([[(fixtures::media_tag_model(1, 4), Some(fixtures::tag_model(4, "space")))]])
             .append_query_results([[fixtures::source_model(9, 1, "Disney+")]])
             .append_query_results([[log_row]])
-            .append_query_results([[fixtures::count_row(1)]])
+            .append_query_results([[fixtures::watchlist_model(1)]])
             .append_query_results([[entities::media_locks::Model { overview: true, ..fixtures::media_locks_model(1) }]])
             .append_query_results([[series_locks::Model { status: true, ..fixtures::series_locks_model(1) }]])
             .append_query_results([[(fixtures::image_model(2), Some(fixtures::image_size_model(1, 2, 300, 450)))]])
-            .append_query_results([[fixtures::count_row(2)]])
-            .append_query_results([[fixtures::count_row(24)]])
+            .append_query_results([[fixtures::series_count_row(1, 2)]])
+            .append_query_results([[fixtures::series_count_row(1, 24)]])
             .into_connection();
 
         let series = details(1, &fixtures::user(), &db).await.ok().expect("details should succeed")
@@ -1252,16 +1250,16 @@ mod tests {
             .append_query_results([[fixtures::series_media_model(1, 1)]])
             .append_query_results([[fixtures::series_model(1)]])
             .append_query_results([[fixtures::title_model(2, 1, "Only Alternative", false)]])
-            .append_query_results([Vec::<genres::Model>::new()])
-            .append_query_results([Vec::<entities::tags::Model>::new()])
+            .append_query_results([Vec::<(media_genres::Model, Option<genres::Model>)>::new()])
+            .append_query_results([Vec::<(entities::media_tags::Model, Option<entities::tags::Model>)>::new()])
             .append_query_results([Vec::<entities::sources::Model>::new()])
             .append_query_results([Vec::<entities::logs::Model>::new()])
-            .append_query_results([[fixtures::count_row(0)]])
+            .append_query_results([Vec::<entities::watchlist::Model>::new()])
             .append_query_results([Vec::<entities::media_locks::Model>::new()])
             .append_query_results([Vec::<series_locks::Model>::new()])
             .append_query_results([Vec::<(images::Model, Option<image_sizes::Model>)>::new()])
-            .append_query_results([[fixtures::count_row(0)]])
-            .append_query_results([[fixtures::count_row(0)]])
+            .append_query_results([fixtures::no_series_count_rows()])
+            .append_query_results([fixtures::no_series_count_rows()])
             .into_connection();
 
         let series = details(1, &fixtures::user(), &db).await.ok().expect("details should succeed")
@@ -1276,6 +1274,22 @@ mod tests {
         assert!(series.backdrop.is_none());
         assert_eq!(series.number_of_seasons, Some(0));
         assert_eq!(series.number_of_episodes, Some(0));
+    }
+
+    #[tokio::test]
+    async fn load_counts_returns_seasons_and_episodes_per_series() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[fixtures::series_count_row(1, 2)]])
+            .append_query_results([[fixtures::series_count_row(1, 24)]])
+            .into_connection();
+
+        let counts = load_counts(&[1, 2], &db).await.ok().expect("load_counts should succeed");
+
+        assert_eq!(counts.len(), 2);
+        assert_eq!(counts[&1], (2, 24));
+        assert_eq!(counts[&2], (0, 0), "a series without seasons");
+        assert_statement_count(&test_support::db::log(db), 2);
     }
 
     #[tokio::test]

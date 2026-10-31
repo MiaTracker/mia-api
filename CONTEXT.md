@@ -25,6 +25,9 @@ _Avoid_: System (reserved for the system prompt)
 **Tool result**:
 A **Message** with role `tool`, carrying the outcome of tool calls back to the model; never shown to the person as something they wrote.
 
+**Tool round**:
+One **LLM call** that requested tools, together with the **Tool result** message answering all its calls; an **Exchange** holds as many as the model needs before its final answer, up to a limit.
+
 **Partial message**:
 The assistant **Message** of an **LLM call** that failed after output began to arrive, holding whatever arrived; kept in the failed **Exchange** so the person can see it until a **Retry** clears it.
 

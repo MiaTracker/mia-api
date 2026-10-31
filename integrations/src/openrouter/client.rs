@@ -7,9 +7,10 @@ use futures_util::stream::BoxStream;
 use openrouter_rs::OpenRouterClient as RsClient;
 use openrouter_rs::api::messages::{
     AnthropicContentPart, AnthropicMessage, AnthropicMessageContent, AnthropicMessagesRequest,
-    AnthropicMessagesStreamEvent, AnthropicRole, AnthropicSystemPrompt, AnthropicThinking,
+    AnthropicMessagesStreamEvent, AnthropicRole, AnthropicSystemPrompt, AnthropicThinking, AnthropicTool,
 };
 use openrouter_rs::error::OpenRouterError;
+use serde_json::Value;
 
 /// The events of one streamed assistant message. An `Err` item ends the stream.
 pub type LlmEventStream = BoxStream<'static, Result<LlmEvent, LlmError>>;
@@ -58,6 +59,12 @@ impl OpenRouterClient {
             });
         if !request.system.is_empty() {
             builder.system(AnthropicSystemPrompt::Text(request.system));
+        }
+        for tool in request.tools {
+            let mut tool = AnthropicTool::custom(tool.name, tool.description, tool.input_schema);
+            // A client-side tool is sent in the plain Anthropic shape, without the `custom` type tag.
+            tool.tool_type = None;
+            builder.tool(tool);
         }
         builder.build().map_err(translate_error)
     }
@@ -147,6 +154,10 @@ fn translate_event(event: AnthropicMessagesStreamEvent) -> Vec<Result<LlmEvent, 
                 Some("text_delta") => LlmEvent::TextDelta { index, text: field("text") },
                 Some("thinking_delta") => LlmEvent::ThinkingDelta { index, thinking: field("thinking") },
                 Some("signature_delta") => LlmEvent::SignatureDelta { index, signature: field("signature") },
+                Some("input_json_delta") => match field("partial_json") {
+                    partial_json if partial_json.is_empty() => return Vec::new(),
+                    partial_json => LlmEvent::InputJsonDelta { index, partial_json },
+                },
                 _ => return Vec::new(),
             }
         }
@@ -180,6 +191,17 @@ fn translate_block_start(index: u32, block: AnthropicContentPart) -> Vec<Result<
                 LlmEvent::SignatureDelta { index, signature },
             ],
         ),
+        AnthropicContentPart::ToolUse { id, name, input, .. } => {
+            // A streamed call starts with an empty input; its JSON follows as deltas.
+            let initial = match input {
+                Some(Value::Object(object)) if !object.is_empty() => {
+                    vec![LlmEvent::InputJsonDelta { index, partial_json: Value::Object(object).to_string() }]
+                }
+                _ => Vec::new(),
+            };
+            (BlockKind::ToolUse { id, name }, initial)
+        }
+        AnthropicContentPart::RedactedThinking { data } => (BlockKind::RedactedThinking { data }, Vec::new()),
         other => {
             let value = serde_json::to_value(&other).unwrap_or_default();
             (BlockKind::Other(value["type"].as_str().unwrap_or_default().to_owned()), Vec::new())
@@ -208,8 +230,9 @@ fn stop_reason(value: &str) -> StopReason {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::openrouter::types::LlmTool;
     use openrouter_rs::error::ApiErrorContext;
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     fn event(value: Value) -> AnthropicMessagesStreamEvent {
         serde_json::from_value(value).unwrap()
@@ -316,13 +339,80 @@ mod tests {
     }
 
     #[test]
-    fn translate_event_returns_other_block_start_when_block_type_unhandled() {
+    fn translate_event_returns_redacted_thinking_block_start_when_redacted_thinking_starts() {
         let result = translate_event(event(block_start(json!({"type": "redacted_thinking", "data": "x"}))));
 
         assert_eq!(
             result,
-            vec![Ok(LlmEvent::BlockStart { index: 1, kind: BlockKind::Other("redacted_thinking".into()) })]
+            vec![Ok(LlmEvent::BlockStart { index: 1, kind: BlockKind::RedactedThinking { data: "x".into() } })]
         );
+    }
+
+    #[test]
+    fn translate_event_returns_other_block_start_when_block_type_unhandled() {
+        let result = translate_event(event(block_start(
+            json!({"type": "server_tool_use", "id": "s_1", "name": "web_search", "input": {}}),
+        )));
+
+        assert_eq!(
+            result,
+            vec![Ok(LlmEvent::BlockStart { index: 1, kind: BlockKind::Other("server_tool_use".into()) })]
+        );
+    }
+
+    #[test]
+    fn translate_event_returns_tool_use_block_start_when_tool_use_block_starts() {
+        let result = translate_event(event(block_start(
+            json!({"type": "tool_use", "id": "tu_1", "name": "date_time", "input": {}}),
+        )));
+
+        assert_eq!(
+            result,
+            vec![Ok(LlmEvent::BlockStart {
+                index: 1,
+                kind: BlockKind::ToolUse { id: "tu_1".into(), name: "date_time".into() }
+            })]
+        );
+    }
+
+    #[test]
+    fn translate_event_returns_input_json_delta_when_tool_use_block_starts_with_input() {
+        let result = translate_event(event(block_start(
+            json!({"type": "tool_use", "id": "tu_1", "name": "tmdb_search", "input": {"query": "x"}}),
+        )));
+
+        assert_eq!(
+            result,
+            vec![
+                Ok(LlmEvent::BlockStart {
+                    index: 1,
+                    kind: BlockKind::ToolUse { id: "tu_1".into(), name: "tmdb_search".into() }
+                }),
+                Ok(LlmEvent::InputJsonDelta { index: 1, partial_json: r#"{"query":"x"}"#.into() }),
+            ]
+        );
+    }
+
+    #[test]
+    fn translate_event_skips_input_json_delta_when_partial_json_is_empty() {
+        let result = translate_event(event(json!({
+            "type": "content_block_delta",
+            "index": 2,
+            "delta": {"type": "input_json_delta", "partial_json": ""}
+        })));
+
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn translate_event_returns_input_json_delta_when_delta_is_input_json() {
+        let result = translate_event(event(json!({
+            "type": "content_block_delta",
+            "index": 2,
+            "delta": {"type": "input_json_delta", "partial_json": "{\"q"}
+        })));
+
+        assert_eq!(result, vec![Ok(LlmEvent::InputJsonDelta { index: 2, partial_json: "{\"q".into() })]);
     }
 
     /// Known gap: openrouter-rs's typed `Thinking` block requires `signature`, so it fails to parse
@@ -362,26 +452,54 @@ mod tests {
     }
 
     #[test]
+    fn translate_message_accepts_tool_use_and_tool_result_blocks() {
+        let tool_use = json!([{"type": "tool_use", "id": "tu_1", "name": "date_time", "input": {}}]);
+        let tool_result =
+            json!([{"type": "tool_result", "tool_use_id": "tu_1", "content": "{\"now\":\"2026-10-31\"}", "is_error": true}]);
+
+        let assistant = translate_message(LlmMessage { role: LlmRole::Assistant, content: tool_use.clone() });
+        let user_message = translate_message(user(tool_result.clone()));
+
+        assert_eq!(serde_json::to_value(&assistant.expect("translated").content).unwrap(), tool_use);
+        assert_eq!(serde_json::to_value(&user_message.expect("translated").content).unwrap(), tool_result);
+    }
+
+    #[test]
     fn translate_message_fails_as_unparseable_when_content_is_not_content_blocks() {
         let error = translate_message(user(json!([{"type": "text"}]))).expect_err("translated");
 
         assert_eq!(error.error_type.as_deref(), Some(UNPARSEABLE_RESPONSE));
     }
 
-    fn request_json(thinking_budget: Option<u32>) -> Value {
+    fn request_json(thinking_budget: Option<u32>, tools: Vec<LlmTool>) -> Value {
         let client = OpenRouterClient::new("key".into(), "test/model".into(), 4096, thinking_budget);
-        let request = client.build_request(LlmRequest { system: String::new(), messages: vec![user(json!([{"type": "text", "text": "Hi"}]))] });
+        let request = client.build_request(LlmRequest {
+            system: String::new(),
+            messages: vec![user(json!([{"type": "text", "text": "Hi"}]))],
+            tools,
+        });
         serde_json::to_value(request.expect("built")).unwrap()
     }
 
     #[test]
     fn build_request_disables_thinking_when_no_budget() {
-        assert_eq!(request_json(None)["thinking"], json!({"type": "disabled"}));
+        assert_eq!(request_json(None, Vec::new())["thinking"], json!({"type": "disabled"}));
     }
 
     #[test]
     fn build_request_enables_thinking_with_budget_when_budget_set() {
-        assert_eq!(request_json(Some(2048))["thinking"], json!({"type": "enabled", "budget_tokens": 2048}));
+        assert_eq!(request_json(Some(2048), Vec::new())["thinking"], json!({"type": "enabled", "budget_tokens": 2048}));
+    }
+
+    #[test]
+    fn build_request_sends_tools_without_type_when_tools_given() {
+        let tool = LlmTool { name: "date_time".into(), description: "d".into(), input_schema: json!({"type": "object"}) };
+
+        let with_tools = request_json(None, vec![tool]);
+        let without_tools = request_json(None, Vec::new());
+
+        assert_eq!(with_tools["tools"], json!([{"name": "date_time", "description": "d", "input_schema": {"type": "object"}}]));
+        assert!(without_tools.get("tools").is_none());
     }
 
     #[test]

@@ -106,6 +106,42 @@ pub fn with_started_exchange_run(db: MockDatabase, exchange_id: i32) -> MockData
         .append_query_results([[fixtures::llm_call_model(11, exchange_id)]])
 }
 
+/// Queues what `chat::exchange::run_exchange` reads and writes for its first tool round, when the
+/// call's stream is buffered (one Message write) and the round runs only tools that touch no
+/// database (`date_time`): the assistant Message insert (id `assistant_message_id`), the update
+/// closing the LLM call, the Conversation's user (`user_model(1)`, loaded on the first round only),
+/// the tool Message insert (id `tool_message_id`) and the next LLM call insert (id `next_llm_call_id`).
+/// Queue it after `with_started_exchange_run`; queue later rounds with `with_next_tool_round`.
+pub fn with_tool_round(db: MockDatabase, assistant_message_id: i32, tool_message_id: i32, next_llm_call_id: i32, exchange_id: i32) -> MockDatabase {
+    let db = db
+        .append_query_results([[fixtures::message_model(assistant_message_id, exchange_id, MessageRole::Assistant, json!([]))]])
+        .append_exec_results([updated(1)])
+        .append_query_results([[fixtures::user_model(1)]]);
+    with_tool_results(db, tool_message_id, next_llm_call_id, exchange_id)
+}
+
+/// Like `with_tool_round`, for every round after the first: the same queue without the user.
+pub fn with_next_tool_round(db: MockDatabase, assistant_message_id: i32, tool_message_id: i32, next_llm_call_id: i32, exchange_id: i32) -> MockDatabase {
+    let db = db
+        .append_query_results([[fixtures::message_model(assistant_message_id, exchange_id, MessageRole::Assistant, json!([]))]])
+        .append_exec_results([updated(1)]);
+    with_tool_results(db, tool_message_id, next_llm_call_id, exchange_id)
+}
+
+/// The tool Message insert and the next LLM call insert of a tool round.
+fn with_tool_results(db: MockDatabase, tool_message_id: i32, next_llm_call_id: i32, exchange_id: i32) -> MockDatabase {
+    db.append_query_results([[fixtures::message_model(tool_message_id, exchange_id, MessageRole::Tool, json!([]))]])
+        .append_query_results([[fixtures::llm_call_model(next_llm_call_id, exchange_id)]])
+}
+
+/// Queues what `chat::exchange::run_exchange` writes after the final call of Exchange
+/// `exchange_id` streams its answer: the assistant Message insert (id `message_id`, its stream
+/// buffered into one write) and the updates of the Exchange and the LLM call that end it.
+pub fn with_final_answer(db: MockDatabase, exchange_id: i32, message_id: i32) -> MockDatabase {
+    db.append_query_results([[fixtures::message_model(message_id, exchange_id, MessageRole::Assistant, json!([]))]])
+        .append_exec_results([updated(1), updated(1)])
+}
+
 fn describe(log: &[Statement]) -> String {
     if log.is_empty() {
         return "  (none)".to_string();

@@ -1,12 +1,14 @@
-//! Running an Exchange: one streamed LLM call whose answer is written to the database chunk by
-//! chunk and forwarded to subscribers only after each write commits.
+//! Running an Exchange: streamed LLM calls whose answers are written to the database chunk by
+//! chunk and forwarded to subscribers only after each write commits. A call that asks for tools is
+//! followed by a tool round and another call, until the model answers.
 
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
 use entities::sea_orm_active_enums::{ExchangeStatus, LlmCallPurpose, MessageRole};
-use entities::{conversations, exchanges, llm_calls, messages};
+use entities::{conversations, exchanges, llm_calls, messages, users};
 use futures::{FutureExt, StreamExt};
+use infrastructure::config;
 use integrations::openrouter::{Llm, LlmError, LlmEventStream, StopReason};
 use log::{error, warn};
 use sea_orm::sea_query::Query;
@@ -15,27 +17,37 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrai
 use serde_json::{json, Value};
 use tokio::time::timeout;
 use views::conversations::ExchangeEvent;
+use views::users::CurrentUser;
 
 use crate::chat::accumulator::Accumulator;
 use crate::chat::display::display_blocks;
 use crate::chat::failure::{classify, debug_message, exchange_error, llm_call_error, ExchangeFailure};
 use crate::chat::history::build_request;
 use crate::chat::registry::ExchangeRegistry;
-use crate::infrastructure::{Clock, SrvErr};
+use crate::chat::tools::{failed, result_block, run_tool};
+use crate::infrastructure::{Clock, SrvErr, Tmdb};
 
 /// How long the model stream may stay silent before the call counts as failed.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Streams the model's answer for Exchange `exchange_id`, stores it and ends the Exchange, then
-/// publishes the terminal event and closes the Exchange's registry entry.
+/// How long one tool call may run before it counts as failed. The TMDB client sets no request
+/// timeout and honours any `Retry-After`, so a stalled tool would otherwise hang the Exchange.
+pub const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The result given for each tool call refused at the tool round limit.
+const ROUND_LIMIT_RESULT: &str = "tool limit reached; answer with what you have";
+
+/// Streams the model's answer for Exchange `exchange_id`, running the tools it asks for in between
+/// calls, stores it and ends the Exchange, then publishes the terminal event and closes the
+/// Exchange's registry entry.
 ///
 /// Every failure, ours included, ends the Exchange as failed and returns `Ok`. When the Exchange
 /// row disappears (its Conversation was deleted) the run stops quietly and publishes nothing.
 /// Returns `Err` only when even recording the failure fails.
-pub async fn run_exchange(exchange_id: i32, db: &DbConn, llm: &dyn Llm, registry: &ExchangeRegistry, clock: &dyn Clock) -> Result<(), SrvErr> {
+pub async fn run_exchange(exchange_id: i32, db: &DbConn, llm: &dyn Llm, registry: &ExchangeRegistry, tmdb: &dyn Tmdb, clock: &dyn Clock) -> Result<(), SrvErr> {
     let _close = CloseOnDrop { registry, exchange_id };
     let mut run = Run::new(exchange_id);
-    let end = match run.call(db, llm, registry, clock).await {
+    let end = match run.exchange(db, llm, registry, tmdb, clock).await {
         Ok(end) => end,
         Err(err) => {
             error!("Exchange {exchange_id} failed on our side, marking it failed: {err}");
@@ -135,37 +147,93 @@ impl End {
     }
 }
 
+/// What follows an LLM call.
+enum Next {
+    End(End),
+    /// The model asked for tools: run a tool round, then call it again.
+    ToolRound,
+}
+
 /// Why reading the model stream stopped.
 enum Stop {
     Ended,
     Failed(LlmError),
 }
 
-/// The state of one run.
+/// The Conversation's Exchanges ordered by id, each with its Messages ordered by id.
+type History = Vec<(exchanges::Model, Vec<messages::Model>)>;
+
+/// The state of one run. The call fields describe the latest LLM call.
 struct Run {
     exchange_id: i32,
     llm_call_id: Option<i32>,
-    message_id: Option<i32>,
+    /// The call's assistant Message, once created.
+    message: Option<messages::Model>,
     accumulator: Accumulator,
-    /// The content last written to the assistant Message.
+    /// The content last written to the call's assistant Message.
     written: Value,
+    /// How many tool rounds ran their tools.
+    rounds: u32,
+    /// Whether the last tool round's calls were refused at the round limit.
+    refused: bool,
+    /// The Conversation's user, loaded on the first tool round.
+    user: Option<CurrentUser>,
 }
 
 impl Run {
     fn new(exchange_id: i32) -> Self {
-        Self { exchange_id, llm_call_id: None, message_id: None, accumulator: Accumulator::new(0), written: Value::Array(Vec::new()) }
+        Self {
+            exchange_id,
+            llm_call_id: None,
+            message: None,
+            accumulator: Accumulator::new(0),
+            written: Value::Array(Vec::new()),
+            rounds: 0,
+            refused: false,
+            user: None,
+        }
     }
 
-    /// Makes the LLM call and stores its answer as it streams in. Returns how the Exchange ends.
-    async fn call(&mut self, db: &DbConn, llm: &dyn Llm, registry: &ExchangeRegistry, clock: &dyn Clock) -> Result<End, SrvErr> {
+    /// Calls the model until it answers, with a tool round after every call that asks for tools.
+    /// The history is loaded once; the Messages this run stores are added to it as they are written.
+    /// Returns how the Exchange ends.
+    async fn exchange(&mut self, db: &DbConn, llm: &dyn Llm, registry: &ExchangeRegistry, tmdb: &dyn Tmdb, clock: &dyn Clock) -> Result<End, SrvErr> {
         let Some(exchange) = exchanges::Entity::find_by_id(self.exchange_id).one(db).await? else {
             return Ok(End::Deleted);
         };
         let conversation = conversations::Entity::find_by_id(exchange.conversation_id).one(db).await?.ok_or(SrvErr::NotFound)?;
-        let history = load_history(conversation.id, db).await?;
-        let current = history.iter().find(|(exchange, _)| exchange.id == self.exchange_id).map(|(_, messages)| messages.as_slice());
-        self.accumulator = Accumulator::new(display_blocks(current.unwrap_or_default()).len() as u32);
-        let request = build_request(self.exchange_id, &history);
+        let mut history = load_history(conversation.id, db).await?;
+        let Some(current) = history.iter().position(|(exchange, _)| exchange.id == self.exchange_id) else {
+            return Ok(End::Deleted);
+        };
+        loop {
+            if let Next::End(end) = self.call(&conversation, &history, current, db, llm, registry, clock).await? {
+                return Ok(end);
+            }
+            if let Some(end) = self.tool_round(conversation.user_id, &mut history[current].1, db, registry, tmdb, clock).await? {
+                return Ok(end);
+            }
+        }
+    }
+
+    /// Makes one LLM call over `history`, whose entry `current` is this Exchange, and stores its
+    /// answer as it streams in. Returns what follows.
+    #[allow(clippy::too_many_arguments)]
+    async fn call(
+        &mut self,
+        conversation: &conversations::Model,
+        history: &History,
+        current: usize,
+        db: &DbConn,
+        llm: &dyn Llm,
+        registry: &ExchangeRegistry,
+        clock: &dyn Clock,
+    ) -> Result<Next, SrvErr> {
+        self.llm_call_id = None;
+        self.message = None;
+        self.written = Value::Array(Vec::new());
+        self.accumulator = Accumulator::new(display_blocks(&history[current].1).len() as u32);
+        let request = build_request(self.exchange_id, history);
 
         let call = llm_calls::ActiveModel {
             user_id: Set(Some(conversation.user_id)),
@@ -182,13 +250,13 @@ impl Run {
 
         // openrouter-rs sets no request timeout, so a provider that never answers would hang the run.
         let stream = match timeout(IDLE_TIMEOUT, llm.stream_message(request)).await {
-            Err(_) => return Ok(End::provider(&idle_error())),
-            Ok(Err(error)) => return Ok(End::provider(&error)),
+            Err(_) => return Ok(Next::End(End::provider(&idle_error()))),
+            Ok(Err(error)) => return Ok(Next::End(End::provider(&error))),
             Ok(Ok(stream)) => stream,
         };
         Ok(match self.read(stream, db, registry, clock).await? {
-            None => End::Deleted,
-            Some(Stop::Failed(error)) => End::provider(&error),
+            None => Next::End(End::Deleted),
+            Some(Stop::Failed(error)) => Next::End(End::provider(&error)),
             Some(Stop::Ended) => self.outcome(),
         })
     }
@@ -232,7 +300,7 @@ impl Run {
         if !self.accumulator.has_content() || content == self.written {
             return Ok(true);
         }
-        let written = match self.message_id {
+        let written = match &self.message {
             None => messages::ActiveModel {
                 exchange_id: Set(self.exchange_id),
                 role: Set(MessageRole::Assistant),
@@ -244,12 +312,12 @@ impl Run {
             .insert(db)
             .await
             .map(|message| {
-                self.message_id = Some(message.id);
+                self.message = Some(message);
                 true
             }),
-            Some(id) => messages::Entity::update_many()
+            Some(message) => messages::Entity::update_many()
                 .set(messages::ActiveModel { content: Set(content.clone()), ..Default::default() })
-                .filter(messages::Column::Id.eq(id))
+                .filter(messages::Column::Id.eq(message.id))
                 .exec(db)
                 .await
                 .map(|result| result.rows_affected > 0),
@@ -267,17 +335,29 @@ impl Run {
         }
     }
 
-    /// How a call whose stream ended without error ends the Exchange, by its stop reason. A stream
-    /// that ended before the model finished (no stop reason and no `MessageStop`) was cut off.
-    fn outcome(&self) -> End {
+    /// What follows a call whose stream ended without error: decided by its content first and its
+    /// stop reason second, since providers disagree on the stop reason when tools are involved. A
+    /// stream that ended before the model finished (no stop reason and no `MessageStop`) was cut
+    /// off. Any tool_use block makes a tool round; without one, `ToolUse` is judged like `EndTurn`.
+    fn outcome(&self) -> Next {
         if !self.accumulator.finished() {
-            return End::provider(&unfinished_error());
+            return Next::End(End::provider(&unfinished_error()));
         }
-        match self.accumulator.stop_reason() {
-            Some(StopReason::Refusal) => End::failed(ExchangeFailure::Refused, "the model refused to answer"),
-            Some(StopReason::ToolUse) => End::failed(ExchangeFailure::Internal, "the model asked to use a tool, but none are offered"),
+        let stop_reason = self.accumulator.stop_reason();
+        if stop_reason == Some(&StopReason::Refusal) {
+            return Next::End(End::failed(ExchangeFailure::Refused, "the model refused to answer"));
+        }
+        if self.accumulator.tool_use_cut() {
+            return Next::End(End::failed(ExchangeFailure::OutputTruncated, "the token limit cut through a tool call"));
+        }
+        if !self.accumulator.tool_uses().is_empty() {
+            if stop_reason != Some(&StopReason::ToolUse) {
+                warn!("Exchange {} asked for tools with stop reason {stop_reason:?}; running them", self.exchange_id);
+            }
+            return Next::ToolRound;
+        }
+        Next::End(match stop_reason {
             _ if !self.accumulator.has_text() => End::failed(ExchangeFailure::EmptyResponse, "the model ended its answer without text"),
-            Some(StopReason::EndTurn | StopReason::StopSequence | StopReason::MaxTokens) => End::Completed,
             Some(StopReason::Other(reason)) => {
                 warn!("Exchange {} ended with unknown stop reason {reason:?}; completing it", self.exchange_id);
                 End::Completed
@@ -286,7 +366,84 @@ impl Run {
                 warn!("Exchange {} ended with message_stop but without a stop reason; completing it", self.exchange_id);
                 End::Completed
             }
+            Some(_) => End::Completed,
+        })
+    }
+
+    /// Answers the latest call's tool_use blocks, in order, with one tool Message, then publishes a
+    /// tool block per call. The call is closed first and is then no longer the run's open call: a
+    /// round that fails or finds the Exchange deleted leaves it as it was, since that request
+    /// succeeded. A tool that runs longer than `TOOL_TIMEOUT` gets an error result. At the round
+    /// limit the calls get an error result instead of running; asking for tools again after that
+    /// ends the Exchange `ToolRoundLimit`. `messages` are this Exchange's: the call's assistant
+    /// Message and the tool Message are added to them. Returns how the Exchange ends, if it does.
+    async fn tool_round(
+        &mut self,
+        user_id: i32,
+        messages: &mut Vec<messages::Model>,
+        db: &DbConn,
+        registry: &ExchangeRegistry,
+        tmdb: &dyn Tmdb,
+        clock: &dyn Clock,
+    ) -> Result<Option<End>, SrvErr> {
+        if self.refused {
+            return Ok(Some(End::failed(ExchangeFailure::ToolRoundLimit, "the model asked for tools again after reaching the tool round limit")));
         }
+        let message = self.message.clone().ok_or_else(|| SrvErr::Internal(format!("tool round of Exchange {} has no assistant message", self.exchange_id)))?;
+        self.close_call(None, clock.now().fixed_offset(), db).await?;
+        self.llm_call_id = None;
+        messages.push(messages::Model { content: self.written.clone(), ..message });
+        let user = match self.user.take() {
+            Some(user) => user,
+            None => CurrentUser::from(users::Entity::find_by_id(user_id).one(db).await?.ok_or(SrvErr::NotFound)?),
+        };
+
+        let refuse = self.rounds == config().assistant.max_tool_rounds;
+        let tool_uses = self.accumulator.tool_uses();
+        let mut outcomes = Vec::with_capacity(tool_uses.len());
+        for tool_use in &tool_uses {
+            outcomes.push(match &tool_use.input {
+                input if refuse => failed(&tool_use.name, input.as_ref().unwrap_or(&Value::Null), ROUND_LIMIT_RESULT),
+                None => failed(&tool_use.name, &Value::Null, "input is not a JSON object"),
+                Some(input) => match timeout(TOOL_TIMEOUT, run_tool(&tool_use.name, input, &user, db, tmdb, clock)).await {
+                    Ok(outcome) => outcome?,
+                    Err(_) => failed(&tool_use.name, input, &format!("tool timed out after {} s", TOOL_TIMEOUT.as_secs())),
+                },
+            });
+        }
+        self.user = Some(user);
+        if refuse {
+            self.refused = true;
+        } else {
+            self.rounds += 1;
+        }
+
+        let content = Value::Array(tool_uses.iter().zip(&outcomes).map(|(tool_use, outcome)| result_block(&tool_use.id, outcome)).collect());
+        let first_block = display_blocks(messages).len() as u32;
+        let inserted = messages::ActiveModel {
+            exchange_id: Set(self.exchange_id),
+            role: Set(MessageRole::Tool),
+            content: Set(content.clone()),
+            llm_call_id: Set(None),
+            created_at: Set(clock.now().fixed_offset()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await;
+        let inserted = match inserted {
+            Ok(inserted) => inserted,
+            Err(err) => {
+                if !exchange_exists(self.exchange_id, db).await? {
+                    return Ok(Some(End::Deleted));
+                }
+                return Err(err.into());
+            }
+        };
+        messages.push(messages::Model { content, ..inserted });
+        for (offset, outcome) in outcomes.into_iter().enumerate() {
+            registry.publish(self.exchange_id, ExchangeEvent::ToolCall { block: first_block + offset as u32, call: outcome.display });
+        }
+        Ok(None)
     }
 
     /// Records `end`: the LLM call and the Exchange in one transaction. Returns what to publish,
@@ -343,7 +500,7 @@ impl Run {
 }
 
 /// The Conversation's Exchanges ordered by id, each with its Messages ordered by id.
-async fn load_history(conversation_id: i32, db: &DbConn) -> Result<Vec<(exchanges::Model, Vec<messages::Model>)>, SrvErr> {
+async fn load_history(conversation_id: i32, db: &DbConn) -> Result<History, SrvErr> {
     let exchanges = exchanges::Entity::find()
         .filter(exchanges::Column::ConversationId.eq(conversation_id))
         .order_by_asc(exchanges::Column::Id)
@@ -368,11 +525,14 @@ async fn exchange_exists(exchange_id: i32, db: &DbConn) -> Result<bool, SrvErr> 
 }
 
 /// Joins the deltas of each block, in the order the blocks first appear. A block has one kind,
-/// so its number identifies it.
+/// so its number identifies it. Other events (`ToolCall`) pass through untouched.
 fn merge(deltas: Vec<ExchangeEvent>) -> Vec<ExchangeEvent> {
     let mut merged: Vec<ExchangeEvent> = Vec::new();
     for delta in deltas {
-        let Some((block, text)) = delta_parts(&delta) else { continue };
+        let Some((block, text)) = delta_parts(&delta) else {
+            merged.push(delta);
+            continue;
+        };
         match merged.iter_mut().find(|merged| delta_parts(merged).is_some_and(|(merged_block, _)| merged_block == block)) {
             Some(ExchangeEvent::TextDelta { text: joined, .. } | ExchangeEvent::ThinkingDelta { text: joined, .. }) => joined.push_str(text),
             _ => merged.push(delta),
@@ -418,27 +578,35 @@ fn error_json(failure: ExchangeFailure, debug_message: String) -> Result<Value, 
 #[cfg(test)]
 mod tests {
     use entities::sea_orm_active_enums::{ExchangeStatus, MessageRole};
-    use integrations::openrouter::{LlmEvent, LlmUsage, StopReason};
-    use sea_orm::{DatabaseConnection, Statement, Value};
+    use integrations::openrouter::{LlmEvent, LlmRole, LlmUsage, StopReason};
+    use sea_orm::{DatabaseConnection, DbErr, Statement, Value};
     use serde_json::json;
-    use views::conversations::ExchangeEvent;
+    use views::conversations::{ExchangeEvent, ToolCallView};
     use super::*;
-    use crate::test_support::{self, fixed_clock, MockLlm};
-    use crate::test_support::db::{assert_no_statement_starting_with, assert_wrote, updated, with_started_exchange_run};
-    use crate::test_support::fixtures::message_model;
+    use crate::test_support::{self, fixed_clock, MockLlm, MockTmdb};
+    use crate::test_support::tmdb::UnansweringTmdb;
+    use crate::test_support::db::{
+        assert_no_statement_starting_with, assert_wrote, updated, with_final_answer, with_next_tool_round, with_started_exchange_run, with_tool_round,
+    };
+    use crate::test_support::fixtures::{conversation_model, exchange_model, llm_call_model, message_model, user_model};
     use crate::test_support::llm::{
-        http_error, panicking_stream, stalled_stream, stream_error, text_answer, thinking_answer, thinking_then_text_answer, trickled_stream, with_answer, with_error, with_stream,
-        UnansweringLlm,
+        date_time_call, date_time_result, http_error, panicking_stream, stalled_stream, stream_error, text_answer, text_then_tool_use_answer, thinking_answer, thinking_then_text_answer,
+        thinking_then_tool_use_answer, tool_use_answer, trickled_stream, with_answer, with_answers, with_error, with_recorded_answers, with_stream, UnansweringLlm,
     };
 
     /// Runs Exchange 7 with a subscriber attached from the start; returns whether the run
     /// returned `Ok`, the events the subscriber received, and the statements executed.
     async fn run(db: DatabaseConnection, llm: MockLlm) -> (bool, Vec<ExchangeEvent>, Vec<Statement>) {
+        run_with_tmdb(db, llm, &MockTmdb::new()).await
+    }
+
+    /// Like `run`, with `tmdb` for the tools.
+    async fn run_with_tmdb(db: DatabaseConnection, llm: MockLlm, tmdb: &dyn Tmdb) -> (bool, Vec<ExchangeEvent>, Vec<Statement>) {
         let registry = ExchangeRegistry::new();
         registry.open(7);
         let mut live = registry.subscribe(7).expect("open").live.expect("live");
 
-        let result = run_exchange(7, &db, &llm, &registry, &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
+        let result = run_exchange(7, &db, &llm, &registry, tmdb, &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
 
         let mut events = Vec::new();
         while let Some(event) = live.recv().await {
@@ -460,6 +628,19 @@ mod tests {
         with_started_exchange_run(test_support::db::mock(), 7)
             .append_exec_results([updated(1), updated(1)])
             .into_connection()
+    }
+
+    #[test]
+    fn merge_passes_tool_call_through_when_deltas_are_joined() {
+        test_support::init();
+        let call = ExchangeEvent::ToolCall {
+            block: 1,
+            call: ToolCallView { name: "date_time".into(), query: None, media_type: None, count: None, titles: None, failed: false },
+        };
+
+        let merged = merge(vec![delta(0, "Hel"), call.clone(), delta(0, "lo")]);
+
+        assert_eq!(merged, vec![delta(0, "Hello"), call]);
     }
 
     fn delta(block: u32, text: &str) -> ExchangeEvent {
@@ -565,7 +746,7 @@ mod tests {
         registry.open(7);
         let mut live = registry.subscribe(7).expect("open").live.expect("live");
 
-        let result = std::panic::AssertUnwindSafe(run_exchange(7, &db, &llm, &registry, &fixed_clock(2024, 1, 1, 12, 0, 0)))
+        let result = std::panic::AssertUnwindSafe(run_exchange(7, &db, &llm, &registry, &MockTmdb::new(), &fixed_clock(2024, 1, 1, 12, 0, 0)))
             .catch_unwind()
             .await;
 
@@ -584,7 +765,7 @@ mod tests {
         registry.open(7);
         drop(registry.subscribe(7));
 
-        let result = run_exchange(7, &db, &llm, &registry, &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
+        let result = run_exchange(7, &db, &llm, &registry, &MockTmdb::new(), &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
 
         assert!(result.is_ok());
         let log = test_support::db::log(db);
@@ -702,12 +883,381 @@ mod tests {
         registry.open(7);
         let mut live = registry.subscribe(7).expect("open").live.expect("live");
 
-        let result = run_exchange(7, &db, &UnansweringLlm, &registry, &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
+        let result = run_exchange(7, &db, &UnansweringLlm, &registry, &MockTmdb::new(), &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
 
         assert!(result.is_ok());
         assert_eq!(live.recv().await, Some(failed("ProviderUnavailable", "no event for 60 s")));
         let log = test_support::db::log(db);
         assert_wrote(&log, r#"UPDATE "llm_calls""#, &[Value::from(json!({"status": null, "message": "no event for 60 s", "response": null}))]);
+    }
+
+    fn tool_call(block: u32, name: &str, failed: bool) -> ExchangeEvent {
+        ExchangeEvent::ToolCall { block, call: ToolCallView { name: name.into(), query: None, media_type: None, count: None, titles: None, failed } }
+    }
+
+    fn role(role: MessageRole) -> Value {
+        Value::from(sea_orm::ActiveEnum::to_value(&role))
+    }
+
+    #[tokio::test]
+    async fn run_exchange_runs_tool_round_then_completes_when_model_answers_after_tool() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let llm = with_answers(vec![
+            tool_use_answer(&[date_time_call("tu_1")], StopReason::ToolUse),
+            text_answer(&["It is noon"], StopReason::EndTurn),
+        ]);
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![tool_call(0, "date_time", false), delta(1, "It is noon"), ExchangeEvent::Completed { exchange_id: 7 }]);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[role(MessageRole::Tool), Value::Int(None), Value::from(json!([date_time_result("tu_1")]))]);
+        assert_wrote(&log, r#"UPDATE "llm_calls""#, &[Value::from("tool_use"), Value::Json(None)]);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Completed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_answers_all_calls_in_one_tool_message_when_round_has_two_calls() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let llm = with_answers(vec![
+            tool_use_answer(&[date_time_call("tu_1"), date_time_call("tu_2")], StopReason::ToolUse),
+            text_answer(&["Done"], StopReason::EndTurn),
+        ]);
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![
+            tool_call(0, "date_time", false),
+            tool_call(1, "date_time", false),
+            delta(2, "Done"),
+            ExchangeEvent::Completed { exchange_id: 7 },
+        ]);
+        assert_eq!(statements_starting_with(&log, r#"INSERT INTO "messages""#), 3);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[role(MessageRole::Tool), Value::from(json!([date_time_result("tu_1"), date_time_result("tu_2")]))]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_numbers_tool_blocks_after_text_when_message_has_text_and_tool_use() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let llm = with_answers(vec![
+            text_then_tool_use_answer(&["Let me check"], &[date_time_call("tu_1")], StopReason::ToolUse),
+            text_answer(&["It is noon"], StopReason::EndTurn),
+        ]);
+
+        let (ok, events, _) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![
+            delta(0, "Let me check"),
+            tool_call(1, "date_time", false),
+            delta(2, "It is noon"),
+            ExchangeEvent::Completed { exchange_id: 7 },
+        ]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_runs_tools_when_tool_use_arrives_with_end_turn() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let llm = with_answers(vec![
+            tool_use_answer(&[date_time_call("tu_1")], StopReason::EndTurn),
+            text_answer(&["It is noon"], StopReason::EndTurn),
+        ]);
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![tool_call(0, "date_time", false), delta(1, "It is noon"), ExchangeEvent::Completed { exchange_id: 7 }]);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(json!([date_time_result("tu_1")]))]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_completes_when_stop_reason_is_tool_use_without_tool_use_blocks() {
+        test_support::init();
+
+        let (ok, events, log) = run(answering_db(), with_answer(text_answer(&["Hi"], StopReason::ToolUse))).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![delta(0, "Hi"), ExchangeEvent::Completed { exchange_id: 7 }]);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Completed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_fails_with_output_truncated_when_max_tokens_cuts_tool_use() {
+        test_support::init();
+        let events = tool_use_answer(&[("tu_1", "mia_search", json!({"query": "type = movie"}))], StopReason::MaxTokens)
+            .into_iter()
+            .filter(|event| !matches!(event, Ok(LlmEvent::BlockStop { .. })))
+            .collect();
+
+        let (ok, events, log) = run(answering_db(), with_answer(events)).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![failed("OutputTruncated", "the token limit cut through a tool call")]);
+        assert_eq!(statements_starting_with(&log, r#"INSERT INTO "messages""#), 1);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Failed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_refuses_tools_at_round_limit_then_fails_with_tool_round_limit() {
+        test_support::init();
+        let db = with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7);
+        let db = with_next_tool_round(db, 15, 16, 17, 7);
+        let db = with_final_answer(with_next_tool_round(db, 18, 19, 20, 7), 7, 21).into_connection();
+        let llm = with_answers(vec![
+            tool_use_answer(&[date_time_call("tu_1")], StopReason::ToolUse),
+            tool_use_answer(&[date_time_call("tu_2")], StopReason::ToolUse),
+            tool_use_answer(&[date_time_call("tu_3")], StopReason::ToolUse),
+            tool_use_answer(&[date_time_call("tu_4")], StopReason::ToolUse),
+        ]);
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![
+            tool_call(0, "date_time", false),
+            tool_call(1, "date_time", false),
+            tool_call(2, "date_time", true),
+            failed("ToolRoundLimit", "the model asked for tools again after reaching the tool round limit"),
+        ]);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(json!([{
+            "type": "tool_result",
+            "tool_use_id": "tu_3",
+            "content": "tool limit reached; answer with what you have",
+            "is_error": true,
+            "mia_display": {"name": "date_time", "failed": true},
+        }]))]);
+        assert_eq!(statements_starting_with(&log, r#"INSERT INTO "messages""#), 7);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Failed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_completes_when_model_answers_after_refused_round() {
+        test_support::init();
+        let db = with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7);
+        let db = with_next_tool_round(db, 15, 16, 17, 7);
+        let db = with_final_answer(with_next_tool_round(db, 18, 19, 20, 7), 7, 21).into_connection();
+        let llm = with_answers(vec![
+            tool_use_answer(&[date_time_call("tu_1")], StopReason::ToolUse),
+            tool_use_answer(&[date_time_call("tu_2")], StopReason::ToolUse),
+            tool_use_answer(&[date_time_call("tu_3")], StopReason::ToolUse),
+            text_answer(&["It is noon"], StopReason::EndTurn),
+        ]);
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![
+            tool_call(0, "date_time", false),
+            tool_call(1, "date_time", false),
+            tool_call(2, "date_time", true),
+            delta(3, "It is noon"),
+            ExchangeEvent::Completed { exchange_id: 7 },
+        ]);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Completed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_fails_with_empty_response_when_final_call_has_no_text_after_tool_round() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let llm = with_answers(vec![
+            text_then_tool_use_answer(&["Let me check"], &[date_time_call("tu_1")], StopReason::ToolUse),
+            thinking_answer("hmm", StopReason::EndTurn),
+        ]);
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![
+            delta(0, "Let me check"),
+            tool_call(1, "date_time", false),
+            thinking_delta(2, "hmm"),
+            failed("EmptyResponse", "the model ended its answer without text"),
+        ]);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Failed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_answers_with_error_result_when_tool_input_is_not_an_object() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let llm = with_answers(vec![
+            tool_use_answer(&[("tu_1", "mia_search", json!(["type = movie"]))], StopReason::ToolUse),
+            text_answer(&["Sorry"], StopReason::EndTurn),
+        ]);
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![tool_call(0, "mia_search", true), delta(1, "Sorry"), ExchangeEvent::Completed { exchange_id: 7 }]);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(json!([{"type": "tool_use", "id": "tu_1", "name": "mia_search", "input": {}}]))]);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(json!([{
+            "type": "tool_result",
+            "tool_use_id": "tu_1",
+            "content": "input is not a JSON object",
+            "is_error": true,
+            "mia_display": {"name": "mia_search", "failed": true},
+        }]))]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn run_exchange_answers_with_failed_result_and_goes_on_when_tool_times_out() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let llm = with_answers(vec![
+            tool_use_answer(&[("tu_1", "tmdb_search", json!({"query": "alien"}))], StopReason::ToolUse),
+            text_answer(&["TMDB is slow"], StopReason::EndTurn),
+        ]);
+
+        let (ok, events, log) = run_with_tmdb(db, llm, &UnansweringTmdb).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![
+            ExchangeEvent::ToolCall {
+                block: 0,
+                call: ToolCallView { name: "tmdb_search".into(), query: Some("alien".into()), media_type: None, count: None, titles: None, failed: true },
+            },
+            delta(1, "TMDB is slow"),
+            ExchangeEvent::Completed { exchange_id: 7 },
+        ]);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(json!([{
+            "type": "tool_result",
+            "tool_use_id": "tu_1",
+            "content": "tool timed out after 30 s",
+            "is_error": true,
+            "mia_display": {"name": "tmdb_search", "query": "alien", "failed": true},
+        }]))]);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Completed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_loads_conversation_owner_for_tools_when_tool_round_runs() {
+        test_support::init();
+        let exchange = exchange_model(7, 3, ExchangeStatus::InProgress);
+        let db = test_support::db::mock()
+            .append_query_results([[exchange.clone()]])
+            .append_query_results([[conversation_model(3, 4)]])
+            .append_query_results([[exchange]])
+            .append_query_results([[message_model(1, 7, MessageRole::User, json!([{"type": "text", "text": "Hi"}]))]])
+            .append_query_results([[entities::llm_calls::Model { user_id: Some(4), ..llm_call_model(11, 7) }]])
+            .append_query_results([[message_model(12, 7, MessageRole::Assistant, json!([]))]])
+            .append_exec_results([updated(1)])
+            .append_query_results([[user_model(4)]])
+            .append_query_results([[message_model(13, 7, MessageRole::Tool, json!([]))]])
+            .append_query_results([[entities::llm_calls::Model { user_id: Some(4), ..llm_call_model(14, 7) }]]);
+        let llm = with_answers(vec![
+            tool_use_answer(&[date_time_call("tu_1")], StopReason::ToolUse),
+            text_answer(&["It is noon"], StopReason::EndTurn),
+        ]);
+
+        let (ok, _, log) = run(with_final_answer(db, 7, 15).into_connection(), llm).await;
+
+        assert!(ok);
+        let users: Vec<&Statement> = log.iter().filter(|statement| statement.sql.contains(r#"FROM "users""#)).collect();
+        assert_eq!(users.len(), 1, "expected one users lookup, got {users:?}");
+        let values = &users[0].values.as_ref().expect("the users lookup is bound with values").0;
+        assert!(values.contains(&Value::from(4)), "user id 4 not among {values:?}");
+    }
+
+    #[tokio::test]
+    async fn run_exchange_stops_quietly_when_conversation_deleted_during_tool_round() {
+        test_support::init();
+        let db = with_started_exchange_run(test_support::db::mock(), 7)
+            .append_query_results([[message_model(12, 7, MessageRole::Assistant, json!([]))]])
+            .append_exec_results([updated(1)])
+            .append_query_results([[user_model(1)]])
+            .append_query_errors([DbErr::Custom("foreign key violation".into())])
+            .append_query_results([Vec::<entities::exchanges::Model>::new()])
+            .into_connection();
+        let llm = with_answer(tool_use_answer(&[date_time_call("tu_1")], StopReason::ToolUse));
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, Vec::new());
+        assert_eq!(statements_starting_with(&log, r#"UPDATE "llm_calls""#), 1);
+        assert_wrote(&log, r#"UPDATE "llm_calls""#, &[Value::from("tool_use"), Value::Json(None)]);
+        assert_no_statement_starting_with(&log, r#"UPDATE "exchanges""#);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_fails_with_internal_and_keeps_closed_call_when_tool_query_fails() {
+        test_support::init();
+        let db = with_started_exchange_run(test_support::db::mock(), 7)
+            .append_query_results([[message_model(12, 7, MessageRole::Assistant, json!([]))]])
+            .append_exec_results([updated(1)])
+            .append_query_results([[user_model(1)]])
+            .append_query_errors([DbErr::Custom("connection lost".into())])
+            .append_exec_results([updated(1)])
+            .into_connection();
+        let llm = with_answer(tool_use_answer(&[("tu_1", "mia_search", json!({"query": "alien"}))], StopReason::ToolUse));
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert!(
+            matches!(events.as_slice(), [ExchangeEvent::Failed { key, .. }] if key == "Internal"),
+            "expected only an Internal failure, got {events:?}"
+        );
+        assert_eq!(statements_starting_with(&log, r#"UPDATE "llm_calls""#), 1);
+        assert_wrote(&log, r#"UPDATE "llm_calls""#, &[Value::from("tool_use"), Value::Json(None)]);
+        assert_eq!(statements_starting_with(&log, r#"INSERT INTO "messages""#), 1);
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status(ExchangeStatus::Failed)]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_stops_quietly_before_calling_model_when_exchange_missing_from_history() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[exchange_model(7, 3, ExchangeStatus::InProgress)]])
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([Vec::<entities::exchanges::Model>::new()])
+            .append_query_results([Vec::<entities::messages::Model>::new()])
+            .into_connection();
+        let mut llm = MockLlm::new();
+        llm.expect_model().returning(|| "test/model".into());
+
+        let (ok, events, log) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, Vec::new());
+        test_support::db::assert_statement_count(&log, 4);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_sends_current_exchange_thinking_and_tool_blocks_in_next_request() {
+        test_support::init();
+        let db = with_final_answer(with_tool_round(with_started_exchange_run(test_support::db::mock(), 7), 12, 13, 14, 7), 7, 15).into_connection();
+        let (llm, requests) = with_recorded_answers(vec![
+            thinking_then_tool_use_answer("hmm", &[date_time_call("tu_1")], StopReason::ToolUse),
+            text_answer(&["It is noon"], StopReason::EndTurn),
+        ]);
+
+        let (ok, _, _) = run(db, llm).await;
+
+        assert!(ok);
+        let requests = requests.lock().expect("requests lock");
+        assert_eq!(requests.len(), 2);
+        let next = &requests[1];
+        assert_eq!(next.messages.len(), 3);
+        assert_eq!(next.messages[1].role, LlmRole::Assistant);
+        assert_eq!(next.messages[1].content, json!([
+            {"type": "thinking", "thinking": "hmm", "signature": ""},
+            {"type": "tool_use", "id": "tu_1", "name": "date_time", "input": {}},
+        ]));
+        assert_eq!(next.messages[2].role, LlmRole::User);
+        assert_eq!(next.messages[2].content, json!([{
+            "type": "tool_result",
+            "tool_use_id": "tu_1",
+            "content": r#"{"utc":"2024-01-01T12:00:00Z","timezone":"UTC"}"#,
+            "cache_control": {"type": "ephemeral"},
+        }]));
+        assert_eq!(next.tools, crate::chat::tools::definitions());
     }
 
     #[tokio::test]

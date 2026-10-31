@@ -6,7 +6,7 @@ use entities::{functions, genres, image_sizes, images, languages, manual_image_r
 use futures::TryFutureExt;
 use http::StatusCode;
 use infrastructure::config;
-use integrations::tmdb::views::{PropertyChanges, MultiResult};
+use integrations::tmdb::views::{MultiMovieResult, MultiResult, MultiTvResult, PropertyChanges};
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::Query;
 use sea_orm::ActiveValue::Set;
@@ -88,19 +88,75 @@ pub async fn search_by_ids(req: MediaByIdsQuery, page_req: PageReq, user: &Curre
     })
 }
 
+/// The library half of a search: the page of rows plus what the transpiler learned about the query.
+pub(crate) struct LibrarySearch {
+    pub rows: Vec<(media::Model, Option<images::Model>, Option<titles::Model>)>,
+    pub name_search: String,
+    pub external_id: Option<transpiler::ExternalId>,
+    pub is_primitive: bool,
+}
+
+/// Transpiles and runs a search query against the user's library. The inner `Err` holds one
+/// `"{source}: {message}"` string per transpilation error; no query is run then.
+pub(crate) async fn search_library(query: SearchQuery, page_req: PageReq, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<Result<LibrarySearch, Vec<String>>, SrvErr> {
+    let res = match transpiler::transpile(query, page_req, user, media_type.map(|m| m.into())) {
+        Ok(res) => res,
+        Err(errs) => return Ok(Err(errs.into_iter().map(|e| format!("{}: {}", e.source, e.message)).collect())),
+    };
+    let rows = res.query.all(db).await?;
+
+    Ok(Ok(LibrarySearch {
+        rows,
+        name_search: res.name_search,
+        external_id: res.external_id,
+        is_primitive: res.is_primitive,
+    }))
+}
+
+/// A movie or series TMDB found; people and collections are never kept.
+#[derive(Clone, Debug)]
+pub(crate) enum TmdbHit {
+    Movie(MultiMovieResult),
+    Tv(MultiTvResult),
+}
+
+impl TmdbHit {
+    pub(crate) fn tmdb_id(&self) -> i32 {
+        match self {
+            TmdbHit::Movie(m) => m.id,
+            TmdbHit::Tv(t) => t.id,
+        }
+    }
+
+    pub(crate) fn media_type(&self) -> MediaType {
+        match self {
+            TmdbHit::Movie(_) => MediaType::Movie,
+            TmdbHit::Tv(_) => MediaType::Series,
+        }
+    }
+}
+
+/// Searches TMDB by name, keeping movies and series (only `media_type` when given) in TMDB's order.
+/// The raw TMDB error is returned so each caller decides how to report it.
+pub(crate) async fn search_tmdb(query: String, media_type: Option<MediaType>, tmdb: &dyn Tmdb) -> Result<Vec<TmdbHit>, integrations::infrastructure::Error> {
+    let results = tmdb.search_multi(query).await?;
+    Ok(results.results.into_iter().filter_map(|r| match r {
+        MultiResult::Movie(movie) => Some(TmdbHit::Movie(movie)),
+        MultiResult::Tv(tv) => Some(TmdbHit::Tv(tv)),
+        MultiResult::Person(_) | MultiResult::Collection(_) => None,
+    }).filter(|hit| media_type.is_none() || media_type == Some(hit.media_type())).collect())
+}
+
 pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tmdb) -> Result<SearchResults, SrvErr> {
     let limit = page_req.limit;
-    let res = transpiler::transpile(query, page_req, user, media_type.map(|m| { m.into() }));
-
-    if res.is_err() {
+    let Ok(library) = search_library(query, page_req, media_type, user, db).await? else {
         return Ok(SearchResults {
             indexes: vec![],
             external: vec![],
             query_valid: false,
         })
-    }
-    let res = res.ok().unwrap();
-    let media = res.query.all(db).await?;
+    };
+    let LibrarySearch { rows: media, name_search, external_id, is_primitive } = library;
 
     let poster_ids: Vec<i32> = media.iter().filter_map(|p| p.0.poster_image_id).collect();
     let poster_sizes = ImageSizes::find()
@@ -108,7 +164,7 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
 
     let external_t;
     let mut external_limit = 0;
-    if res.is_primitive && (res.name_search.len() > 3 || committed || res.external_id.is_some()) {
+    if is_primitive && (name_search.len() > 3 || committed || external_id.is_some()) {
         if let Some(l) = limit {
             if (l as usize) > media.len() {
                 external_limit = (l as usize) - media.len();
@@ -117,7 +173,7 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
             external_limit = usize::MAX;
         }
         if external_limit > 0 {
-            if let Some(external_id) = res.external_id {
+            if let Some(external_id) = external_id {
                 match external_id.r#type {
                     MediaType::Movie => {
                         if media.iter().any(|y| y.0.tmdb_id == Some(external_id.tmdb_id) && y.0.r#type == sea_orm_active_enums::MediaType::Movie) {
@@ -159,32 +215,17 @@ pub async fn search(query: SearchQuery, committed: bool, page_req: PageReq, medi
                     }
                 }
             } else {
+                let owned = |hit: &TmdbHit| media.iter().any(|x| x.0.tmdb_id == Some(hit.tmdb_id()) && x.0.r#type == hit.media_type().into());
                 external_t = Some(
-                    tmdb.search_multi(res.name_search).map_ok(|res| {
-                        res.results.iter().filter_map(|r| {
-                            if external_limit == 0 { return None; }
-                            match r {
-                                MultiResult::Movie(movie) => {
-                                    if media.iter().find(|x| {
-                                        if x.0.tmdb_id == Some(movie.id) && x.0.r#type == sea_orm_active_enums::MediaType::Movie { true }
-                                        else { false }
-                                    }).is_some() { return None }
-                                    if media_type.is_none() || media_type == Some(MediaType::Movie) { external_limit -= 1; Some(movie.into_view()) }
-                                    else { None }
-                                }
-                                MultiResult::Tv(tv) => {
-                                    if media.iter().find(|x| {
-                                        if x.0.tmdb_id == Some(tv.id) && x.0.r#type == sea_orm_active_enums::MediaType::Series { true }
-                                        else { false }
-                                    }).is_some() { return None }
-                                    if media_type.is_none() || media_type == Some(MediaType::Series) { external_limit -= 1; Some(tv.into_view()) }
-                                    else { None }
-                                }
-                                MultiResult::Person(_) => { None }
-                                MultiResult::Collection(_) => { None }
-                            }
-                        }).collect()
-                    }).await?
+                    search_tmdb(name_search, media_type, tmdb).await?
+                        .into_iter()
+                        .filter(|hit| !owned(hit))
+                        .take(external_limit)
+                        .map(|hit| match hit {
+                            TmdbHit::Movie(movie) => (&movie).into_view(),
+                            TmdbHit::Tv(tv) => (&tv).into_view(),
+                        })
+                        .collect()
                 );
             }
         } else { external_t = None }
@@ -753,7 +794,7 @@ pub fn is_locked<T>(locks: &Option<T>, f: impl Fn(&T) -> bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use integrations::tmdb::views::{ChangeItem, MovieDetails as TmdbMovieDetails, MovieTitles, MultiMovieResult, MultiPersonResult, MultiResults, MultiTvResult, SeriesDetails as TmdbSeriesDetails, SeriesTitles, TmdbImage, TmdbImages};
+    use integrations::tmdb::views::{ChangeItem, MovieDetails as TmdbMovieDetails, MovieTitles, MultiPersonResult, SeriesDetails as TmdbSeriesDetails, SeriesTitles, TmdbImage, TmdbImages};
     use sea_orm::{MockDatabase, Value};
     use uuid::Uuid;
     use views::sources::{SourceCreate, SourceType};
@@ -762,7 +803,7 @@ mod tests {
     use crate::test_support::db::{assert_no_statement_starting_with, assert_statement_count, assert_wrote, deleted, with_deleted_unused_image, with_saved_tmdb_image};
     use crate::test_support::fixtures;
     use crate::test_support::jobs::sizes;
-    use crate::test_support::tmdb::{error, error_with_status, png_bytes, property_changes, tmdb_images};
+    use crate::test_support::tmdb::{error, error_with_status, multi_movie, multi_results, multi_tv, png_bytes, property_changes, tmdb_images};
     use crate::test_support::{fixed_clock, InMemoryImageStore, MockTmdb, RecordingJobs, SeqRandom};
 
     // ---------------------------------------------------------------- helpers
@@ -793,18 +834,6 @@ mod tests {
     fn owned_movie_row(id: i32, tmdb_id: i32, title: &str) -> std::collections::BTreeMap<String, Value> {
         let media = media::Model { tmdb_id: Some(tmdb_id), ..fixtures::movie_media_model(id, 1) };
         fixtures::media_index_row(media, None, Some(fixtures::title_model(id, id, title, true)))
-    }
-
-    fn multi_movie(id: i32, title: &str) -> MultiResult {
-        MultiResult::Movie(MultiMovieResult { id, title: Some(title.into()), poster_path: Some(format!("/poster-{id}.jpg")), ..Default::default() })
-    }
-
-    fn multi_tv(id: i32, name: &str) -> MultiResult {
-        MultiResult::Tv(MultiTvResult { id, name: Some(name.into()), poster_path: Some(format!("/poster-{id}.jpg")), ..Default::default() })
-    }
-
-    fn multi_results(results: Vec<MultiResult>) -> MultiResults {
-        MultiResults { results, ..Default::default() }
     }
 
     /// A TMDB backdrop larger than `tmdb_images()`' one, in no language.
@@ -1273,6 +1302,56 @@ mod tests {
         assert!(result.indexes.is_empty());
         assert!(result.external.is_empty());
         assert_statement_count(&test_support::db::log(db), 0);
+    }
+
+    // ----------------------------------------------------------------- search_library / search_tmdb
+
+    #[tokio::test]
+    async fn search_library_returns_transpile_messages_when_query_is_invalid() {
+        test_support::init();
+        let db = test_support::db::mock().into_connection();
+
+        let result = search_library(search_query(" : foo = 1"), page(None), None, &fixtures::user(), &db).await.ok().expect("search should succeed");
+
+        let Err(messages) = result else { panic!("query should be invalid") };
+        assert_eq!(messages, vec!["Construction: Unknown target 'foo'".to_string()]);
+        assert_statement_count(&test_support::db::log(db), 0);
+    }
+
+    fn hit_ids(hits: &[TmdbHit]) -> Vec<(MediaType, i32)> {
+        hits.iter().map(|h| (h.media_type(), h.tmdb_id())).collect()
+    }
+
+    #[tokio::test]
+    async fn search_tmdb_keeps_only_movies_in_tmdb_order_when_type_is_movie() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_search_multi().withf(|query| query == "matrix").times(1).returning(|_| Ok(multi_results(vec![
+            multi_tv(1, "One"),
+            multi_movie(2, "Two"),
+            MultiResult::Person(MultiPersonResult { id: 3, ..Default::default() }),
+            multi_movie(4, "Four"),
+        ])));
+
+        let hits = search_tmdb("matrix".into(), Some(MediaType::Movie), &tmdb).await.ok().expect("search should succeed");
+
+        assert!(hit_ids(&hits) == vec![(MediaType::Movie, 2), (MediaType::Movie, 4)]);
+    }
+
+    #[tokio::test]
+    async fn search_tmdb_drops_people_and_collections_when_no_type() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_search_multi().times(1).returning(|_| Ok(multi_results(vec![
+            multi_tv(1, "One"),
+            MultiResult::Person(MultiPersonResult { id: 3, ..Default::default() }),
+            MultiResult::Collection(Default::default()),
+            multi_movie(4, "Four"),
+        ])));
+
+        let hits = search_tmdb("matrix".into(), None, &tmdb).await.ok().expect("search should succeed");
+
+        assert!(hit_ids(&hits) == vec![(MediaType::Series, 1), (MediaType::Movie, 4)]);
     }
 
     // ----------------------------------------------------------------- on_watchlist

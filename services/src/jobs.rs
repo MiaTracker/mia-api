@@ -14,7 +14,7 @@ use integrations::openrouter::Llm;
 use sea_orm::DbConn;
 use crate::chat::exchange::run_exchange;
 use crate::chat::registry::ExchangeRegistry;
-use crate::infrastructure::{Clock, ImageStore, SrvErr};
+use crate::infrastructure::{Clock, ImageStore, SrvErr, Tmdb};
 use crate::images;
 
 /// A unit of background work. Each variant owns the data its handler needs.
@@ -67,6 +67,7 @@ pub struct JobDeps {
     pub store: Arc<dyn ImageStore>,
     pub llm: Arc<dyn Llm>,
     pub registry: Arc<ExchangeRegistry>,
+    pub tmdb: Arc<dyn Tmdb>,
     pub clock: Arc<dyn Clock>,
 }
 
@@ -78,7 +79,7 @@ pub async fn run(job: Job, deps: &JobDeps) -> Result<(), SrvErr> {
                                     &deps.db, deps.store.as_ref()).await
         }
         Job::RunExchange { exchange_id } => {
-            run_exchange(exchange_id, &deps.db, deps.llm.as_ref(), &deps.registry, deps.clock.as_ref()).await
+            run_exchange(exchange_id, &deps.db, deps.llm.as_ref(), &deps.registry, deps.tmdb.as_ref(), deps.clock.as_ref()).await
         }
     }
 }

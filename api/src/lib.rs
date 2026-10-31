@@ -52,7 +52,7 @@ pub async fn launch() {
     ));
     let registry = Arc::new(ExchangeRegistry::new());
     let jobs: Arc<dyn Jobs> = Arc::new(TokioJobs::new(JobDeps {
-        db: conn.clone(), store: image_store.clone(), llm: llm.clone(), registry: registry.clone(), clock: clock.clone(),
+        db: conn.clone(), store: image_store.clone(), llm: llm.clone(), registry: registry.clone(), tmdb: tmdb.clone(), clock: clock.clone(),
     }));
     let scheduler_jobs = jobs.clone();
     let scheduler_clock = clock.clone();

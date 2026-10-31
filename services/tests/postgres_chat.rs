@@ -18,7 +18,7 @@ use serde_json::json;
 use services::chat::{self, ExchangeRegistry};
 use services::jobs::JobDeps;
 use services::test_support::llm::{text_answer, with_answer, with_stream};
-use services::test_support::{fixed_clock, InlineJobs, MockLlm};
+use services::test_support::{fixed_clock, InlineJobs, MockLlm, MockTmdb};
 use views::conversations::{DisplayBlock, ExchangeCreate, ExchangeEvent, ExchangeStatusView};
 
 #[tokio::test]
@@ -97,7 +97,7 @@ async fn run_exchange_stops_quietly_when_conversation_deleted_mid_exchange() {
         Some((Ok(event), (step + 1, db, conversation_id)))
     });
 
-    let result = chat::run_exchange(running.id, &db, &with_stream(deleting.boxed()), &registry, &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
+    let result = chat::run_exchange(running.id, &db, &with_stream(deleting.boxed()), &registry, &MockTmdb::new(), &fixed_clock(2024, 1, 1, 12, 0, 0)).await;
 
     assert!(result.is_ok());
     let calls = LlmCalls::find().all(&*db).await.expect("querying LLM calls");
@@ -123,6 +123,7 @@ async fn start_exchange_persists_answer_and_ledger_when_stream_completes() {
         store: Arc::new(services::test_support::InMemoryImageStore::new()),
         llm: Arc::new(llm),
         registry: registry.clone(),
+        tmdb: Arc::new(MockTmdb::new()),
         clock: clock.clone(),
     });
 

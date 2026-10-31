@@ -40,6 +40,10 @@ pub(crate) async fn load_config() {
         fail!("Invalid config {}: {}", path.display(), err);
     }
 
+    if let Err(err) = config.assistant.validate() {
+        fail!("Invalid config {}: {}", path.display(), err);
+    }
+
     set_config(config);
 }
 
@@ -67,6 +71,8 @@ pub struct Configuration {
     pub media: MediaConfiguration,
     pub images: ImagesConfiguration,
     pub openrouter: OpenRouterConfiguration,
+    #[serde(default)]
+    pub assistant: AssistantConfiguration,
 }
 
 #[derive(Deserialize)]
@@ -128,6 +134,57 @@ pub struct ReasoningConfiguration {
 
 fn default_max_tokens() -> u32 {
     16384
+}
+
+/// Limits on what the chat assistant's tools may do.
+#[derive(Deserialize)]
+pub struct AssistantConfiguration {
+    /// Fixed cap on the results of one `mia_search` call.
+    #[serde(default = "default_mia_search_limit")]
+    pub mia_search_limit: u32,
+    /// Fixed cap on the ids of one `mia_details` call.
+    #[serde(default = "default_mia_details_limit")]
+    pub mia_details_limit: u32,
+    /// How many rounds of tool calls one Exchange may run.
+    #[serde(default = "default_max_tool_rounds")]
+    pub max_tool_rounds: u32
+}
+
+impl Default for AssistantConfiguration {
+    fn default() -> Self {
+        AssistantConfiguration {
+            mia_search_limit: default_mia_search_limit(),
+            mia_details_limit: default_mia_details_limit(),
+            max_tool_rounds: default_max_tool_rounds()
+        }
+    }
+}
+
+impl AssistantConfiguration {
+    /// Checks the values serde cannot: every limit must be at least 1.
+    pub fn validate(&self) -> Result<(), String> {
+        let limits = [
+            ("mia_search_limit", self.mia_search_limit),
+            ("mia_details_limit", self.mia_details_limit),
+            ("max_tool_rounds", self.max_tool_rounds)
+        ];
+        match limits.iter().find(|(_, value)| *value == 0) {
+            Some((field, _)) => Err(format!("assistant.{field} must be at least 1")),
+            None => Ok(())
+        }
+    }
+}
+
+fn default_mia_search_limit() -> u32 {
+    30
+}
+
+fn default_mia_details_limit() -> u32 {
+    60
+}
+
+fn default_max_tool_rounds() -> u32 {
+    8
 }
 
 #[derive(Deserialize, Clone)]
@@ -194,5 +251,46 @@ mod tests {
 
         assert_eq!(config.reasoning.unwrap().budget_tokens, 8000);
         assert_eq!(config.max_tokens, 16384);
+    }
+
+    #[test]
+    fn assistant_configuration_defaults_when_section_absent() {
+        let config: Configuration = serde_yaml::from_str(concat!(
+            "jwt:\n  secret: s\n",
+            "db:\n  connection_url: u\n  schema: public\n",
+            "tmdb:\n  authorization_token: t\n",
+            "logging:\n  level: debug\n",
+            "media:\n  unset_title: Unknown\n",
+            "images:\n  store_path: p\n",
+            "openrouter:\n  api_key: k\n  model: m\n"
+        )).unwrap();
+
+        assert_eq!(config.assistant.mia_search_limit, 30);
+        assert_eq!(config.assistant.mia_details_limit, 60);
+        assert_eq!(config.assistant.max_tool_rounds, 8);
+    }
+
+    #[test]
+    fn assistant_configuration_keeps_defaults_when_field_absent() {
+        let config: AssistantConfiguration = serde_yaml::from_str("mia_search_limit: 5\n").unwrap();
+
+        assert_eq!(config.mia_search_limit, 5);
+        assert_eq!(config.mia_details_limit, 60);
+    }
+
+    #[test]
+    fn validate_fails_when_a_limit_is_zero() {
+        for (field, config) in [
+            ("mia_search_limit", AssistantConfiguration { mia_search_limit: 0, ..Default::default() }),
+            ("mia_details_limit", AssistantConfiguration { mia_details_limit: 0, ..Default::default() }),
+            ("max_tool_rounds", AssistantConfiguration { max_tool_rounds: 0, ..Default::default() }),
+        ] {
+            assert_eq!(config.validate(), Err(format!("assistant.{field} must be at least 1")));
+        }
+    }
+
+    #[test]
+    fn validate_succeeds_when_assistant_limits_are_defaults() {
+        assert_eq!(AssistantConfiguration::default().validate(), Ok(()));
     }
 }

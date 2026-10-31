@@ -5,6 +5,9 @@ use entities::{exchanges, messages};
 use integrations::openrouter::{LlmMessage, LlmRequest, LlmRole};
 use serde_json::{json, Value};
 
+use crate::chat::display::DISPLAY_FIELD;
+use crate::chat::tools;
+
 pub const SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
 
 /// The request for the next assistant Message of the Conversation.
@@ -12,15 +15,17 @@ pub const SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
 /// `exchanges` are ordered by Exchange id, each with its Messages ordered by id. Completed
 /// Exchanges and the current one are kept; all others (failed, or any other in-progress one) are
 /// skipped. Content is passed through unchanged, except that earlier Exchanges lose their thinking
-/// blocks (a Message left empty by that is dropped) and the last block of the last Message gets a
-/// cache marker, on the request copy only.
+/// blocks (a Message left empty by that is dropped), `tool_result` blocks lose their display field
+/// and the last block of the last Message gets a cache marker, on the request copy only. Every tool
+/// is offered.
 pub fn build_request(current_exchange_id: i32, exchanges: &[(exchanges::Model, Vec<messages::Model>)]) -> LlmRequest {
     let mut messages: Vec<LlmMessage> = exchanges
         .iter()
         .filter(|(exchange, _)| exchange.status == ExchangeStatus::Completed || exchange.id == current_exchange_id)
         .flat_map(|(exchange, messages)| messages.iter().map(move |message| (exchange.id == current_exchange_id, message)))
         .filter_map(|(current, message)| {
-            let content = if current { message.content.clone() } else { without_thinking(&message.content)? };
+            let mut content = if current { message.content.clone() } else { without_thinking(&message.content)? };
+            strip_display(&mut content);
             Some(LlmMessage {
                 role: match message.role {
                     MessageRole::User | MessageRole::Tool => LlmRole::User,
@@ -38,7 +43,17 @@ pub fn build_request(current_exchange_id: i32, exchanges: &[(exchanges::Model, V
     if let Some(block) = last_block {
         block.insert("cache_control".to_owned(), json!({"type": "ephemeral"}));
     }
-    LlmRequest { system: SYSTEM_PROMPT.to_owned(), messages }
+    LlmRequest { system: SYSTEM_PROMPT.to_owned(), messages, tools: tools::definitions() }
+}
+
+/// Removes the display field from every `tool_result` block of `content`.
+fn strip_display(content: &mut Value) {
+    let blocks = content.as_array_mut().into_iter().flatten();
+    for block in blocks.filter(|block| block["type"] == "tool_result") {
+        if let Some(block) = block.as_object_mut() {
+            block.remove(DISPLAY_FIELD);
+        }
+    }
 }
 
 /// `content` without its `thinking` and `redacted_thinking` blocks; `None` when that removed every
@@ -252,6 +267,16 @@ mod tests {
     }
 
     #[test]
+    fn build_request_offers_every_tool_when_building_request() {
+        test_support::init();
+
+        let request = build_request(1, &[]);
+
+        let names: Vec<&str> = request.tools.iter().map(|tool| tool.name.as_str()).collect();
+        assert_eq!(names, vec!["mia_search", "mia_details", "tmdb_search", "date_time"]);
+    }
+
+    #[test]
     fn build_request_maps_tool_role_to_user() {
         test_support::init();
         let exchanges = vec![(exchange_model(1, 1, ExchangeStatus::InProgress), vec![
@@ -265,6 +290,39 @@ mod tests {
         let roles: Vec<LlmRole> = request.messages.iter().map(|m| m.role).collect();
         assert_eq!(roles, vec![LlmRole::User, LlmRole::Assistant, LlmRole::User]);
         assert_eq!(request.messages[2].content[0]["type"], "tool_result");
+    }
+
+    #[test]
+    fn build_request_strips_display_field_from_tool_results() {
+        test_support::init();
+        let exchanges = vec![
+            (exchange_model(1, 1, ExchangeStatus::Completed), vec![
+                message_model(1, 1, MessageRole::User, text("q")),
+                message_model(2, 1, MessageRole::Assistant, json!([{"type": "tool_use", "id": "t1", "name": "mia_search", "input": {}}])),
+                message_model(3, 1, MessageRole::Tool, json!([
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "boom", "is_error": true, "mia_display": {"name": "mia_search", "failed": true}}
+                ])),
+                message_model(4, 1, MessageRole::Assistant, text("sorry")),
+            ]),
+            (exchange_model(2, 1, ExchangeStatus::InProgress), vec![
+                message_model(5, 2, MessageRole::User, text("again")),
+                message_model(6, 2, MessageRole::Assistant, json!([{"type": "tool_use", "id": "t2", "name": "date_time", "input": {}}])),
+                message_model(7, 2, MessageRole::Tool, json!([
+                    {"type": "tool_result", "tool_use_id": "t2", "content": "now", "mia_display": {"name": "date_time", "failed": false}}
+                ])),
+            ]),
+        ];
+
+        let request = build_request(2, &exchanges);
+
+        assert_eq!(request.messages[2].content[0]["tool_use_id"], "t1");
+        assert_eq!(request.messages[2].content[0]["content"], "boom");
+        assert_eq!(request.messages[2].content[0]["is_error"], true);
+        assert!(request.messages[2].content[0].get("mia_display").is_none());
+        assert_eq!(request.messages[6].content[0]["tool_use_id"], "t2");
+        assert!(request.messages[6].content[0].get("mia_display").is_none());
+        // The stored Messages are untouched.
+        assert!(exchanges[0].1[2].content[0].get("mia_display").is_some());
     }
 
     #[test]

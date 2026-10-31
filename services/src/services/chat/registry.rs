@@ -66,18 +66,16 @@ impl ExchangeRegistry {
         let mut entry = lock(&entry);
         match &event {
             ExchangeEvent::TextDelta { block, text } | ExchangeEvent::ThinkingDelta { block, text } => {
-                let block = *block as usize;
-                if entry.blocks.len() <= block {
-                    entry.blocks.resize(block + 1, None);
-                }
                 let empty = match event {
                     ExchangeEvent::ThinkingDelta { .. } => DisplayBlock::Thinking { thinking: String::new() },
                     _ => DisplayBlock::Text { text: String::new() },
                 };
-                match entry.blocks[block].get_or_insert(empty) {
+                match slot(&mut entry.blocks, *block).get_or_insert(empty) {
                     DisplayBlock::Text { text: stored } | DisplayBlock::Thinking { thinking: stored } => stored.push_str(text),
+                    DisplayBlock::Tool(_) => {}
                 }
             }
+            ExchangeEvent::ToolCall { block, call } => *slot(&mut entry.blocks, *block) = Some(DisplayBlock::Tool(call.clone())),
             ExchangeEvent::Completed { .. } | ExchangeEvent::Failed { .. } => entry.terminal = Some(event.clone())
         }
         entry.subscribers.retain(|subscriber| subscriber.send(event.clone()).is_ok());
@@ -93,6 +91,15 @@ impl ExchangeRegistry {
     }
 }
 
+/// The slot of block number `block`, growing `blocks` to reach it.
+fn slot(blocks: &mut Vec<Option<DisplayBlock>>, block: u32) -> &mut Option<DisplayBlock> {
+    let block = block as usize;
+    if blocks.len() <= block {
+        blocks.resize(block + 1, None);
+    }
+    &mut blocks[block]
+}
+
 /// A panic while holding the lock cannot leave the data half-updated in a harmful way, so ignore poisoning.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -103,6 +110,7 @@ mod tests {
     use super::*;
     use crate::test_support;
     use tokio::sync::mpsc::error::TryRecvError;
+    use views::conversations::ToolCallView;
 
     fn delta(block: u32, text: &str) -> ExchangeEvent {
         ExchangeEvent::TextDelta { block, text: text.into() }
@@ -150,6 +158,22 @@ mod tests {
 
         assert_eq!(subscription.replay, vec![ExchangeEvent::ThinkingDelta { block: 0, text: "hmm".into() }]);
         assert_eq!(subscription.live.take().unwrap().try_recv().unwrap(), delta(1, "Hi"));
+    }
+
+    #[test]
+    fn subscribe_replays_tool_call_in_block_order_when_published() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        registry.open(1);
+        let call = |name: &str| ToolCallView { name: name.into(), query: None, media_type: None, count: None, titles: None, failed: false };
+        registry.publish(1, delta(0, "Let me look"));
+        registry.publish(1, ExchangeEvent::ToolCall { block: 1, call: call("date_time") });
+
+        let mut subscription = registry.subscribe(1).unwrap();
+        registry.publish(1, ExchangeEvent::ToolCall { block: 2, call: call("mia_search") });
+
+        assert_eq!(subscription.replay, vec![delta(0, "Let me look"), ExchangeEvent::ToolCall { block: 1, call: call("date_time") }]);
+        assert_eq!(subscription.live.take().unwrap().try_recv().unwrap(), ExchangeEvent::ToolCall { block: 2, call: call("mia_search") });
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use chrono::NaiveDate;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use entities::sea_orm_active_enums::{ExchangeStatus, LlmCallPurpose, MediaType, MessageRole, SourceType};
-use entities::{conversations, exchanges, genres, languages, llm_calls, logs, media, media_genres, media_tags, messages, movies, series, sources, tags, titles, users, watchlist};
+use entities::{conversations, episodes, exchanges, genres, languages, llm_calls, logs, media, media_genres, media_tags, messages, movies, seasons, series, sources, tags, titles, users, watchlist};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DbConn, EntityTrait, NotSet, PaginatorTrait, Set};
 use serde_json::json;
 use uuid::Uuid;
@@ -119,6 +119,11 @@ pub async fn tag(db: &DbConn, media_id: i32, name: &str) -> tags::Model {
     tag
 }
 
+/// Puts an existing tag on another media.
+pub async fn add_tag(db: &DbConn, media_id: i32, tag: &tags::Model) {
+    media_tags::ActiveModel { media_id: Set(media_id), tag_id: Set(tag.id) }.insert(db).await.expect("inserting media tag");
+}
+
 /// A genre of `media_type` on the media; `tmdb_id` is `None` for a user-defined genre.
 pub async fn genre(db: &DbConn, media_id: i32, name: &str, media_type: MediaType, tmdb_id: Option<i32>) -> genres::Model {
     let genre = genres::ActiveModel { id: NotSet, tmdb_id: Set(tmdb_id), name: Set(name.into()), r#type: Set(media_type) }
@@ -136,6 +141,39 @@ pub async fn tmdb_genre(db: &DbConn, tmdb_id: i32, name: &str, media_type: Media
 pub async fn on_watchlist(db: &DbConn, media_id: i32) {
     watchlist::ActiveModel { media_id: Set(media_id), assessment: Set(None), date_added: Set(date_added()) }
         .insert(db).await.expect("inserting watchlist entry");
+}
+
+/// A season numbered `number` of the series, without episodes or images.
+pub async fn season(db: &DbConn, series_id: i32, number: i32) -> seasons::Model {
+    seasons::ActiveModel {
+        id: NotSet,
+        series_id: Set(series_id),
+        air_date: Set(None),
+        episode_count: Set(None),
+        name: Set(Some(format!("Season {number}"))),
+        overview: Set(None),
+        season_number: Set(Some(number)),
+        tmdb_vote_average: Set(None),
+        stars: Set(None),
+        tmdb_id: Set(None),
+        poster_image_id: Set(None),
+    }.insert(db).await.expect("inserting season")
+}
+
+/// An episode numbered `number` of the season, without a still.
+pub async fn episode(db: &DbConn, season_id: i32, number: i32) -> episodes::Model {
+    episodes::ActiveModel {
+        id: NotSet,
+        season_id: Set(season_id),
+        tmdb_id: Set(Some(number)),
+        episode_number: Set(Some(number)),
+        name: Set(Some(format!("Episode {number}"))),
+        overview: Set(None),
+        air_date: Set(None),
+        runtime: Set(None),
+        tmdb_vote_average: Set(None),
+        still_image_id: Set(None),
+    }.insert(db).await.expect("inserting episode")
 }
 
 /// When seeded chat rows were created: 2024-01-01 12:00 UTC.

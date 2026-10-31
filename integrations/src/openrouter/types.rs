@@ -15,11 +15,21 @@ pub struct LlmMessage {
     pub content: Value,
 }
 
+/// A tool the model may call.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LlmTool {
+    pub name: String,
+    pub description: String,
+    /// The JSON Schema of the tool's input.
+    pub input_schema: Value,
+}
+
 /// A request for one assistant message.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LlmRequest {
     pub system: String,
     pub messages: Vec<LlmMessage>,
+    pub tools: Vec<LlmTool>,
 }
 
 /// The kind of a content block the model starts.
@@ -27,6 +37,10 @@ pub struct LlmRequest {
 pub enum BlockKind {
     Text,
     Thinking,
+    /// A call of the tool `name`; its input streams as [`LlmEvent::InputJsonDelta`]s.
+    ToolUse { id: String, name: String },
+    /// Reasoning the provider withheld, as an opaque `data` blob.
+    RedactedThinking { data: String },
     /// Any other block type, with the provider's name for it.
     Other(String),
 }
@@ -74,6 +88,8 @@ pub enum LlmEvent {
     TextDelta { index: u32, text: String },
     ThinkingDelta { index: u32, thinking: String },
     SignatureDelta { index: u32, signature: String },
+    /// A fragment of a tool call's input JSON; the fragments of a block concatenate to the whole.
+    InputJsonDelta { index: u32, partial_json: String },
     BlockStop { index: u32 },
     MessageDelta { stop_reason: Option<StopReason>, usage: LlmUsage },
     MessageStop,

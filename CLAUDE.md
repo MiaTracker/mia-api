@@ -52,6 +52,10 @@ openrouter:
   max_tokens: 16384   # optional, default 16384
   reasoning:          # optional; absent disables reasoning
     budget_tokens: 8000   # must be below max_tokens
+assistant:            # optional; each limit defaults as shown and must be at least 1
+  mia_search_limit: 30    # results of one mia_search call
+  mia_details_limit: 60   # ids of one mia_details call
+  max_tool_rounds: 8      # rounds of tool calls in one Exchange
 logging:
   level: debug        # trace | debug | info | warning | error
 media:
@@ -112,7 +116,7 @@ After changing code, run `cargo test --workspace` and clippy. Run the relevant `
 
 - Parameter order: the function's own parameters ending with `db`, then `llm, registry, tmdb, store, jobs, clock, random`. A function takes only what it or a callee needs. Where clippy's `too_many_arguments` fires, add `#[allow(clippy::too_many_arguments)]`; do not bundle the dependencies into a struct.
 - No direct `Utc::now`, `Uuid::new_v4`, `OsRng`, `tokio::spawn`/`task::spawn`, `tokio::fs` or `std::fs` in `services/src`. Use the traits. The exceptions are the real implementations (`SystemClock`, `OsRandom`, `FsImageStore`, `TokioJobs`) and the CLI entry points `run_refresh` and `run_linearize_ratings`.
-- Background work (image resizing, and `Job::RunExchange` for chat Exchanges) goes through `Jobs`. In tests, run with `RecordingJobs`, assert the recorded jobs (`test_support::jobs::sizes`), and if needed run each one sequentially with `services::jobs::run(job, &test_support::jobs::job_deps(db, store))`. Never construct `TokioJobs` in a test. `job_deps` holds a `MockLlm` without expectations, so a test that runs a `RunExchange` builds its own `JobDeps` with an expecting `MockLlm` (as `services/tests/postgres_chat.rs` does).
+- Background work (image resizing, and `Job::RunExchange` for chat Exchanges) goes through `Jobs`. In tests, run with `RecordingJobs`, assert the recorded jobs (`test_support::jobs::sizes`), and if needed run each one sequentially with `services::jobs::run(job, &test_support::jobs::job_deps(db, store))`. Never construct `TokioJobs` in a test. `JobDeps` holds `db`, `store`, `llm`, `registry`, `tmdb` and `clock`. `job_deps` holds a `MockLlm` and a `MockTmdb` without expectations, so a test that runs a `RunExchange` builds its own `JobDeps` with an expecting `MockLlm` (as `services/tests/postgres_chat.rs` does).
 
 ### Rules for tests
 

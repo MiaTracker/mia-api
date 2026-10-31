@@ -372,6 +372,19 @@ fn expression(tar: &String, op: ComparisonOperator, literal: Literal) -> Result<
     )
 }
 
+/// The names `target` accepts in the filter part of a query.
+pub const FILTER_FIELDS: [&str; 17] = [
+    "stars", "watched", "times_watched", "type", "has_source", "number_of_sources", "has_source_with_name",
+    "has_tag", "has_genre", "language", "id", "tmdb_id", "release_date", "date_added", "on_watchlist", "rated",
+    "tmdb_rating"
+];
+
+/// The names `sort` accepts in the sort part of a query.
+pub const SORT_TARGETS: [&str; 9] = [
+    "stars", "watched", "times_watched", "type", "has_source", "number_of_sources", "release_date", "date_added",
+    "tmdb_rating"
+];
+
 fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     match target.to_snake_case().as_str() {
         "stars" => { stars_target(op, literal) }
@@ -760,4 +773,28 @@ fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
             _ => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", target))) }
         }.into_sub_query_statement()
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_accepts_every_filter_field() {
+        for field in FILTER_FIELDS {
+            match target(&field.to_string(), ComparisonOperator::Equal, Literal::Null) {
+                Ok(_) => {}
+                Err(err) => assert!(!err.message.starts_with("Unknown target"), "{field}: {}", err.message),
+            }
+        }
+    }
+
+    #[test]
+    fn sort_accepts_every_sort_target() {
+        for field in SORT_TARGETS {
+            if let Err(err) = sort(field.to_string()) {
+                panic!("{field}: {}", err.message);
+            }
+        }
+    }
 }

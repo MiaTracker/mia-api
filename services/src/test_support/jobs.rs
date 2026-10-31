@@ -10,7 +10,7 @@ use sea_orm::DbConn;
 use crate::chat::registry::ExchangeRegistry;
 use crate::infrastructure::ImageStore;
 use crate::jobs::{run, Job, JobDeps, Jobs};
-use super::{fixed_clock, MockLlm};
+use super::{fixed_clock, MockLlm, MockTmdb};
 
 /// Keeps submitted jobs without running them.
 #[derive(Default)]
@@ -56,14 +56,15 @@ impl Jobs for InlineJobs {
     }
 }
 
-/// `JobDeps` for `db` and `store`, with a `MockLlm` expecting no calls, a new registry and the
-/// clock at 2024-01-01 12:00 UTC.
+/// `JobDeps` for `db` and `store`, with a `MockLlm` and a `MockTmdb` expecting no calls, a new
+/// registry and the clock at 2024-01-01 12:00 UTC.
 pub fn job_deps(db: Arc<DbConn>, store: Arc<dyn ImageStore>) -> JobDeps {
     JobDeps {
         db,
         store,
         llm: Arc::new(MockLlm::new()),
         registry: Arc::new(ExchangeRegistry::new()),
+        tmdb: Arc::new(MockTmdb::new()),
         clock: Arc::new(fixed_clock(2024, 1, 1, 12, 0, 0)),
     }
 }

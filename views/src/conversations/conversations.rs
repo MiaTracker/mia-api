@@ -48,7 +48,23 @@ pub struct ExchangeView {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DisplayBlock {
     Text { text: String },
-    Thinking { thinking: String }
+    Thinking { thinking: String },
+    Tool(ToolCallView)
+}
+
+/// How a tool call is shown to the client; also stored as `mia_display` on the tool result.
+#[derive(Serialize, Deserialize, ToSchema, Clone, Debug, PartialEq)]
+pub struct ToolCallView {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub titles: Option<Vec<String>>,
+    pub failed: bool
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -69,6 +85,7 @@ pub enum ExchangeEvent {
     TextDelta { block: u32, text: String },
     ThinkingDelta { block: u32, text: String },
     Completed { exchange_id: i32 },
+    ToolCall { block: u32, #[serde(flatten)] call: ToolCallView },
     Failed { exchange_id: i32, key: String, debug_message: String }
 }
 
@@ -77,7 +94,8 @@ impl ExchangeEvent {
     pub fn replay(block: u32, shown: DisplayBlock) -> Self {
         match shown {
             DisplayBlock::Text { text } => ExchangeEvent::TextDelta { block, text },
-            DisplayBlock::Thinking { thinking } => ExchangeEvent::ThinkingDelta { block, text: thinking }
+            DisplayBlock::Thinking { thinking } => ExchangeEvent::ThinkingDelta { block, text: thinking },
+            DisplayBlock::Tool(call) => ExchangeEvent::ToolCall { block, call }
         }
     }
 
@@ -86,6 +104,7 @@ impl ExchangeEvent {
         match self {
             ExchangeEvent::TextDelta { .. } => "text_delta",
             ExchangeEvent::ThinkingDelta { .. } => "thinking_delta",
+            ExchangeEvent::ToolCall { .. } => "tool_call",
             ExchangeEvent::Completed { .. } => "exchange_completed",
             ExchangeEvent::Failed { .. } => "exchange_failed"
         }
@@ -125,6 +144,49 @@ mod tests {
         let event = ExchangeEvent::replay(3, DisplayBlock::Thinking { thinking: "Hm".into() });
 
         assert_eq!(event, ExchangeEvent::ThinkingDelta { block: 3, text: "Hm".into() });
+    }
+
+    fn search_call() -> ToolCallView {
+        ToolCallView {
+            name: "mia_search".into(),
+            query: Some("Alien".into()),
+            media_type: None,
+            count: Some(3),
+            titles: None,
+            failed: false,
+        }
+    }
+
+    #[test]
+    fn exchange_event_serializes_block_and_call_fields_when_tool_call() {
+        let event = ExchangeEvent::ToolCall { block: 2, call: search_call() };
+
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            json!({"block": 2, "name": "mia_search", "query": "Alien", "count": 3, "failed": false})
+        );
+        assert_eq!(event.name(), "tool_call");
+    }
+
+    #[test]
+    fn display_block_serializes_with_tool_type_when_tool() {
+        let block = DisplayBlock::Tool(ToolCallView {
+            name: "date_time".into(),
+            query: None,
+            media_type: None,
+            count: None,
+            titles: None,
+            failed: false,
+        });
+
+        assert_eq!(serde_json::to_value(&block).unwrap(), json!({"type": "tool", "name": "date_time", "failed": false}));
+    }
+
+    #[test]
+    fn replay_returns_tool_call_when_block_is_tool() {
+        let event = ExchangeEvent::replay(4, DisplayBlock::Tool(search_call()));
+
+        assert_eq!(event, ExchangeEvent::ToolCall { block: 4, call: search_call() });
     }
 
     #[test]

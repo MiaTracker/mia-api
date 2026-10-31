@@ -391,3 +391,21 @@ fn parse_sort_target(str: &str) -> Result<Option<SortTarget>, ParseError> {
         direction,
     }))
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The parsed filter of `query`, as its debug form for comparing trees.
+    fn tree(query: &str) -> String {
+        format!("{:?}", parse(query.to_string()).expr.expect("filter parses"))
+    }
+
+    #[test]
+    #[ignore = "known bug: and binds looser than or in filters"]
+    fn parse_binds_and_tighter_than_or_when_filter_mixes_them() {
+        assert_eq!(
+            tree(" : stars > 5 and rated = true or watched = true"),
+            tree(" : (stars > 5 and rated = true) or watched = true"),
+        );
+    }
+}
