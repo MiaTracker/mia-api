@@ -36,10 +36,6 @@ pub(crate) async fn load_config() {
         }
     };
 
-    if let Err(err) = config.openrouter.validate() {
-        fail!("Invalid config {}: {}", path.display(), err);
-    }
-
     if let Err(err) = config.assistant.validate() {
         fail!("Invalid config {}: {}", path.display(), err);
     }
@@ -130,22 +126,20 @@ pub enum DataPolicy {
     Zdr
 }
 
-impl OpenRouterConfiguration {
-    /// Checks the values serde cannot: the reasoning budget must leave room for the answer.
-    pub fn validate(&self) -> Result<(), String> {
-        match &self.reasoning {
-            Some(reasoning) if reasoning.budget_tokens >= self.max_tokens => Err(format!(
-                "openrouter.reasoning.budget_tokens ({}) must be below openrouter.max_tokens ({})",
-                reasoning.budget_tokens, self.max_tokens
-            )),
-            _ => Ok(())
-        }
-    }
-}
-
 #[derive(Deserialize)]
 pub struct ReasoningConfiguration {
-    pub budget_tokens: u32
+    pub effort: ReasoningEffort
+}
+
+/// How hard the model is asked to think.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max
 }
 
 fn default_max_tokens() -> u32 {
@@ -237,36 +231,42 @@ pub struct MediaConfiguration {
 mod tests {
     use super::*;
 
-    fn openrouter(max_tokens: u32, reasoning: Option<ReasoningConfiguration>) -> OpenRouterConfiguration {
-        OpenRouterConfiguration { api_key: "k".into(), model: "m".into(), max_tokens, reasoning, data_policy: DataPolicy::Deny }
+    #[test]
+    fn openrouter_configuration_reads_each_effort_when_reasoning_present() {
+        for (text, effort) in [
+            ("low", ReasoningEffort::Low),
+            ("medium", ReasoningEffort::Medium),
+            ("high", ReasoningEffort::High),
+            ("xhigh", ReasoningEffort::Xhigh),
+            ("max", ReasoningEffort::Max),
+        ] {
+            let config: OpenRouterConfiguration =
+                serde_yaml::from_str(&format!("api_key: k\nmodel: m\nreasoning:\n  effort: {text}\n")).unwrap();
+
+            assert_eq!(config.reasoning.unwrap().effort, effort);
+            assert_eq!(config.max_tokens, 16384);
+        }
     }
 
     #[test]
-    fn validate_fails_when_budget_tokens_not_below_max_tokens() {
-        let config = openrouter(4096, Some(ReasoningConfiguration { budget_tokens: 4096 }));
+    fn openrouter_configuration_rejects_unknown_effort_when_value_not_a_level() {
+        let result = serde_yaml::from_str::<OpenRouterConfiguration>("api_key: k\nmodel: m\nreasoning:\n  effort: minimal\n");
 
-        assert!(config.validate().is_err());
+        assert!(result.is_err());
     }
 
     #[test]
-    fn validate_succeeds_when_budget_below_max_tokens() {
-        let config = openrouter(4096, Some(ReasoningConfiguration { budget_tokens: 2048 }));
+    fn openrouter_configuration_rejects_reasoning_when_effort_missing() {
+        let result = serde_yaml::from_str::<OpenRouterConfiguration>("api_key: k\nmodel: m\nreasoning:\n  budget_tokens: 8000\n");
 
-        assert_eq!(config.validate(), Ok(()));
+        assert!(result.is_err());
     }
 
     #[test]
-    fn validate_succeeds_when_reasoning_absent() {
-        assert_eq!(openrouter(4096, None).validate(), Ok(()));
-    }
+    fn openrouter_configuration_disables_reasoning_when_absent() {
+        let config: OpenRouterConfiguration = serde_yaml::from_str("api_key: k\nmodel: m\n").unwrap();
 
-    #[test]
-    fn openrouter_configuration_reads_budget_tokens_when_reasoning_present() {
-        let config: OpenRouterConfiguration =
-            serde_yaml::from_str("api_key: k\nmodel: m\nreasoning:\n  budget_tokens: 8000\n").unwrap();
-
-        assert_eq!(config.reasoning.unwrap().budget_tokens, 8000);
-        assert_eq!(config.max_tokens, 16384);
+        assert!(config.reasoning.is_none());
     }
 
     #[test]

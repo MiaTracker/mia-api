@@ -12,6 +12,16 @@ pub enum DataPolicy {
     Zdr,
 }
 
+/// How hard the model is asked to think.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
 /// Who authored a message sent to the model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LlmRole {

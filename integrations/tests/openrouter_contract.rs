@@ -4,7 +4,7 @@
 //! Run with `cargo test -p integrations --test openrouter_contract -- --ignored`.
 
 use futures_util::StreamExt;
-use integrations::openrouter::{BlockKind, DataPolicy, Llm, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmTool, OpenRouterClient};
+use integrations::openrouter::{BlockKind, DataPolicy, Llm, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmTool, OpenRouterClient, ReasoningEffort};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -18,17 +18,17 @@ struct TestOpenRouterConfig {
     api_key: String,
 }
 
-fn client(max_tokens: u32, thinking_budget: Option<u32>) -> OpenRouterClient {
-    client_for("openrouter/free", max_tokens, thinking_budget)
+fn client(max_tokens: u32, reasoning_effort: Option<ReasoningEffort>) -> OpenRouterClient {
+    client_for("openrouter/free", max_tokens, reasoning_effort)
 }
 
-fn client_for(model: &str, max_tokens: u32, thinking_budget: Option<u32>) -> OpenRouterClient {
+fn client_for(model: &str, max_tokens: u32, reasoning_effort: Option<ReasoningEffort>) -> OpenRouterClient {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config.yaml");
     let config: TestConfig = std::fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_yaml::from_str(&text).ok())
         .expect("config.yaml with openrouter.api_key required for OpenRouter contract tests");
-    OpenRouterClient::new(config.openrouter.api_key, model.to_string(), max_tokens, thinking_budget, DataPolicy::Allow)
+    OpenRouterClient::new(config.openrouter.api_key, model.to_string(), max_tokens, reasoning_effort, DataPolicy::Allow)
 }
 
 fn say_hello() -> LlmRequest {
@@ -69,7 +69,7 @@ async fn stream_message_yields_text_and_stop_reason_when_prompt_is_short() {
 #[tokio::test]
 #[ignore = "requires OpenRouter key"]
 async fn stream_message_reaches_stop_reason_when_reasoning_enabled() {
-    let events = stream_events(client(2048, Some(1024))).await;
+    let events = stream_events(client(2048, Some(ReasoningEffort::Low))).await;
 
     let thinking = events
         .iter()
@@ -171,7 +171,7 @@ fn append(blocks: &mut [(u32, serde_json::Value)], index: u32, field: &str, text
 #[tokio::test]
 #[ignore = "requires OpenRouter key"]
 async fn stream_message_yields_tool_use_with_parseable_input_when_tool_is_offered() {
-    let events = stream_request(&client_for(TOOL_MODEL, 2048, Some(1024)), weather_request()).await;
+    let events = stream_request(&client_for(TOOL_MODEL, 2048, Some(ReasoningEffort::Low)), weather_request()).await;
 
     let index = events
         .iter()
@@ -197,7 +197,7 @@ async fn stream_message_yields_tool_use_with_parseable_input_when_tool_is_offere
 #[tokio::test]
 #[ignore = "requires OpenRouter key"]
 async fn stream_message_answers_with_text_when_tool_result_follows_streamed_tool_use() {
-    let client = client_for(TOOL_MODEL, 2048, Some(1024));
+    let client = client_for(TOOL_MODEL, 2048, Some(ReasoningEffort::Low));
     let first = stream_request(&client, weather_request()).await;
     let assistant = assistant_content(&first);
     let tool_use_id = assistant

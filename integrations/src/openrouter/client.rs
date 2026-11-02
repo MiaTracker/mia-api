@@ -1,5 +1,5 @@
 use crate::openrouter::types::{
-    BlockKind, DataPolicy, LlmError, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmUsage, StopReason, UNPARSEABLE_RESPONSE,
+    BlockKind, DataPolicy, LlmError, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmUsage, ReasoningEffort, StopReason, UNPARSEABLE_RESPONSE,
 };
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -7,7 +7,7 @@ use futures_util::stream::BoxStream;
 use openrouter_rs::OpenRouterClient as RsClient;
 use openrouter_rs::api::messages::{
     AnthropicContentPart, AnthropicMessage, AnthropicMessageContent, AnthropicMessagesRequest,
-    AnthropicMessagesStreamEvent, AnthropicRole, AnthropicSystemPrompt, AnthropicThinking, AnthropicTool,
+    AnthropicMessagesStreamEvent, AnthropicOutputConfig, AnthropicOutputEffort, AnthropicRole, AnthropicSystemPrompt, AnthropicThinking, AnthropicTool,
 };
 use openrouter_rs::error::OpenRouterError;
 use openrouter_rs::types::{DataCollectionPolicy, ProviderPreferences};
@@ -31,8 +31,8 @@ pub struct OpenRouterClient {
     client: RsClient,
     model: String,
     max_tokens: u32,
-    /// Reasoning token budget; `None` disables reasoning.
-    thinking_budget: Option<u32>,
+    /// How hard the model is asked to think; `None` disables reasoning.
+    reasoning_effort: Option<ReasoningEffort>,
     data_policy: DataPolicy,
 }
 
@@ -41,14 +41,14 @@ impl OpenRouterClient {
         api_key: String,
         model: String,
         max_tokens: u32,
-        thinking_budget: Option<u32>,
+        reasoning_effort: Option<ReasoningEffort>,
         data_policy: DataPolicy,
     ) -> Self {
         let client = RsClient::builder()
             .api_key(api_key)
             .build()
             .expect("OpenRouter client builds from an API key");
-        Self { client, model, max_tokens, thinking_budget, data_policy }
+        Self { client, model, max_tokens, reasoning_effort, data_policy }
     }
 
     /// The provider routing preferences for the data policy; `None` when any provider is allowed.
@@ -71,11 +71,17 @@ impl OpenRouterClient {
         builder
             .model(self.model.clone())
             .max_tokens(self.max_tokens)
-            .messages(messages)
-            .thinking(match self.thinking_budget {
-                Some(budget_tokens) => AnthropicThinking::Enabled { budget_tokens },
-                None => AnthropicThinking::Disabled,
-            });
+            .messages(messages);
+        match self.reasoning_effort {
+            Some(effort) => {
+                builder
+                    .thinking(AnthropicThinking::Adaptive)
+                    .output_config(AnthropicOutputConfig::with_effort(output_effort(effort)));
+            }
+            None => {
+                builder.thinking(AnthropicThinking::Disabled);
+            }
+        }
         if let Some(preferences) = self.provider_preferences() {
             builder.provider(preferences);
         }
@@ -110,6 +116,16 @@ impl Llm for OpenRouterClient {
                 futures_util::stream::iter(events)
             })
             .boxed())
+    }
+}
+
+fn output_effort(effort: ReasoningEffort) -> AnthropicOutputEffort {
+    match effort {
+        ReasoningEffort::Low => AnthropicOutputEffort::Low,
+        ReasoningEffort::Medium => AnthropicOutputEffort::Medium,
+        ReasoningEffort::High => AnthropicOutputEffort::High,
+        ReasoningEffort::Xhigh => AnthropicOutputEffort::Xhigh,
+        ReasoningEffort::Max => AnthropicOutputEffort::Max,
     }
 }
 
@@ -493,12 +509,12 @@ mod tests {
         assert_eq!(error.error_type.as_deref(), Some(UNPARSEABLE_RESPONSE));
     }
 
-    fn request_json(thinking_budget: Option<u32>, tools: Vec<LlmTool>) -> Value {
-        request_json_with_policy(thinking_budget, tools, DataPolicy::Allow)
+    fn request_json(reasoning_effort: Option<ReasoningEffort>, tools: Vec<LlmTool>) -> Value {
+        request_json_with_policy(reasoning_effort, tools, DataPolicy::Allow)
     }
 
-    fn request_json_with_policy(thinking_budget: Option<u32>, tools: Vec<LlmTool>, data_policy: DataPolicy) -> Value {
-        let client = OpenRouterClient::new("key".into(), "test/model".into(), 4096, thinking_budget, data_policy);
+    fn request_json_with_policy(reasoning_effort: Option<ReasoningEffort>, tools: Vec<LlmTool>, data_policy: DataPolicy) -> Value {
+        let client = OpenRouterClient::new("key".into(), "test/model".into(), 4096, reasoning_effort, data_policy);
         let request = client.build_request(LlmRequest {
             system: String::new(),
             messages: vec![user(json!([{"type": "text", "text": "Hi"}]))],
@@ -508,13 +524,27 @@ mod tests {
     }
 
     #[test]
-    fn build_request_disables_thinking_when_no_budget() {
-        assert_eq!(request_json(None, Vec::new())["thinking"], json!({"type": "disabled"}));
+    fn build_request_disables_thinking_when_no_effort() {
+        let json = request_json(None, Vec::new());
+
+        assert_eq!(json["thinking"], json!({"type": "disabled"}));
+        assert!(json.get("output_config").is_none());
     }
 
     #[test]
-    fn build_request_enables_thinking_with_budget_when_budget_set() {
-        assert_eq!(request_json(Some(2048), Vec::new())["thinking"], json!({"type": "enabled", "budget_tokens": 2048}));
+    fn build_request_sends_adaptive_thinking_with_effort_when_effort_set() {
+        for (effort, text) in [
+            (ReasoningEffort::Low, "low"),
+            (ReasoningEffort::Medium, "medium"),
+            (ReasoningEffort::High, "high"),
+            (ReasoningEffort::Xhigh, "xhigh"),
+            (ReasoningEffort::Max, "max"),
+        ] {
+            let json = request_json(Some(effort), Vec::new());
+
+            assert_eq!(json["thinking"], json!({"type": "adaptive"}));
+            assert_eq!(json["output_config"], json!({"effort": text}));
+        }
     }
 
     #[test]

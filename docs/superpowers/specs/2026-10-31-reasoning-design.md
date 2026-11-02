@@ -43,14 +43,13 @@ openrouter:
   model: ...
   max_tokens: 16384
   reasoning:            # optional; absent → the request sends thinking disabled, as today
-    budget_tokens: 8000 # required when `reasoning` is present
+    effort: medium      # required when `reasoning` is present: low | medium | high | xhigh | max
 ```
 
-- **Only `budget_tokens`, no `effort`** (*user's decision*). `budget_tokens` maps onto OpenRouter's own `reasoning.max_tokens`, which OpenRouter normalises across reasoning models; an effort setting could not be verified to do anything, since OpenRouter silently ignores parameters a model doesn't support.
-- `budget_tokens` must be below `max_tokens`; otherwise startup fails with a clear config error (*my call*).
+- **`effort` replaces `budget_tokens`** (*user's decision, 2026-11-02, reversing the original "only `budget_tokens`" decision*). The original reason was that OpenRouter silently ignores parameters a model doesn't support, so an effort setting can't be verified to do anything; a model that ignores effort thinks however it likes. Accepted values are the full set `openrouter-rs` offers: `low | medium | high | xhigh | max`. There is no token budget and no `budget_tokens < max_tokens` startup check any more.
 - Mapping onto the request, in `OpenRouterClient::build_request`:
-  - absent → `AnthropicThinking::Disabled` (today's behaviour).
-  - `budget_tokens: n` → `AnthropicThinking::Enabled { budget_tokens: n }`.
+  - absent → `AnthropicThinking::Disabled` and no `output_config` (today's behaviour).
+  - `effort: e` → `AnthropicThinking::Adaptive` plus `output_config: { effort: e }`.
 - `OpenRouterClient::new` takes the reasoning setting; the `Llm` trait and `LlmRequest` stay unchanged (reasoning is a client setting, like `max_tokens`).
 
 ### The setting only shapes the request
@@ -114,8 +113,8 @@ openrouter-rs 0.22's `AnthropicContentPart::Thinking` requires `signature`. A pr
 `CLAUDE.md` rules apply in full. After changes: `cargo test --workspace`, `cargo clippy --workspace --all-targets` (no new warnings), and the OpenRouter contract test. No SQL changes, so the Postgres suite is not required beyond running `postgres_chat` once if `exchange.rs` changes touch persistence.
 
 Unit tests (in the file under test):
-- `integrations` client: request built with each reasoning setting (absent → disabled; `budget_tokens`) — assert on the serialized request JSON.
-- Config: `budget_tokens >= max_tokens` is rejected.
+- `integrations` client: request built with each reasoning setting (absent → disabled; each `effort`) — assert on the serialized request JSON.
+- Config: each `effort` value parses; an unknown value or a missing `effort` is rejected.
 - Accumulator: thinking deltas return display deltas with their own block number; thinking then text numbers 0 then 1; empty thinking gets no number.
 - `display_blocks`: thinking included; numbering matches the stream (extend the existing reload test).
 - Registry: replay keeps block kinds (thinking replayed as thinking).
@@ -124,16 +123,15 @@ Unit tests (in the file under test):
 - `views`: `ExchangeEvent::ThinkingDelta` serializes as `{"block", "text"}` with name `thinking_delta`; `DisplayBlock::Thinking` serializes with `"type": "thinking"`.
 
 Live contract test (`integrations/tests/openrouter_contract.rs`, `#[ignore = "requires OpenRouter key"]`, `openrouter/free`):
-- One new test: a short prompt with `budget_tokens` set streams to a stop reason without the provider rejecting the request. Assertions must not require thinking to appear (the free router picks a random model). If thinking does appear, it must have arrived as `ThinkingDelta` events.
+- One new test: a short prompt with `effort` set streams to a stop reason without the provider rejecting the request. Assertions must not require thinking to appear (the free router picks a random model). If thinking does appear, it must have arrived as `ThinkingDelta` events.
 - If the known gap bites, the test simply fails (*user's decision: "if it fails it fails"*). It keeps its single `"requires OpenRouter key"` ignore reason, does not accept `unparseable_response` as an outcome, and gets no Known bugs row; the failure is reported in the PR. It may be flaky, since only some free models send thinking without a signature.
 
 ## Left to the builder
 
-Module layout, field and type names (e.g. how the registry stores block kinds), the exact `debug_message` wording, where the `budget_tokens < max_tokens` check lives, test names within the `CLAUDE.md` convention.
+Module layout, field and type names (e.g. how the registry stores block kinds), the exact `debug_message` wording, test names within the `CLAUDE.md` convention.
 
 ## Calls I made (check these)
 
-- Startup rejects `budget_tokens >= max_tokens`.
 - Display and stripping are unconditional; the config only shapes the request. Past Exchanges with stored thinking will now show it, and their block numbering shifts.
 - SSE event name `thinking_delta` with payload `{block, text}`; display block `{"type": "thinking", "thinking": ...}`.
 - Thinking blocks are numbered and shown in provider order, interleaved with text in the one block list.
