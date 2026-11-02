@@ -1,5 +1,17 @@
 use serde_json::Value;
 
+/// Which upstream providers OpenRouter may route a request to, by how they handle the prompt.
+/// When no provider meets the policy, OpenRouter rejects the request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataPolicy {
+    /// Any provider, including those that may store or train on prompts.
+    Allow,
+    /// Only providers that do not collect prompts (`provider.data_collection: "deny"`).
+    Deny,
+    /// Only endpoints with a zero-data-retention agreement (`provider.zdr: true`).
+    Zdr,
+}
+
 /// Who authored a message sent to the model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LlmRole {

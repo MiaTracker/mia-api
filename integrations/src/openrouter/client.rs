@@ -1,5 +1,5 @@
 use crate::openrouter::types::{
-    BlockKind, LlmError, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmUsage, StopReason, UNPARSEABLE_RESPONSE,
+    BlockKind, DataPolicy, LlmError, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmUsage, StopReason, UNPARSEABLE_RESPONSE,
 };
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -10,6 +10,7 @@ use openrouter_rs::api::messages::{
     AnthropicMessagesStreamEvent, AnthropicRole, AnthropicSystemPrompt, AnthropicThinking, AnthropicTool,
 };
 use openrouter_rs::error::OpenRouterError;
+use openrouter_rs::types::{DataCollectionPolicy, ProviderPreferences};
 use serde_json::Value;
 
 /// The events of one streamed assistant message. An `Err` item ends the stream.
@@ -32,15 +33,33 @@ pub struct OpenRouterClient {
     max_tokens: u32,
     /// Reasoning token budget; `None` disables reasoning.
     thinking_budget: Option<u32>,
+    data_policy: DataPolicy,
 }
 
 impl OpenRouterClient {
-    pub fn new(api_key: String, model: String, max_tokens: u32, thinking_budget: Option<u32>) -> Self {
+    pub fn new(
+        api_key: String,
+        model: String,
+        max_tokens: u32,
+        thinking_budget: Option<u32>,
+        data_policy: DataPolicy,
+    ) -> Self {
         let client = RsClient::builder()
             .api_key(api_key)
             .build()
             .expect("OpenRouter client builds from an API key");
-        Self { client, model, max_tokens, thinking_budget }
+        Self { client, model, max_tokens, thinking_budget, data_policy }
+    }
+
+    /// The provider routing preferences for the data policy; `None` when any provider is allowed.
+    fn provider_preferences(&self) -> Option<ProviderPreferences> {
+        let mut preferences = ProviderPreferences::default();
+        match self.data_policy {
+            DataPolicy::Allow => return None,
+            DataPolicy::Deny => preferences.data_collection = Some(DataCollectionPolicy::Deny),
+            DataPolicy::Zdr => preferences.zdr = Some(true),
+        }
+        Some(preferences)
     }
 
     fn build_request(&self, request: LlmRequest) -> Result<AnthropicMessagesRequest, LlmError> {
@@ -57,6 +76,9 @@ impl OpenRouterClient {
                 Some(budget_tokens) => AnthropicThinking::Enabled { budget_tokens },
                 None => AnthropicThinking::Disabled,
             });
+        if let Some(preferences) = self.provider_preferences() {
+            builder.provider(preferences);
+        }
         if !request.system.is_empty() {
             builder.system(AnthropicSystemPrompt::Text(request.system));
         }
@@ -472,7 +494,11 @@ mod tests {
     }
 
     fn request_json(thinking_budget: Option<u32>, tools: Vec<LlmTool>) -> Value {
-        let client = OpenRouterClient::new("key".into(), "test/model".into(), 4096, thinking_budget);
+        request_json_with_policy(thinking_budget, tools, DataPolicy::Allow)
+    }
+
+    fn request_json_with_policy(thinking_budget: Option<u32>, tools: Vec<LlmTool>, data_policy: DataPolicy) -> Value {
+        let client = OpenRouterClient::new("key".into(), "test/model".into(), 4096, thinking_budget, data_policy);
         let request = client.build_request(LlmRequest {
             system: String::new(),
             messages: vec![user(json!([{"type": "text", "text": "Hi"}]))],
@@ -500,6 +526,25 @@ mod tests {
 
         assert_eq!(with_tools["tools"], json!([{"name": "date_time", "description": "d", "input_schema": {"type": "object"}}]));
         assert!(without_tools.get("tools").is_none());
+    }
+
+    #[test]
+    fn build_request_sends_no_provider_when_policy_allow() {
+        assert!(request_json_with_policy(None, Vec::new(), DataPolicy::Allow).get("provider").is_none());
+    }
+
+    #[test]
+    fn build_request_denies_data_collection_when_policy_deny() {
+        let request = request_json_with_policy(None, Vec::new(), DataPolicy::Deny);
+
+        assert_eq!(request["provider"], json!({"data_collection": "deny"}));
+    }
+
+    #[test]
+    fn build_request_requires_zdr_when_policy_zdr() {
+        let request = request_json_with_policy(None, Vec::new(), DataPolicy::Zdr);
+
+        assert_eq!(request["provider"], json!({"zdr": true}));
     }
 
     #[test]

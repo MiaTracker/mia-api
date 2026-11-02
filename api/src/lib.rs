@@ -14,7 +14,7 @@ use tower::ServiceBuilder;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use ::infrastructure::config;
-use services::infrastructure::{Clock, FsImageStore, ImageStore, Llm, OpenRouterClient, OsRandom, Random, SystemClock, Tmdb, TmdbClient};
+use services::infrastructure::{Clock, FsImageStore, ImageStore, openrouter_llm, OsRandom, Random, SystemClock, Tmdb, TmdbClient};
 use services::chat::ExchangeRegistry;
 use services::jobs::{JobDeps, Jobs, TokioJobs};
 use crate::config::routes;
@@ -43,13 +43,7 @@ pub async fn launch() {
         Err(err) => tracing::error!("Failed to recover interrupted exchanges: {}", err),
     }
 
-    let openrouter = &config().openrouter;
-    let llm: Arc<dyn Llm> = Arc::new(OpenRouterClient::new(
-        openrouter.api_key.clone(),
-        openrouter.model.clone(),
-        openrouter.max_tokens,
-        openrouter.reasoning.as_ref().map(|reasoning| reasoning.budget_tokens),
-    ));
+    let llm = openrouter_llm(&config().openrouter);
     let registry = Arc::new(ExchangeRegistry::new());
     let jobs: Arc<dyn Jobs> = Arc::new(TokioJobs::new(JobDeps {
         db: conn.clone(), store: image_store.clone(), llm: llm.clone(), registry: registry.clone(), tmdb: tmdb.clone(), clock: clock.clone(),

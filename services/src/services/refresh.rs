@@ -9,7 +9,7 @@ use log::{error, info};
 use infrastructure::config;
 use views::refresh::RefreshResult;
 use std::sync::Arc;
-use crate::infrastructure::{Clock, FsImageStore, ImageStore, Llm, OpenRouterClient, OsRandom, Random, SrvErr, SystemClock, Tmdb, TmdbClient};
+use crate::infrastructure::{Clock, FsImageStore, ImageStore, openrouter_llm, OsRandom, Random, SrvErr, SystemClock, Tmdb, TmdbClient};
 use crate::chat::registry::ExchangeRegistry;
 use crate::jobs::{JobDeps, Jobs, TokioJobs};
 use crate::{movies, series};
@@ -24,13 +24,7 @@ pub async fn run_refresh() {
 
     let conn = Arc::new(conn);
     let store: Arc<dyn ImageStore> = Arc::new(FsImageStore::new(config().images.store_path.clone()));
-    let openrouter = &config().openrouter;
-    let llm: Arc<dyn Llm> = Arc::new(OpenRouterClient::new(
-        openrouter.api_key.clone(),
-        openrouter.model.clone(),
-        openrouter.max_tokens,
-        openrouter.reasoning.as_ref().map(|reasoning| reasoning.budget_tokens),
-    ));
+    let llm = openrouter_llm(&config().openrouter);
     let jobs = TokioJobs::new(JobDeps {
         db: conn.clone(), store: store.clone(), llm, registry: Arc::new(ExchangeRegistry::new()), tmdb: tmdb.clone(),
         clock: Arc::new(SystemClock),

@@ -52,6 +52,7 @@ openrouter:
   max_tokens: 16384   # optional, default 16384
   reasoning:          # optional; absent disables reasoning
     budget_tokens: 8000   # must be below max_tokens
+  data_policy: deny     # optional, default deny: allow (any provider) | deny (no prompt collection) | zdr (zero retention); free models need allow
 assistant:            # optional; each limit defaults as shown and must be at least 1
   mia_search_limit: 30    # results of one mia_search call
   mia_details_limit: 60   # ids of one mia_details call

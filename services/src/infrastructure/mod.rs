@@ -1,6 +1,7 @@
 mod srv_err;
 mod clock;
 mod random;
+mod llm;
 mod image_store;
 mod rule_violation;
 mod initialize;
@@ -11,6 +12,7 @@ pub mod constants;
 
 pub use srv_err::*;
 pub use clock::{Clock, SystemClock};
+pub use llm::openrouter_llm;
 pub use random::{OsRandom, Random};
 pub use image_store::{FsImageStore, ImageStore};
 pub use rule_violation::*;

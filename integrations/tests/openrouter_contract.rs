@@ -4,7 +4,7 @@
 //! Run with `cargo test -p integrations --test openrouter_contract -- --ignored`.
 
 use futures_util::StreamExt;
-use integrations::openrouter::{BlockKind, Llm, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmTool, OpenRouterClient};
+use integrations::openrouter::{BlockKind, DataPolicy, Llm, LlmEvent, LlmMessage, LlmRequest, LlmRole, LlmTool, OpenRouterClient};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -28,7 +28,7 @@ fn client_for(model: &str, max_tokens: u32, thinking_budget: Option<u32>) -> Ope
         .ok()
         .and_then(|text| serde_yaml::from_str(&text).ok())
         .expect("config.yaml with openrouter.api_key required for OpenRouter contract tests");
-    OpenRouterClient::new(config.openrouter.api_key, model.to_string(), max_tokens, thinking_budget)
+    OpenRouterClient::new(config.openrouter.api_key, model.to_string(), max_tokens, thinking_budget, DataPolicy::Allow)
 }
 
 fn say_hello() -> LlmRequest {
@@ -84,7 +84,7 @@ async fn stream_message_reaches_stop_reason_when_reasoning_enabled() {
 /// Runs on a pinned free model that advertises tool support: `openrouter/free` may route to a model
 /// that ignores the tool or rejects the request, and other free tool models were rate limited
 /// (gemma-4-31b-it) or erroring upstream (nemotron-3-ultra). Replace the model if OpenRouter retires it.
-const TOOL_MODEL: &str = "poolside/laguna-s-2.1:free";
+const TOOL_MODEL: &str = "openrouter/free";
 
 fn weather_request() -> LlmRequest {
     LlmRequest {

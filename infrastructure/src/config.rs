@@ -111,7 +111,23 @@ pub struct OpenRouterConfiguration {
     pub max_tokens: u32,
     /// Absent: reasoning is disabled.
     #[serde(default)]
-    pub reasoning: Option<ReasoningConfiguration>
+    pub reasoning: Option<ReasoningConfiguration>,
+    /// Which providers OpenRouter may route to. Absent: `deny`.
+    #[serde(default)]
+    pub data_policy: DataPolicy
+}
+
+/// How the upstream providers OpenRouter routes to may handle prompts.
+#[derive(Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DataPolicy {
+    /// Any provider, including those that may store or train on prompts.
+    Allow,
+    /// Only providers that do not collect prompts.
+    #[default]
+    Deny,
+    /// Only endpoints with a zero-data-retention agreement.
+    Zdr
 }
 
 impl OpenRouterConfiguration {
@@ -222,7 +238,7 @@ mod tests {
     use super::*;
 
     fn openrouter(max_tokens: u32, reasoning: Option<ReasoningConfiguration>) -> OpenRouterConfiguration {
-        OpenRouterConfiguration { api_key: "k".into(), model: "m".into(), max_tokens, reasoning }
+        OpenRouterConfiguration { api_key: "k".into(), model: "m".into(), max_tokens, reasoning, data_policy: DataPolicy::Deny }
     }
 
     #[test]
@@ -251,6 +267,30 @@ mod tests {
 
         assert_eq!(config.reasoning.unwrap().budget_tokens, 8000);
         assert_eq!(config.max_tokens, 16384);
+    }
+
+    #[test]
+    fn openrouter_configuration_defaults_to_deny_when_data_policy_absent() {
+        let config: OpenRouterConfiguration = serde_yaml::from_str("api_key: k\nmodel: m\n").unwrap();
+
+        assert_eq!(config.data_policy, DataPolicy::Deny);
+    }
+
+    #[test]
+    fn openrouter_configuration_reads_data_policy_when_present() {
+        for (value, expected) in [("allow", DataPolicy::Allow), ("deny", DataPolicy::Deny), ("zdr", DataPolicy::Zdr)] {
+            let config: OpenRouterConfiguration =
+                serde_yaml::from_str(&format!("api_key: k\nmodel: m\ndata_policy: {value}\n")).unwrap();
+
+            assert_eq!(config.data_policy, expected);
+        }
+    }
+
+    #[test]
+    fn openrouter_configuration_fails_when_data_policy_unknown() {
+        let result = serde_yaml::from_str::<OpenRouterConfiguration>("api_key: k\nmodel: m\ndata_policy: maybe\n");
+
+        assert!(result.is_err());
     }
 
     #[test]
