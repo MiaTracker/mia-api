@@ -39,7 +39,7 @@ One request to the model provider, successful or failed; every request ever sent
 _Avoid_: Request, completion, generation
 
 **Retry**:
-Resuming a failed **Exchange** from the point it failed: its **Partial message** is discarded and the failed **LLM call** is made again from scratch, keeping the Messages that already succeeded. The failed LLM call stays in the ledger.
+Resuming a failed **Exchange** from the point it failed: its **Partial message** is discarded and the failed **LLM call** is made again from scratch, keeping the Messages that already succeeded. The failed LLM call stays in the ledger. The Exchange also moves to the end of the **Conversation**: its creation time becomes the time of the Retry.
 
 **Regenerate**:
 Discarding an **Exchange**'s tool and assistant Messages and running it again from its user Message.

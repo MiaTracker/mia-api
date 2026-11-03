@@ -3,6 +3,7 @@
 use chrono::{DateTime, FixedOffset, Utc};
 use entities::sea_orm_active_enums::{ExchangeStatus, MessageRole};
 use entities::{conversations, exchanges, messages};
+use sea_orm::sea_query::{Expr, Func, Query};
 use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr, TransactionTrait};
 use serde_json::json;
@@ -45,6 +46,7 @@ pub async fn details(conversation_id: i32, user: &CurrentUser, db: &DbConn) -> R
     let conversation = find_conversation(conversation_id, user, db).await?;
     let found_exchanges = exchanges::Entity::find()
         .filter(exchanges::Column::ConversationId.eq(conversation_id))
+        .order_by_asc(exchanges::Column::CreatedAt)
         .order_by_asc(exchanges::Column::Id)
         .all(db)
         .await?;
@@ -98,6 +100,30 @@ pub async fn start_exchange(conversation_id: i32, params: ExchangeCreate, user: 
     let exchange_id = insert_exchange(conversation_id, &params.content, now, db).await?;
 
     registry.open(exchange_id);
+    let subscription = registry.subscribe(exchange_id)
+        .ok_or_else(|| SrvErr::Internal(format!("exchange {exchange_id} is not open right after opening it")))?;
+    jobs.submit(Job::RunExchange { exchange_id }).await;
+    Ok(subscription)
+}
+
+/// Retries a failed Exchange: it goes back to `in_progress`, moves to the end of the Conversation
+/// (its `created_at` becomes now), loses its trailing assistant Message if it has one, and runs
+/// again from the Messages that are left. The returned subscription replays those Messages' blocks
+/// and then follows the run.
+///
+/// An Exchange whose registry entry is still open (its run has committed the failure but not yet
+/// closed the entry) is rejected as in progress: opening an entry over it would let the old run's
+/// last publish and close hit the new one.
+pub async fn retry_exchange(conversation_id: i32, exchange_id: i32, user: &CurrentUser, db: &DbConn, registry: &ExchangeRegistry, jobs: &dyn Jobs, clock: &dyn Clock) -> Result<ExchangeSubscription, SrvErr> {
+    find_conversation(conversation_id, user, db).await?;
+    find_exchange(conversation_id, exchange_id, db).await?;
+    if registry.is_open(exchange_id) {
+        return Err(violation(RuleViolation::ConversationExchangeInProgress));
+    }
+
+    let kept = reopen_exchange(conversation_id, exchange_id, clock.now().fixed_offset(), db).await?;
+
+    registry.open_with(exchange_id, display_blocks(&kept));
     let subscription = registry.subscribe(exchange_id)
         .ok_or_else(|| SrvErr::Internal(format!("exchange {exchange_id} is not open right after opening it")))?;
     jobs.submit(Job::RunExchange { exchange_id }).await;
@@ -176,6 +202,52 @@ async fn insert_exchange(conversation_id: i32, content: &str, now: DateTime<Fixe
     Ok(exchange.id)
 }
 
+/// In one transaction: sets the failed Exchange back to `in_progress` at `now`, deletes its last
+/// Message if that is an assistant Message, and bumps the Conversation's `updated_at`. Returns the
+/// Messages the Exchange keeps, in order. `ExchangeNotFailed` when the Exchange is not failed.
+async fn reopen_exchange(conversation_id: i32, exchange_id: i32, now: DateTime<FixedOffset>, db: &DbConn) -> Result<Vec<messages::Model>, SrvErr> {
+    let tran = db.begin().await?;
+    let reopened = exchanges::Entity::update_many()
+        .set(exchanges::ActiveModel {
+            status: Set(ExchangeStatus::InProgress),
+            error: Set(None),
+            completed_at: Set(None),
+            created_at: Set(now),
+            ..Default::default()
+        })
+        .filter(exchanges::Column::Id.eq(exchange_id))
+        .filter(exchanges::Column::Status.eq(ExchangeStatus::Failed))
+        .exec(&tran)
+        .await
+        .map_err(conflict_or_db)?;
+    if reopened.rows_affected == 0 {
+        tran.rollback().await?;
+        return Err(violation(RuleViolation::ExchangeNotFailed));
+    }
+    let last_message = Query::select()
+        .expr(Func::max(Expr::col(messages::Column::Id)))
+        .from(messages::Entity)
+        .and_where(messages::Column::ExchangeId.eq(exchange_id))
+        .to_owned();
+    messages::Entity::delete_many()
+        .filter(messages::Column::Role.eq(MessageRole::Assistant))
+        .filter(messages::Column::Id.in_subquery(last_message))
+        .exec(&tran)
+        .await?;
+    conversations::Entity::update_many()
+        .set(conversations::ActiveModel { updated_at: Set(now), ..Default::default() })
+        .filter(conversations::Column::Id.eq(conversation_id))
+        .exec(&tran)
+        .await?;
+    let kept = messages::Entity::find()
+        .filter(messages::Column::ExchangeId.eq(exchange_id))
+        .order_by_asc(messages::Column::Id)
+        .all(&tran)
+        .await?;
+    tran.commit().await?;
+    Ok(kept)
+}
+
 fn conflict_or_db(err: DbErr) -> SrvErr {
     if is_exchange_in_progress_conflict(&err) {
         violation(RuleViolation::ConversationExchangeInProgress)
@@ -243,7 +315,7 @@ mod tests {
     use serde_json::json;
     use views::conversations::{DisplayBlock, ToolCallView};
     use super::*;
-    use crate::test_support::db::{assert_statement_count, assert_wrote, updated};
+    use crate::test_support::db::{assert_no_statement_starting_with, assert_statement_count, assert_wrote, updated};
     use crate::test_support::{self, assert_single_violation, fixed_clock, RecordingJobs};
     use crate::test_support::fixtures::{conversation_model, exchange_model, message_model, user};
 
@@ -316,6 +388,22 @@ mod tests {
         assert_eq!((second.id, second.status, second.content.as_str()), (7, ExchangeStatusView::Failed, "Hi"));
         assert_eq!(second.blocks, vec![DisplayBlock::Thinking { thinking: "hmm".into() }, DisplayBlock::Text { text: "Hel".into() }]);
         assert_eq!(second.error, Some(ExchangeError { key: "ProviderUnavailable".into(), debug_message: "overloaded".into() }));
+    }
+
+    #[tokio::test]
+    async fn details_orders_exchanges_by_created_at_then_id() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([Vec::<exchanges::Model>::new()])
+            .append_query_results([Vec::<messages::Model>::new()])
+            .into_connection();
+
+        details(3, &user(), &db).await.ok().expect("details should succeed");
+
+        let log = test_support::db::log(db);
+        let sql = &log.iter().find(|statement| statement.sql.contains(r#"FROM "exchanges""#)).expect("exchanges query").sql;
+        assert!(sql.contains(r#"ORDER BY "exchanges"."created_at" ASC, "exchanges"."id" ASC"#), "unexpected SQL: {sql}");
     }
 
     #[tokio::test]
@@ -396,6 +484,152 @@ mod tests {
         let log = test_support::db::log(db);
         assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(text(" Hi "))]);
         assert_wrote(&log, r#"UPDATE "conversations""#, &[Value::from(clock.now().fixed_offset())]);
+    }
+
+    fn failed_exchange() -> exchanges::Model {
+        exchanges::Model {
+            error: Some(json!({"key": "ProviderUnavailable", "debug_message": "overloaded"})),
+            ..exchange_model(7, 3, ExchangeStatus::Failed)
+        }
+    }
+
+    fn statements_starting_with(log: &[sea_orm::Statement], prefix: &str) -> usize {
+        log.iter().filter(|statement| statement.sql.starts_with(prefix)).count()
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_returns_not_found_when_conversation_of_other_user() {
+        test_support::init();
+        let db = test_support::db::mock().append_query_results([Vec::<conversations::Model>::new()]).into_connection();
+        let jobs = RecordingJobs::new();
+
+        let result = retry_exchange(3, 7, &user(), &db, &ExchangeRegistry::new(), &jobs, &fixed_clock(2026, 1, 1, 0, 0, 0)).await;
+
+        assert!(matches!(result, Err(SrvErr::NotFound)));
+        assert_statement_count(&test_support::db::log(db), 1);
+        assert!(jobs.take().is_empty());
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_returns_not_found_when_exchange_of_other_conversation() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([Vec::<exchanges::Model>::new()])
+            .into_connection();
+        let jobs = RecordingJobs::new();
+
+        let result = retry_exchange(3, 7, &user(), &db, &ExchangeRegistry::new(), &jobs, &fixed_clock(2026, 1, 1, 0, 0, 0)).await;
+
+        assert!(matches!(result, Err(SrvErr::NotFound)));
+        assert_statement_count(&test_support::db::log(db), 2);
+        assert!(jobs.take().is_empty());
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_fails_with_exchange_in_progress_when_registry_entry_open() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([[failed_exchange()]])
+            .into_connection();
+        let jobs = RecordingJobs::new();
+        let registry = ExchangeRegistry::new();
+        registry.open(7);
+
+        let result = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &fixed_clock(2026, 1, 1, 0, 0, 0)).await;
+
+        assert_single_violation(result, |v| matches!(v, RuleViolation::ConversationExchangeInProgress));
+        assert_statement_count(&test_support::db::log(db), 2);
+        assert!(jobs.take().is_empty());
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_fails_with_exchange_not_failed_when_update_matches_no_row() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([[exchange_model(7, 3, ExchangeStatus::Completed)]])
+            .append_exec_results([updated(0)])
+            .into_connection();
+        let jobs = RecordingJobs::new();
+        let registry = ExchangeRegistry::new();
+
+        let result = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &fixed_clock(2026, 1, 1, 0, 0, 0)).await;
+
+        assert_single_violation(result, |v| matches!(v, RuleViolation::ExchangeNotFailed));
+        let log = test_support::db::log(db);
+        assert_no_statement_starting_with(&log, r#"DELETE FROM "messages""#);
+        assert_no_statement_starting_with(&log, r#"UPDATE "conversations""#);
+        assert!(jobs.take().is_empty());
+        assert!(!registry.is_open(7));
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_leaves_registry_closed_and_submits_no_job_when_delete_fails() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([[failed_exchange()]])
+            .append_exec_results([updated(1)])
+            .append_exec_errors([DbErr::Custom("connection lost".into())])
+            .into_connection();
+        let jobs = RecordingJobs::new();
+        let registry = ExchangeRegistry::new();
+
+        let result = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &fixed_clock(2026, 1, 1, 0, 0, 0)).await;
+
+        assert!(result.is_err());
+        assert!(jobs.take().is_empty());
+        assert!(!registry.is_open(7));
+    }
+
+    /// The mock DB of a successful Retry of Exchange 7: the lookups, the three writes, and the
+    /// Messages the Exchange keeps.
+    fn retry_db(kept: Vec<messages::Model>) -> sea_orm::DatabaseConnection {
+        test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([[failed_exchange()]])
+            .append_exec_results([updated(1), test_support::db::deleted(), updated(1)])
+            .append_query_results([kept])
+            .into_connection()
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_submits_job_and_replays_kept_blocks_when_exchange_failed() {
+        test_support::init();
+        let clock = fixed_clock(2026, 3, 4, 5, 6, 7);
+        let db = retry_db(vec![
+            message_model(1, 7, MessageRole::User, text("Hi")),
+            message_model(2, 7, MessageRole::Assistant, text("Hel")),
+        ]);
+        let jobs = RecordingJobs::new();
+        let registry = ExchangeRegistry::new();
+
+        let subscription = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &clock).await.ok().expect("retry_exchange should succeed");
+
+        assert_eq!(subscription.replay, vec![ExchangeEvent::TextDelta { block: 0, text: "Hel".into() }]);
+        assert!(subscription.live.is_some());
+        assert!(matches!(jobs.take().as_slice(), [Job::RunExchange { exchange_id: 7 }]));
+        let log = test_support::db::log(db);
+        let status = Value::from(sea_orm::ActiveEnum::to_value(&ExchangeStatus::InProgress));
+        assert_wrote(&log, r#"UPDATE "exchanges""#, &[status, Value::from(clock.now().fixed_offset())]);
+        assert_wrote(&log, r#"UPDATE "conversations""#, &[Value::from(clock.now().fixed_offset())]);
+        assert_eq!(statements_starting_with(&log, r#"DELETE FROM "messages""#), 1);
+        let role = Value::from(sea_orm::ActiveEnum::to_value(&MessageRole::Assistant));
+        assert_wrote(&log, r#"DELETE FROM "messages""#, &[role, Value::from(7)]);
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_replays_nothing_when_no_blocks_kept() {
+        test_support::init();
+        let db = retry_db(vec![message_model(1, 7, MessageRole::User, text("Hi"))]);
+
+        let subscription = retry_exchange(3, 7, &user(), &db, &ExchangeRegistry::new(), &RecordingJobs::new(), &fixed_clock(2026, 1, 1, 0, 0, 0))
+            .await.ok().expect("retry_exchange should succeed");
+
+        assert!(subscription.replay.is_empty());
+        assert!(subscription.live.is_some());
     }
 
     #[tokio::test]

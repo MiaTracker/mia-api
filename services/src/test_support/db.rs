@@ -1,5 +1,5 @@
 use sea_orm::{DatabaseBackend, DatabaseConnection, MockDatabase, MockExecResult, Statement, Value};
-use entities::images;
+use entities::{images, messages};
 use entities::sea_orm_active_enums::{ExchangeStatus, ImageType, MessageRole};
 use serde_json::json;
 use super::fixtures;
@@ -98,11 +98,18 @@ pub fn with_deleted_unused_image(db: MockDatabase, image_id: i32) -> MockDatabas
 /// Exchange `exchange_id` of Conversation 3 (user 1), that Conversation, its only Exchange, the
 /// Exchange's user Message (id 1, "Hi") and the inserted LLM call (id 11).
 pub fn with_started_exchange_run(db: MockDatabase, exchange_id: i32) -> MockDatabase {
+    let user_message = fixtures::message_model(1, exchange_id, MessageRole::User, json!([{"type": "text", "text": "Hi"}]));
+    with_resumed_exchange_run(db, exchange_id, vec![user_message])
+}
+
+/// Like `with_started_exchange_run`, for an Exchange that already holds `stored` Messages (the
+/// ones a Retry keeps, or a run's earlier rounds) instead of only the user's "Hi".
+pub fn with_resumed_exchange_run(db: MockDatabase, exchange_id: i32, stored: Vec<messages::Model>) -> MockDatabase {
     let exchange = fixtures::exchange_model(exchange_id, 3, ExchangeStatus::InProgress);
     db.append_query_results([[exchange.clone()]])
         .append_query_results([[fixtures::conversation_model(3, 1)]])
         .append_query_results([[exchange]])
-        .append_query_results([[fixtures::message_model(1, exchange_id, MessageRole::User, json!([{"type": "text", "text": "Hi"}]))]])
+        .append_query_results([stored])
         .append_query_results([[fixtures::llm_call_model(11, exchange_id)]])
 }
 

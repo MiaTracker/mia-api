@@ -14,6 +14,7 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
         crate::endpoints::conversations::delete,
         crate::endpoints::conversations::create_exchange,
         crate::endpoints::conversations::stream,
+        crate::endpoints::conversations::retry,
         crate::endpoints::genres::create,
         crate::endpoints::genres::delete,
         crate::endpoints::genres::index,

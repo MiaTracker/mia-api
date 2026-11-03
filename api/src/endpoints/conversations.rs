@@ -133,6 +133,29 @@ pub async fn stream(state: State<AppState>, Extension(user): Extension<CurrentUs
     }
 }
 
+#[utoipa::path(
+    post,
+    operation_id = "conversations::retry",
+    path = "/conversations/{conversation_id}/exchanges/{exchange_id}/retry",
+    params(ExchangeStreamParams),
+    responses(
+        (status = 200, description = "Server-sent events of the retried exchange, which moves to the end of the conversation: first the blocks it kept, then thinking_delta, text_delta and tool_call, then exchange_completed or exchange_failed", body = ExchangeEvent, content_type = "text/event-stream"),
+        (status = 400, description = "The request is invalid, the exchange is not failed (ExchangeNotFailed), or the conversation already has an exchange in progress (ConversationExchangeInProgress)", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "The conversation or exchange was not found", body = [Vec<ApiErrView>]),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn retry(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(params): Path<ExchangeStreamParams>) -> Response {
+    let result = services::chat::retry_exchange(params.conversation_id, params.exchange_id, &user, &state.conn,
+        state.registry.as_ref(), state.jobs.as_ref(), state.clock.as_ref()).await;
+    match result {
+        Ok(subscription) => sse(subscription).into_response(),
+        Err(err) => Err::<(), _>(err).to_response(StatusCode::OK)
+    }
+}
+
 /// Replays the events recorded so far, then follows the live ones until the exchange ends.
 fn sse(subscription: ExchangeSubscription) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let ExchangeSubscription { replay, live } = subscription;

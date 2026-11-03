@@ -84,6 +84,7 @@ pub fn build() -> Router<AppState>
         .route("/conversations/{conversation_id}", delete(conversations::delete))
         .route("/conversations/{conversation_id}/exchanges", post(conversations::create_exchange))
         .route("/conversations/{conversation_id}/exchanges/{exchange_id}/stream", get(conversations::stream))
+        .route("/conversations/{conversation_id}/exchanges/{exchange_id}/retry", post(conversations::retry))
         .route("/logset", post(logset::create))
         .route("/statistics", get(statistics::stats))
         .route("/genres", get(genres::index))

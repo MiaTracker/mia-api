@@ -12,7 +12,7 @@ pub const SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
 
 /// The request for the next assistant Message of the Conversation.
 ///
-/// `exchanges` are ordered by Exchange id, each with its Messages ordered by id. Completed
+/// `exchanges` are ordered by creation time then id, each with its Messages ordered by id. Completed
 /// Exchanges and the current one are kept; all others (failed, or any other in-progress one) are
 /// skipped. Content is passed through unchanged, except that earlier Exchanges lose their thinking
 /// blocks (a Message left empty by that is dropped), `tool_result` blocks lose their display field

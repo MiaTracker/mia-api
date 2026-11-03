@@ -160,7 +160,7 @@ enum Stop {
     Failed(LlmError),
 }
 
-/// The Conversation's Exchanges ordered by id, each with its Messages ordered by id.
+/// The Conversation's Exchanges ordered by creation time then id, each with its Messages ordered by id.
 type History = Vec<(exchanges::Model, Vec<messages::Model>)>;
 
 /// The state of one run. The call fields describe the latest LLM call.
@@ -206,6 +206,7 @@ impl Run {
         let Some(current) = history.iter().position(|(exchange, _)| exchange.id == self.exchange_id) else {
             return Ok(End::Deleted);
         };
+        (self.rounds, self.refused) = spent_rounds(&history[current].1, config().assistant.max_tool_rounds);
         loop {
             if let Next::End(end) = self.call(&conversation, &history, current, db, llm, registry, clock).await? {
                 return Ok(end);
@@ -499,10 +500,11 @@ impl Run {
     }
 }
 
-/// The Conversation's Exchanges ordered by id, each with its Messages ordered by id.
+/// The Conversation's Exchanges ordered by creation time then id, each with its Messages ordered by id.
 async fn load_history(conversation_id: i32, db: &DbConn) -> Result<History, SrvErr> {
     let exchanges = exchanges::Entity::find()
         .filter(exchanges::Column::ConversationId.eq(conversation_id))
+        .order_by_asc(exchanges::Column::CreatedAt)
         .order_by_asc(exchanges::Column::Id)
         .all(db)
         .await?;
@@ -518,6 +520,15 @@ async fn load_history(conversation_id: i32, db: &DbConn) -> Result<History, SrvE
             (exchange, own)
         })
         .collect())
+}
+
+/// The tool round budget an Exchange has used up, read from its stored `messages`: with `n` Tool
+/// Messages, `n` rounds ran, up to `max`, and the round after the last allowed one was refused
+/// (a refused round stores a Tool Message too, so a refused Exchange holds `max + 1`). Returns
+/// `(rounds, refused)`. Deriving it from the database keeps a Retry from earning a fresh budget.
+fn spent_rounds(messages: &[messages::Model], max: u32) -> (u32, bool) {
+    let tool_messages = messages.iter().filter(|message| message.role == MessageRole::Tool).count() as u32;
+    (tool_messages.min(max), tool_messages > max)
 }
 
 async fn exchange_exists(exchange_id: i32, db: &DbConn) -> Result<bool, SrvErr> {
@@ -586,7 +597,7 @@ mod tests {
     use crate::test_support::{self, fixed_clock, MockLlm, MockTmdb};
     use crate::test_support::tmdb::UnansweringTmdb;
     use crate::test_support::db::{
-        assert_no_statement_starting_with, assert_wrote, updated, with_final_answer, with_next_tool_round, with_started_exchange_run, with_tool_round,
+        assert_no_statement_starting_with, assert_wrote, updated, with_final_answer, with_next_tool_round, with_resumed_exchange_run, with_started_exchange_run, with_tool_round,
     };
     use crate::test_support::fixtures::{conversation_model, exchange_model, llm_call_model, message_model, user_model};
     use crate::test_support::llm::{
@@ -1258,6 +1269,100 @@ mod tests {
             "cache_control": {"type": "ephemeral"},
         }]));
         assert_eq!(next.tools, crate::chat::tools::definitions());
+    }
+
+    fn tool_messages(count: i32) -> Vec<messages::Model> {
+        (0..count).map(|n| message_model(n + 2, 7, MessageRole::Tool, json!([]))).collect()
+    }
+
+    #[test]
+    fn spent_rounds_returns_zero_when_exchange_has_no_tool_message() {
+        test_support::init();
+
+        assert_eq!(spent_rounds(&[message_model(1, 7, MessageRole::User, json!([]))], 2), (0, false));
+    }
+
+    #[test]
+    fn spent_rounds_counts_tool_messages_when_below_limit() {
+        test_support::init();
+
+        assert_eq!(spent_rounds(&tool_messages(1), 2), (1, false));
+    }
+
+    #[test]
+    fn spent_rounds_is_not_refused_when_at_limit() {
+        test_support::init();
+
+        assert_eq!(spent_rounds(&tool_messages(2), 2), (2, false));
+    }
+
+    #[test]
+    fn spent_rounds_is_refused_when_tool_messages_exceed_limit() {
+        test_support::init();
+
+        assert_eq!(spent_rounds(&tool_messages(3), 2), (2, true));
+    }
+
+    /// A user Message followed by `rounds` tool rounds (an assistant `tool_use` Message and its result).
+    fn resumed_messages(rounds: i32) -> Vec<messages::Model> {
+        let mut stored = vec![message_model(1, 7, MessageRole::User, json!([{"type": "text", "text": "Hi"}]))];
+        for round in 0..rounds {
+            let id = format!("tu_{round}");
+            stored.push(message_model(2 + 2 * round, 7, MessageRole::Assistant, json!([{"type": "tool_use", "id": id, "name": "date_time", "input": {}}])));
+            stored.push(message_model(3 + 2 * round, 7, MessageRole::Tool, json!([date_time_result(&id)])));
+        }
+        stored
+    }
+
+    #[tokio::test]
+    async fn run_exchange_fails_with_tool_round_limit_when_stored_tool_messages_exceed_limit() {
+        test_support::init();
+        let db = with_resumed_exchange_run(test_support::db::mock(), 7, resumed_messages(3))
+            .append_query_results([[message_model(12, 7, MessageRole::Assistant, json!([]))]])
+            .append_exec_results([updated(1), updated(1)])
+            .into_connection();
+        let llm = with_answer(tool_use_answer(&[date_time_call("tu_9")], StopReason::ToolUse));
+
+        let (ok, events, _) = run(db, llm).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![failed("ToolRoundLimit", "the model asked for tools again after reaching the tool round limit")]);
+    }
+
+    #[tokio::test]
+    async fn run_exchange_numbers_new_blocks_after_stored_blocks_when_exchange_resumed() {
+        test_support::init();
+        let mut stored = resumed_messages(1);
+        stored[1] = message_model(2, 7, MessageRole::Assistant, json!([
+            {"type": "text", "text": "Let me check"},
+            {"type": "tool_use", "id": "tu_0", "name": "date_time", "input": {}},
+        ]));
+        let db = with_resumed_exchange_run(test_support::db::mock(), 7, stored)
+            .append_query_results([[message_model(12, 7, MessageRole::Assistant, json!([]))]])
+            .append_exec_results([updated(1), updated(1)])
+            .into_connection();
+
+        let (ok, events, _) = run(db, with_answer(text_answer(&["It is noon"], StopReason::EndTurn))).await;
+
+        assert!(ok);
+        assert_eq!(events, vec![delta(2, "It is noon"), ExchangeEvent::Completed { exchange_id: 7 }]);
+    }
+
+    #[tokio::test]
+    async fn load_history_orders_exchanges_by_created_at_then_id() {
+        test_support::init();
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<entities::exchanges::Model>::new()])
+            .append_query_results([Vec::<entities::messages::Model>::new()])
+            .into_connection();
+
+        load_history(3, &db).await.ok().expect("history should load");
+
+        let log = test_support::db::log(db);
+        assert!(
+            log[0].sql.contains(r#"ORDER BY "exchanges"."created_at" ASC, "exchanges"."id" ASC"#),
+            "unexpected SQL: {}", log[0].sql
+        );
     }
 
     #[tokio::test]

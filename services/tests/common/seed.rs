@@ -217,6 +217,19 @@ pub async fn user_message(db: &DbConn, exchange_id: i32, text: &str) -> messages
     }.insert(db).await.expect("inserting message")
 }
 
+/// A Message of the Exchange with `role` and Anthropic `content` blocks. An assistant Message needs
+/// the `llm_call_id` of the call that produced it; the others must have none.
+pub async fn message(db: &DbConn, exchange_id: i32, role: MessageRole, content: serde_json::Value, llm_call_id: Option<i32>) -> messages::Model {
+    messages::ActiveModel {
+        id: NotSet,
+        exchange_id: Set(exchange_id),
+        role: Set(role),
+        content: Set(content),
+        llm_call_id: Set(llm_call_id),
+        created_at: Set(chat_time()),
+    }.insert(db).await.expect("inserting message")
+}
+
 /// An LLM call of the Exchange that has not completed.
 pub async fn llm_call(db: &DbConn, user: &CurrentUser, exchange_id: i32) -> llm_calls::Model {
     let exchange = exchanges::Entity::find_by_id(exchange_id).one(db).await.expect("querying exchange").expect("exchange row");

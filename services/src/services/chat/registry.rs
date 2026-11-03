@@ -35,10 +35,21 @@ impl ExchangeRegistry {
 
     /// Registers a running Exchange. Keeps the existing entry when the id is already open.
     pub fn open(&self, exchange_id: i32) {
+        self.open_with(exchange_id, Vec::new());
+    }
+
+    /// Like `open`, for an Exchange that resumes with `blocks` already stored (blocks `0..n`), so
+    /// that a stream joining it replays them before the live events.
+    pub fn open_with(&self, exchange_id: i32, blocks: Vec<DisplayBlock>) {
         let mut entries = lock(&self.entries);
         entries.entry(exchange_id).or_insert_with(|| {
-            Arc::new(Mutex::new(Entry { blocks: Vec::new(), terminal: None, subscribers: Vec::new() }))
+            Arc::new(Mutex::new(Entry { blocks: blocks.into_iter().map(Some).collect(), terminal: None, subscribers: Vec::new() }))
         });
+    }
+
+    /// Whether the Exchange has an entry, which a run closes only after publishing its terminal event.
+    pub fn is_open(&self, exchange_id: i32) -> bool {
+        lock(&self.entries).contains_key(&exchange_id)
     }
 
     /// `None` when the Exchange is not open.
@@ -238,6 +249,53 @@ mod tests {
         registry.open(1);
 
         assert_eq!(registry.subscribe(1).unwrap().replay, vec![delta(0, "a")]);
+    }
+
+    fn seeded() -> Vec<DisplayBlock> {
+        let call = ToolCallView { name: "date_time".into(), query: None, media_type: None, count: None, titles: None, failed: false };
+        vec![DisplayBlock::Text { text: "Hi".into() }, DisplayBlock::Tool(call)]
+    }
+
+    #[test]
+    fn open_with_replays_seeded_blocks_then_live_when_subscribed() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        registry.open_with(1, seeded());
+
+        let subscription = registry.subscribe(1).unwrap();
+
+        let expected: Vec<ExchangeEvent> = seeded().into_iter().enumerate().map(|(block, shown)| ExchangeEvent::replay(block as u32, shown)).collect();
+        assert_eq!(subscription.replay, expected);
+        assert!(subscription.live.is_some());
+    }
+
+    #[test]
+    fn open_with_sends_no_duplicate_when_event_published_after_subscribe() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        registry.open_with(1, seeded());
+        let mut first = registry.subscribe(1).unwrap().live.unwrap();
+
+        registry.publish(1, delta(2, "Done"));
+
+        assert_eq!(first.try_recv().unwrap(), delta(2, "Done"));
+        assert!(matches!(first.try_recv(), Err(TryRecvError::Empty)));
+        let second = registry.subscribe(1).unwrap();
+        assert_eq!(second.replay.len(), 3);
+        assert_eq!(second.replay[2], delta(2, "Done"));
+    }
+
+    #[test]
+    fn is_open_returns_false_when_entry_closed() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        assert!(!registry.is_open(1));
+        registry.open_with(1, Vec::new());
+        assert!(registry.is_open(1));
+
+        registry.close(1);
+
+        assert!(!registry.is_open(1));
     }
 
     #[test]

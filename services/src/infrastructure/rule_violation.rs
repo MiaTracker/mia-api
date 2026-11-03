@@ -38,7 +38,8 @@ pub enum RuleViolation {
     SourceHasLogs,
 
     ConversationExchangeInProgress,
-    ExchangeContentEmpty
+    ExchangeContentEmpty,
+    ExchangeNotFailed
 }
 
 impl fmt::Display for RuleViolation {
