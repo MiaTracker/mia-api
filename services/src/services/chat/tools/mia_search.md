@@ -32,11 +32,15 @@ Fields (all are the user's own data) and their literals:
   date_added            date: the day the user added it to the library. All operators.
   on_watchlist          true / false: whether it is on the user's watchlist. Only =, !=.
   tmdb_rating           number 0 to 10: the TMDB average vote. All operators.
+  first_watched         date: the day of the earliest logged viewing. All operators. Unwatched items do not match < <= > >= =, but do match !=; use watched for them.
+  last_watched          date: the day of the latest logged viewing. All operators. Unwatched items behave as for first_watched.
+  status                "text": the TMDB status, case-insensitive, exactly as TMDB spells it. Movies: "Rumored", "Planned", "In Production", "Post Production", "Released", "Canceled". Series: "Returning Series", "Planned", "In Production", "Ended", "Canceled", "Pilot". Only =, !=. Items without a status match only !=.
+  has_log_containing    "text": at least one of the user's viewing comments contains this text, case-insensitive. != means no comment contains it (also true for unwatched items). Only =, !=.
 Fields marked "Only =, !=" reject < <= > >=.
 For has_tag, has_source_with_name, has_genre and language the user's exact names are needed. If such a filter returns nothing, the name may be wrong or spelled differently; try another spelling or drop the filter and look at the results.
 
 SORT: field, then optional direction: asc, ascending, desc or descending (default asc).
-Sort fields: stars, watched, times_watched, type, has_source, number_of_sources, release_date, date_added, tmdb_rating. Without a sort, results come in the library's default order, by title.
+Sort fields: stars, watched, times_watched, type, has_source, number_of_sources, release_date, date_added, tmdb_rating, first_watched, last_watched. Unwatched items sort as the oldest date, so last_watched desc puts them last. Without a sort, results come in the library's default order, by title.
 
 Examples (the value of "query" as a JSON string; mind the spaces around the colons):
   "alien"                                                  items whose title starts with "alien"
@@ -47,5 +51,7 @@ Examples (the value of "query" as a JSON string; mind the spaces around the colo
   "matrix : type = \"movie\" : release_date asc"            movies starting with "matrix", oldest first (all three parts)
   " :  : date_added desc"                                  no title, no filter, newest additions first
   " : date_added > 2026-01-01 and on_watchlist = true"
+  " : last_watched >= 2026-01-01 and status = \"returning series\" : last_watched desc"   series watched this year that are still running, latest first
+  " : has_log_containing = \"rewatch\""                       items with a viewing comment mentioning "rewatch"
 
 Result: {"results": [{"id", "type" ("movie" or "series"), "title", "release_year", "overview", "tmdb_id", "stars"}]}. Missing values are null; "stars" is the user's own rating. Results are capped at a fixed number and there is no paging: narrow the query (filter, sort) rather than expecting more. An invalid query returns an error message naming what is wrong; fix the query and retry.

@@ -35,11 +35,13 @@ fn day(y: i32, m: u32, d: u32) -> NaiveDate {
 
 /// Three media of one user, plus another user's movie that no search may return:
 ///
-/// | title      | type   | stars | TMDB rating | language | released   | added      | sources  | logs | tags    | genre  | watchlist |
-/// |------------|--------|-------|-------------|----------|------------|------------|----------|------|---------|--------|-----------|
-/// | The Matrix | movie  | 8.5   | 8.2         | en       | 1999-03-31 | 2024-01-01 | Jellyfin | 2    | Classic | Action | no        |
-/// | Alien      | movie  | 6     | 7.9         | none     | 1979-05-25 | 2024-03-01 | none     | 0    | none    | Horror | yes       |
-/// | Dark       | series | none  | 8.4         | de       | 2017-12-01 | 2024-02-01 | Netflix  | 1    | none    | Drama  | no        |
+/// | title      | type   | stars | TMDB rating | language | released   | added      | sources  | logs | tags    | genre  | watchlist | status           |
+/// |------------|--------|-------|-------------|----------|------------|------------|----------|------|---------|--------|-----------|------------------|
+/// | The Matrix | movie  | 8.5   | 8.2         | en       | 1999-03-31 | 2024-01-01 | Jellyfin | 2    | Classic | Action | no        | Released         |
+/// | Alien      | movie  | 6     | 7.9         | none     | 1979-05-25 | 2024-03-01 | none     | 0    | none    | Horror | yes       | none             |
+/// | Dark       | series | none  | 8.4         | de       | 2017-12-01 | 2024-02-01 | Netflix  | 1    | none    | Drama  | no        | Returning Series |
+///
+/// The logs: The Matrix on 2024-02-10 ("Great REWATCH of 100% fun") and 2024-05-01 (no comment); Dark on 2024-03-15 ("slow burn").
 async fn library(db: &DbConn) -> Library {
     seed::language(db, "en", "English").await;
     seed::language(db, "de", "German").await;
@@ -49,8 +51,9 @@ async fn library(db: &DbConn) -> Library {
     describe(db, matrix.id, Some(8.5), 8.2, Some("en"), day(2024, 1, 1)).await;
     release(db, matrix.id, MediaType::Movie, day(1999, 3, 31)).await;
     let jellyfin = seed::source(db, matrix.id, "Jellyfin").await;
-    seed::log(db, matrix.id, jellyfin.id, Some(8.0), true).await;
-    seed::log(db, matrix.id, jellyfin.id, Some(9.0), true).await;
+    seed::log_on(db, matrix.id, jellyfin.id, day(2024, 2, 10), Some("Great REWATCH of 100% fun")).await;
+    seed::log_on(db, matrix.id, jellyfin.id, day(2024, 5, 1), None).await;
+    set_status(db, matrix.id, MediaType::Movie, "Released").await;
     seed::tag(db, matrix.id, "Classic").await;
     seed::genre(db, matrix.id, "Action", MediaType::Movie, Some(28)).await;
 
@@ -64,7 +67,8 @@ async fn library(db: &DbConn) -> Library {
     describe(db, dark.id, None, 8.4, Some("de"), day(2024, 2, 1)).await;
     release(db, dark.id, MediaType::Series, day(2017, 12, 1)).await;
     let netflix = seed::source(db, dark.id, "Netflix").await;
-    seed::log(db, dark.id, netflix.id, None, false).await;
+    seed::log_on(db, dark.id, netflix.id, day(2024, 3, 15), Some("slow burn")).await;
+    set_status(db, dark.id, MediaType::Series, "Returning Series").await;
     seed::genre(db, dark.id, "Drama", MediaType::Series, Some(18)).await;
 
     let other = seed::user(db, 2).await;
@@ -91,6 +95,15 @@ async fn release(db: &DbConn, id: i32, media_type: MediaType, date: NaiveDate) {
         MediaType::Series => series::ActiveModel { id: Set(id), first_air_date: Set(Some(date)), ..Default::default() }
             .update(db).await.map(|_| ()),
     }.expect("setting the release date");
+}
+
+async fn set_status(db: &DbConn, id: i32, media_type: MediaType, status: &str) {
+    match media_type {
+        MediaType::Movie => movies::ActiveModel { id: Set(id), status: Set(Some(status.into())), ..Default::default() }
+            .update(db).await.map(|_| ()),
+        MediaType::Series => series::ActiveModel { id: Set(id), status: Set(Some(status.into())), ..Default::default() }
+            .update(db).await.map(|_| ()),
+    }.expect("setting the status");
 }
 
 fn query(text: &str) -> SearchQuery {
@@ -224,6 +237,56 @@ async fn search_matches_count_targets() {
 
 #[tokio::test]
 #[ignore = "requires docker"]
+async fn search_matches_watched_date_targets() {
+    let db = database().await;
+    let library = library(&db).await;
+
+    assert_finds(&[
+        (" : first_watched < 2024-03-01", &[MATRIX]),
+        (" : first_watched >= 2024-03-01", &[DARK]),
+        (" : first_watched = 2024-02-10", &[MATRIX]),
+        (" : last_watched = 2024-05-01", &[MATRIX]),
+        (" : last_watched > 2024-04-01", &[MATRIX]),
+        (" : last_watched < 2024-04-01", &[DARK]),
+        (" : last_watched != 2024-05-01", &[ALIEN, DARK]),
+        (" : 2024-03-01 <= last_watched <= 2024-12-31", &[DARK, MATRIX]),
+    ], &library, &db).await;
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn search_matches_status_target() {
+    let db = database().await;
+    let library = library(&db).await;
+
+    assert_finds(&[
+        (r#" : status = "released""#, &[MATRIX]),
+        (r#" : status = "RETURNING SERIES""#, &[DARK]),
+        (r#" : status = "ended""#, &[]),
+        (r#" : status != "released""#, &[ALIEN, DARK]),
+    ], &library, &db).await;
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn search_matches_log_comment_target() {
+    let db = database().await;
+    let library = library(&db).await;
+
+    assert_finds(&[
+        (r#" : has_log_containing = "rewatch""#, &[MATRIX]),
+        (r#" : has_log_containing = "SLOW""#, &[DARK]),
+        (r#" : has_log_containing = "100%""#, &[MATRIX]),
+        (r#" : has_log_containing = "10%fun""#, &[]),
+        (r#" : has_log_containing = "_ewatch""#, &[]),
+        (r#" : has_log_containing = "burn" or has_log_containing = "fun""#, &[DARK, MATRIX]),
+        (r#" : has_log_containing != "rewatch""#, &[ALIEN, DARK]),
+        (r#" : has_log_containing != "zzz""#, &[ALIEN, DARK, MATRIX]),
+    ], &library, &db).await;
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
 async fn search_matches_ternary_comparisons() {
     let db = database().await;
     let library = library(&db).await;
@@ -263,6 +326,9 @@ async fn search_orders_by_sort_target() {
         (" :  : watched asc", &[ALIEN, DARK, MATRIX]),
         (" :  : release_date", &[ALIEN, MATRIX, DARK]),
         (" :  : date_added desc", &[ALIEN, DARK, MATRIX]),
+        (" :  : last_watched desc", &[MATRIX, DARK, ALIEN]),
+        (" :  : last_watched", &[ALIEN, DARK, MATRIX]),
+        (" :  : first_watched desc", &[DARK, MATRIX, ALIEN]),
         (" :  : type", &[ALIEN, MATRIX, DARK]),
         (" :  : has_source", &[ALIEN, DARK, MATRIX]),
         (" :  : number_of_sources desc", &[DARK, MATRIX, ALIEN]),

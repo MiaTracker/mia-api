@@ -113,6 +113,20 @@ pub async fn log(db: &DbConn, media_id: i32, source_id: i32, stars: Option<f32>,
     }.insert(db).await.expect("inserting log")
 }
 
+/// A log on `date` with `comment`, otherwise like `log`.
+pub async fn log_on(db: &DbConn, media_id: i32, source_id: i32, date: NaiveDate, comment: Option<&str>) -> logs::Model {
+    logs::ActiveModel {
+        id: NotSet,
+        media_id: Set(media_id),
+        date: Set(date),
+        stars: Set(None),
+        completed: Set(true),
+        comment: Set(comment.map(str::to_string)),
+        source_id: Set(source_id),
+        original_stars: Set(None),
+    }.insert(db).await.expect("inserting log")
+}
+
 pub async fn tag(db: &DbConn, media_id: i32, name: &str) -> tags::Model {
     let tag = tags::ActiveModel { id: NotSet, name: Set(name.into()) }.insert(db).await.expect("inserting tag");
     media_tags::ActiveModel { media_id: Set(media_id), tag_id: Set(tag.id) }.insert(db).await.expect("inserting media tag");

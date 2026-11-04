@@ -373,16 +373,16 @@ fn expression(tar: &String, op: ComparisonOperator, literal: Literal) -> Result<
 }
 
 /// The names `target` accepts in the filter part of a query.
-pub const FILTER_FIELDS: [&str; 17] = [
+pub const FILTER_FIELDS: [&str; 21] = [
     "stars", "watched", "times_watched", "type", "has_source", "number_of_sources", "has_source_with_name",
     "has_tag", "has_genre", "language", "id", "tmdb_id", "release_date", "date_added", "on_watchlist", "rated",
-    "tmdb_rating"
+    "tmdb_rating", "first_watched", "last_watched", "status", "has_log_containing"
 ];
 
 /// The names `sort` accepts in the sort part of a query.
-pub const SORT_TARGETS: [&str; 9] = [
+pub const SORT_TARGETS: [&str; 11] = [
     "stars", "watched", "times_watched", "type", "has_source", "number_of_sources", "release_date", "date_added",
-    "tmdb_rating"
+    "tmdb_rating", "first_watched", "last_watched"
 ];
 
 fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
@@ -404,6 +404,10 @@ fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<S
         "on_watchlist" => { on_watchlist_target(op, literal) }
         "rated" => { rated_target(op, literal) }
         "tmdb_rating" => { tmdb_rating_target(op, literal) }
+        "first_watched" => { first_watched_target(op, literal) }
+        "last_watched" => { last_watched_target(op, literal) }
+        "status" => { status_target(op, literal) }
+        "has_log_containing" => { has_log_containing_target(op, literal) }
         _ => { return Err(ConstructionError::from(format!("Unknown target '{}'", target))) }
     }
 }
@@ -747,6 +751,86 @@ fn tmdb_rating_sort_target() -> SelectStatement {
         .to_owned()
 }
 
+/// Media whose earliest (`latest` false) or latest (`latest` true) log date satisfies the comparison.
+/// The inner join leaves out media without logs.
+fn watched_date_target(op: ComparisonOperator, literal: Literal, latest: bool) -> Result<SelectStatement, ConstructionError> {
+    let date = literal.to_value::<chrono::NaiveDate>()?;
+    let log_date = Expr::col((logs::Entity, logs::Column::Date));
+    let log_date = if latest { log_date.max() } else { log_date.min() };
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .inner_join(logs::Entity, Expr::col((logs::Entity, logs::Column::MediaId)).equals((media::Entity, media::Column::Id)))
+            .group_by_col((media::Entity, media::Column::Id))
+            .and_having(log_date.binary(operator(op), date))
+            .to_owned()
+    )
+}
+
+/// The earliest (`latest` false) or latest (`latest` true) log date of the media, the oldest possible date when it has no logs.
+fn watched_date_sort_target(latest: bool) -> SelectStatement {
+    let log_date = Expr::col((Alias::new("ord_logs"), logs::Column::Date));
+    let log_date = if latest { log_date.max() } else { log_date.min() };
+    Query::select()
+        .expr_as(Func::coalesce([log_date, Expr::val(NaiveDate::from_ymd_opt(1, 1, 1).unwrap()).into()]), Alias::new("date"))
+        .from_as(media::Entity, Alias::new("ord_media"))
+        .join_as(JoinType::LeftJoin, logs::Entity, Alias::new("ord_logs"), Expr::col((Alias::new("ord_logs"), logs::Column::MediaId)).equals((Alias::new("ord_media"), media::Column::Id)))
+        .and_where(Expr::col((Alias::new("ord_media"), media::Column::Id)).equals((media::Entity, media::Column::Id)))
+        .group_by_col((Alias::new("ord_logs"), logs::Column::MediaId))
+        .to_owned()
+}
+
+fn first_watched_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    watched_date_target(op, literal, false)
+}
+
+fn first_watched_sort_target() -> SelectStatement {
+    watched_date_sort_target(false)
+}
+
+fn last_watched_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    watched_date_target(op, literal, true)
+}
+
+fn last_watched_sort_target() -> SelectStatement {
+    watched_date_sort_target(true)
+}
+
+fn status_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    assert_eq!(op);
+    let status = literal.to_value::<String>()?.map(|s| s.to_lowercase());
+    Ok(
+        Query::select()
+            .columns([(media::Entity, media::Column::Id)])
+            .from(media::Entity)
+            .left_join(movies::Entity, Expr::col((movies::Entity, movies::Column::Id)).equals((media::Entity, media::Column::Id)))
+            .left_join(series::Entity, Expr::col((series::Entity, series::Column::Id)).equals((media::Entity, media::Column::Id)))
+            .and_where(Expr::expr(Func::lower(Func::coalesce([
+                Expr::col((movies::Entity, movies::Column::Status)).into(),
+                Expr::col((series::Entity, series::Column::Status)).into()
+            ]))).eq(status))
+            .to_owned()
+    )
+}
+
+/// Escapes the characters `LIKE` treats specially, so `text` matches literally. Backslash is Postgres's default escape character.
+fn escape_like(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+fn has_log_containing_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
+    assert_eq!(op);
+    let text = literal.to_value::<String>()?.ok_or_else(|| ConstructionError::from("Cannot compare with null!"))?;
+    Ok(
+        Query::select()
+            .columns([(logs::Entity, logs::Column::MediaId)])
+            .from(logs::Entity)
+            .and_where(Expr::col((logs::Entity, logs::Column::Comment)).ilike(format!("%{}%", escape_like(&text))))
+            .to_owned()
+    )
+}
+
 fn operator(operator: ComparisonOperator) -> BinOper {
     match operator {
         ComparisonOperator::Equal => { BinOper::Equal }
@@ -770,6 +854,8 @@ fn sort(target: String) -> Result<SimpleExpr, ConstructionError> {
             "release_date" => { release_date_sort_target() },
             "date_added" => { date_added_sort_target() },
             "tmdb_rating" => { tmdb_rating_sort_target() },
+            "first_watched" => { first_watched_sort_target() },
+            "last_watched" => { last_watched_sort_target() },
             _ => { return Err(ConstructionError::from(format!("Unknown sort target '{}'", target))) }
         }.into_sub_query_statement()
     )))
@@ -796,5 +882,62 @@ mod tests {
                 panic!("{field}: {}", err.message);
             }
         }
+    }
+
+    fn error_of(result: Result<SelectStatement, ConstructionError>) -> String {
+        result.expect_err("construction should fail").message
+    }
+
+    #[test]
+    fn status_target_rejects_operator_when_not_equality() {
+        let message = error_of(status_target(ComparisonOperator::Less, Literal::String("ended".into())));
+
+        assert!(message.contains("not supported"), "{message}");
+    }
+
+    #[test]
+    fn status_target_rejects_literal_when_not_a_string() {
+        let message = error_of(status_target(ComparisonOperator::Equal, Literal::True));
+
+        assert!(message.contains("Expected string"), "{message}");
+    }
+
+    #[test]
+    fn has_log_containing_target_rejects_operator_when_not_equality() {
+        let message = error_of(has_log_containing_target(ComparisonOperator::Greater, Literal::String("a".into())));
+
+        assert!(message.contains("not supported"), "{message}");
+    }
+
+    #[test]
+    fn has_log_containing_target_rejects_null_when_comparing() {
+        let message = error_of(has_log_containing_target(ComparisonOperator::Equal, Literal::Null));
+
+        assert!(message.contains("null"), "{message}");
+    }
+
+    #[test]
+    fn watched_date_targets_reject_literal_when_not_a_date() {
+        for field in ["first_watched", "last_watched"] {
+            let message = error_of(target(&field.to_string(), ComparisonOperator::Less, Literal::Int(5)));
+
+            assert!(message.contains("Expected date"), "{field}: {message}");
+        }
+    }
+
+    #[test]
+    fn watched_date_targets_accept_every_operator_when_literal_is_a_date() {
+        let date = Literal::Date(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+        for field in ["first_watched", "last_watched"] {
+            for op in [ComparisonOperator::Equal, ComparisonOperator::NotEqual, ComparisonOperator::Less,
+                ComparisonOperator::LessEqual, ComparisonOperator::Greater, ComparisonOperator::GreaterEqual] {
+                assert!(target(&field.to_string(), op, date.clone()).is_ok(), "{field}");
+            }
+        }
+    }
+
+    #[test]
+    fn escape_like_escapes_wildcards_and_backslashes() {
+        std::assert_eq!(escape_like(r"100%_\ok"), r"100\%\_\\ok");
     }
 }
