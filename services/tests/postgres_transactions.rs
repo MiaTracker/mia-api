@@ -1,7 +1,7 @@
 //! Functions that write several rows must leave nothing behind when a later write fails. Each test
 //! installs a trigger that makes one of the function's later writes fail, then checks that its
-//! earlier write was rolled back. They are known bugs: these functions open a transaction (`tran`)
-//! but write through `db`, so their earlier writes are already committed. Needs Docker:
+//! earlier write was rolled back. A mock database can't see transaction-scope mistakes (it logs
+//! every statement after `BEGIN` as inside the transaction), so these run against Postgres. Needs Docker:
 //! `cargo test -p services --test postgres_transactions -- --ignored`.
 
 mod common;
@@ -54,7 +54,7 @@ async fn overview(db: &DbConn, media_id: i32) -> Option<String> {
 }
 
 #[tokio::test]
-#[ignore = "known bug: genres::create opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn genres_create_rolls_back_new_genre_when_linking_it_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -67,7 +67,7 @@ async fn genres_create_rolls_back_new_genre_when_linking_it_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: genres::delete opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn genres_delete_keeps_genre_link_when_deleting_unused_genre_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -81,7 +81,7 @@ async fn genres_delete_keeps_genre_link_when_deleting_unused_genre_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: tags::create opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn tags_create_rolls_back_new_tag_when_linking_it_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -94,7 +94,7 @@ async fn tags_create_rolls_back_new_tag_when_linking_it_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: tags::delete opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn tags_delete_keeps_tag_link_when_deleting_unused_tag_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -108,7 +108,7 @@ async fn tags_delete_keeps_tag_link_when_deleting_unused_tag_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: titles::create opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn titles_create_rolls_back_title_when_updating_media_fails() {
     let db = database().await;
     let (user, movie) = bot_controllable_movie(&db).await;
@@ -121,7 +121,7 @@ async fn titles_create_rolls_back_title_when_updating_media_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: titles::set_primary opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn titles_set_primary_keeps_primary_title_when_updating_media_fails() {
     let db = database().await;
     let (user, movie) = bot_controllable_movie(&db).await;
@@ -136,7 +136,7 @@ async fn titles_set_primary_keeps_primary_title_when_updating_media_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: titles::delete opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn titles_delete_keeps_primary_title_when_promoting_next_title_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -152,7 +152,7 @@ async fn titles_delete_keeps_primary_title_when_promoting_next_title_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: sources::create opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn sources_create_rolls_back_source_when_updating_media_fails() {
     let db = database().await;
     let (user, movie) = bot_controllable_movie(&db).await;
@@ -166,7 +166,7 @@ async fn sources_create_rolls_back_source_when_updating_media_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: sources::update opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn sources_update_keeps_source_when_updating_media_fails() {
     let db = database().await;
     let (user, movie) = bot_controllable_movie(&db).await;
@@ -183,7 +183,7 @@ async fn sources_update_keeps_source_when_updating_media_fails() {
 
 /// `sources::delete` deletes through `sources::delete_from_media`.
 #[tokio::test]
-#[ignore = "known bug: sources::delete_from_media opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn sources_delete_keeps_source_when_updating_media_fails() {
     let db = database().await;
     let (user, movie) = bot_controllable_movie(&db).await;
@@ -197,7 +197,7 @@ async fn sources_delete_keeps_source_when_updating_media_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: logs::create opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn logs_create_rolls_back_log_when_updating_media_rating_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -212,7 +212,7 @@ async fn logs_create_rolls_back_log_when_updating_media_rating_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: logs::update opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn logs_update_keeps_log_when_updating_media_rating_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -229,7 +229,7 @@ async fn logs_update_keeps_log_when_updating_media_rating_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: logs::delete opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn logs_delete_keeps_log_when_updating_media_rating_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -244,7 +244,7 @@ async fn logs_delete_keeps_log_when_updating_media_rating_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: movies::update opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn movies_update_keeps_media_when_updating_movie_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -261,7 +261,7 @@ async fn movies_update_keeps_media_when_updating_movie_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: series::update opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn series_update_keeps_media_when_updating_series_fails() {
     let db = database().await;
     let user = seed::user(&db, 1).await;
@@ -279,7 +279,7 @@ async fn series_update_keeps_media_when_updating_series_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: masterdata::refresh opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn masterdata_refresh_rolls_back_languages_when_saving_genres_fails() {
     let db = database().await;
     fail_on(&db, "genres", "INSERT").await;
@@ -297,7 +297,7 @@ async fn masterdata_refresh_rolls_back_languages_when_saving_genres_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: media::delete opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn media_delete_keeps_media_when_deleting_orphaned_tags_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;
@@ -312,7 +312,7 @@ async fn media_delete_keeps_media_when_deleting_orphaned_tags_fails() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: media::delete_w_source opens a transaction but writes through db"]
+#[ignore = "requires docker"]
 async fn media_delete_w_source_keeps_media_when_deleting_orphaned_tags_fails() {
     let db = database().await;
     let (user, movie) = movie(&db).await;

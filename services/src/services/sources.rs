@@ -37,13 +37,13 @@ pub async fn create(media_id: i32, source: &SourceCreate, media_type: MediaType,
 
     let tran = db.begin().await?;
 
-    model.insert(db).await?;
+    model.insert(&tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
@@ -107,13 +107,13 @@ pub async fn update(media_id: i32, source_id: i32, source: &SourceUpdate, media_
 
     let tran = db.begin().await?;
 
-    model.update(db).await?;
+    model.update(&tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
@@ -137,7 +137,7 @@ pub async fn delete(media_id: i32, source_id: i32, media_type: MediaType, user: 
 
     delete_from_media(media.clone(), source, user, db).await?;
 
-    update_media_rating(media, &db).await?;
+    update_media_rating(media, db).await?;
 
     Ok(())
 }
@@ -154,13 +154,13 @@ pub async fn delete_from_media(media: media::Model, source: sources::Model, user
 
     let tran = db.begin().await?;
 
-    source.delete(db).await?;
+    source.delete(&tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;

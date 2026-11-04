@@ -68,7 +68,7 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tm
 
     for genre in &tmdb_movie.genres {
         let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
-            .filter(genres::Column::Type.eq(MediaType::Movie)).one(db).await?;
+            .filter(genres::Column::Type.eq(MediaType::Movie)).one(&tran).await?;
         if existing.is_none() {
             return Err(SrvErr::MasterdataOutdated);
         }
@@ -239,18 +239,18 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
 
     let mut media_am: media::ActiveModel = (&metadata).into_active_model();
     media_am.bot_controllable = sea_orm::Set(media.bot_controllable && user.though_bot);
-    media_am.update(db).await?;
+    media_am.update(&tran).await?;
 
     let movie_am: movies::ActiveModel = (&metadata).into_active_model();
-    movie_am.update(db).await?;
+    movie_am.update(&tran).await?;
 
-    let db_title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
+    let db_title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(&tran).await?;
 
     if let Some(title) = metadata.title {
         if let Some(title_mod) = db_title {
             let mut am = title_mod.into_active_model();
             am.title = Set(title);
-            am.update(db).await?;
+            am.update(&tran).await?;
         } else {
             let am = titles::ActiveModel {
                 id: NotSet,
@@ -258,11 +258,11 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
                 primary: Set(true),
                 title: Set(title),
             };
-            am.insert(db).await?;
+            am.insert(&tran).await?;
         }
     } else {
         if let Some(title_mod) = db_title {
-            title_mod.delete(db).await?;
+            title_mod.delete(&tran).await?;
         }
     }
 

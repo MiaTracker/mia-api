@@ -30,13 +30,13 @@ pub async fn create(media_id: i32, title: &TitleCreate, media_type: MediaType, u
 
     let tran = db.begin().await?;
 
-    model.insert(db).await?;
+    model.insert(&tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
@@ -60,22 +60,22 @@ pub async fn set_primary(media_id: i32, title_id: i32, media_type: MediaType, us
 
     let tran = db.begin().await?;
 
-    let primary = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
+    let primary = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(&tran).await?;
     if primary.is_some() {
         let mut model: titles::ActiveModel = primary.unwrap().into();
         model.primary = Set(false);
-        model.update(db).await?;
+        model.update(&tran).await?;
     }
 
     let mut title: titles::ActiveModel = title.unwrap().into();
     title.primary = Set(true);
-    title.update(db).await?;
+    title.update(&tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
@@ -102,22 +102,22 @@ pub async fn delete(media_id: i32, title_id: i32, media_type: MediaType, user: &
     let tran = db.begin().await?;
 
     if title.primary {
-        let first = media.find_related(Titles).filter(titles::Column::Primary.eq(false)).one(db).await?;
-        title.delete(db).await?;
+        let first = media.find_related(Titles).filter(titles::Column::Primary.eq(false)).one(&tran).await?;
+        title.delete(&tran).await?;
         if first.is_some() {
             let mut model: titles::ActiveModel = first.unwrap().into();
             model.primary = Set(true);
-            model.update(db).await?;
+            model.update(&tran).await?;
         }
     } else {
-        title.delete(db).await?;
+        title.delete(&tran).await?;
     }
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;

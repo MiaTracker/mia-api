@@ -1,5 +1,5 @@
 use cruet::Inflector;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrait, IntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QuerySelect, Set, TransactionTrait};
 use entities::{genres, media, media_genres, sea_orm_active_enums};
 use entities::prelude::{Genres, Media, MediaGenres};
 use views::genres::GenreCreate;
@@ -19,13 +19,13 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
 
     let tran = db.begin().await?;
 
-    add_genre_to_media(&media, &genre.name, db).await?;
+    add_genre_to_media(&media, &genre.name, &tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
@@ -62,12 +62,12 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
 
     let tran = db.begin().await?;
 
-    let genre = media_genre.find_related(Genres).one(db).await?.expect("DB in invalid state!");
-    media_genre.delete(db).await?;
+    let genre = media_genre.find_related(Genres).one(&tran).await?.expect("DB in invalid state!");
+    media_genre.delete(&tran).await?;
     if genre.tmdb_id.is_none() {
-        let count = genre.find_related(MediaGenres).count(db).await?;
+        let count = genre.find_related(MediaGenres).count(&tran).await?;
         if count == 0 {
-            genre.delete(db).await?;
+            genre.delete(&tran).await?;
         }
     }
 
@@ -75,7 +75,7 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
@@ -83,7 +83,7 @@ pub async fn delete(media_id: i32, genre_id: i32, media_type: MediaType, user: &
     Ok(())
 }
 
-pub async fn add_genre_to_media(media: &media::Model, genre: &str, db: &DbConn) -> Result<bool, SrvErr> {
+pub async fn add_genre_to_media(media: &media::Model, genre: &str, db: &impl ConnectionTrait) -> Result<bool, SrvErr> {
     let name = genre.to_title_case();
 
     let existing = media.find_related(Genres).filter(genres::Column::Name.eq(&name)).one(db).await?;

@@ -18,7 +18,7 @@ use views::images::{BackdropUpdate, Image, ImageCandidate, ImageCandidates, Imag
 use views::media::{InternalSearchResults, MediaByIdsQuery, MediaIndex, MediaSourceCreate, MediaType, PageReq, SearchQuery, SearchResults};
 use views::users::CurrentUser;
 
-use crate::images::{delete_unused_image, save_tmdb_image};
+use crate::images::{delete_unused_image, delete_unused_image_rows, save_tmdb_image};
 use crate::infrastructure::constants::tmdb_config;
 use crate::infrastructure::traits::{IntoImage, IntoView, SortCompare};
 use crate::infrastructure::{Clock, ImageStore, Random, SrvErr, Tmdb};
@@ -491,14 +491,14 @@ pub async fn delete_w_source(tmdb_id: i32, source_name: String, media_type: Medi
     }
 
     let tran = db.begin().await?;
-    media.delete(db).await?;
+    media.delete(&tran).await?;
 
     Tags::delete_many().filter(tags::Column::Id.in_subquery(
         Query::select().column(tags::Column::Id).from(Tags)
             .left_join(MediaTags, Expr::col((Tags, tags::Column::Id)).equals((MediaTags, media_tags::Column::TagId)))
             .cond_where(media_tags::Column::TagId.is_null())
             .to_owned())
-    ).exec(db).await?;
+    ).exec(&tran).await?;
 
     Genres::delete_many().filter(genres::Column::Id.in_subquery(
         Query::select().column(genres::Column::Id).from(Genres)
@@ -506,7 +506,7 @@ pub async fn delete_w_source(tmdb_id: i32, source_name: String, media_type: Medi
             .cond_where(media_genres::Column::GenreId.is_null())
             .and_where(genres::Column::TmdbId.is_null())
             .to_owned())
-    ).exec(db).await?;
+    ).exec(&tran).await?;
 
     tran.commit().await?;
 
@@ -524,14 +524,14 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
     let backdrop_id = media.backdrop_image_id;
 
     let tran = db.begin().await?;
-    media.delete(db).await?;
+    media.delete(&tran).await?;
 
     Tags::delete_many().filter(tags::Column::Id.in_subquery(
         Query::select().column(tags::Column::Id).from(Tags)
             .left_join(MediaTags, Expr::col((Tags, tags::Column::Id)).equals((MediaTags, media_tags::Column::TagId)))
             .cond_where(media_tags::Column::TagId.is_null())
             .to_owned())
-    ).exec(db).await?;
+    ).exec(&tran).await?;
 
     Genres::delete_many().filter(genres::Column::Id.in_subquery(
         Query::select().column(genres::Column::Id).from(Genres)
@@ -539,25 +539,32 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
             .cond_where(media_genres::Column::GenreId.is_null())
             .and_where(genres::Column::TmdbId.is_null())
             .to_owned())
-    ).exec(db).await?;
+    ).exec(&tran).await?;
 
+    // The image files can't be rolled back, so only the rows go inside the transaction. The
+    // directories are deleted once it has committed.
+    let mut directories = Vec::new();
     if let Some(poster_id) = poster_id {
-        delete_unused_image(poster_id, db, store).await?;
+        directories.extend(delete_unused_image_rows(poster_id, &tran).await?);
     }
 
     if let Some(backdrop_id) = backdrop_id {
-        delete_unused_image(backdrop_id, db, store).await?;
+        directories.extend(delete_unused_image_rows(backdrop_id, &tran).await?);
     }
 
     let deleted_references = ManualImageReferences::delete_many()
         .filter(manual_image_references::Column::MediaId.eq(media_id))
-        .exec_with_returning(db).await?;
+        .exec_with_returning(&tran).await?;
 
     for deleted_reference in deleted_references {
-        delete_unused_image(deleted_reference.image_id, db, store).await?;
+        directories.extend(delete_unused_image_rows(deleted_reference.image_id, &tran).await?);
     }
 
     tran.commit().await?;
+
+    for directory in directories {
+        store.delete_directory(&directory).await?;
+    }
 
     Ok(())
 }

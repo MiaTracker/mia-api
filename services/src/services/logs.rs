@@ -1,5 +1,5 @@
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, FromQueryResult, IntoActiveModel as SOIntoActiveModel, ModelTrait, QueryFilter, QuerySelect, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrait, FromQueryResult, IntoActiveModel as SOIntoActiveModel, ModelTrait, QueryFilter, QuerySelect, TransactionTrait};
 use sea_orm::prelude::Expr;
 use entities::{logs, media, sea_orm_active_enums, sources};
 use entities::prelude::{Logs, Media, Sources};
@@ -40,23 +40,23 @@ pub async fn create(media_id: i32, log: &LogCreate, media_type: MediaType, user:
     let mut model = log.into_active_model();
     model.media_id = Set(media_id);
     model.source_id = Set(source.id);
-    model.insert(db).await?;
+    model.insert(&tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.clone().into_active_model();
         media_am.bot_controllable = sea_orm::Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     let src_bot_controllable = source.bot_controllable && user.though_bot;
     if src_bot_controllable != source.bot_controllable {
         let mut source_am = source.into_active_model();
         source_am.bot_controllable = Set(src_bot_controllable);
-        source_am.update(db).await?;
+        source_am.update(&tran).await?;
     }
 
-    update_media_rating(media, &db).await?;
+    update_media_rating(media, &tran).await?;
 
     tran.commit().await?;
 
@@ -121,24 +121,24 @@ pub async fn update(media_id: i32, log_id: i32, log: &LogUpdate, media_type: Med
 
     let tran = db.begin().await?;
 
-    am.update(db).await?;
+    am.update(&tran).await?;
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.clone().into_active_model();
         media_am.bot_controllable = sea_orm::Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     let src_bot_controllable = source.bot_controllable && user.though_bot;
     if src_bot_controllable != source.bot_controllable {
         let mut source_am = source.into_active_model();
         source_am.bot_controllable = Set(src_bot_controllable);
-        source_am.update(db).await?;
+        source_am.update(&tran).await?;
     }
 
     if log.stars != old_stars_value {
-        update_media_rating(media, &db).await?;
+        update_media_rating(media, &tran).await?;
     }
 
     tran.commit().await?;
@@ -163,16 +163,16 @@ pub async fn delete(media_id: i32, log_id: i32, media_type: MediaType, user: &Cu
 
     let tran = db.begin().await?;
 
-    log.delete(db).await?;
+    log.delete(&tran).await?;
 
-    update_media_rating(media, &db).await?;
+    update_media_rating(media, &tran).await?;
 
     tran.commit().await?;
 
     Ok(())
 }
 
-pub async fn update_media_rating(media: media::Model, db: &DbConn) -> Result<(), SrvErr> {
+pub async fn update_media_rating(media: media::Model, db: &impl ConnectionTrait) -> Result<(), SrvErr> {
     #[derive(FromQueryResult)]
     struct AvgSelect {
         pub sum: f32,

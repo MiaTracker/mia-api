@@ -10,7 +10,7 @@ use image::{DynamicImage, ImageFormat, ImageReader};
 use image::imageops::FilterType;
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, ModelTrait, NotSet, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrait, ModelTrait, NotSet, Set};
 use entities::{episodes, image_sizes, images, manual_image_references, media, seasons};
 use entities::prelude::{Episodes, ImageSizes, Images, ManualImageReferences, Media, Seasons};
 use entities::sea_orm_active_enums::{ImageFileType, ImageSource, ImageType};
@@ -197,7 +197,17 @@ pub(crate) async fn fetch_backdrop_and_poster(db_media: &media::Model, db: &DbCo
     Ok((backdrop, poster))
 }
 
-pub(crate) async fn delete_unused_image(id: i32, db: &DbConn, store: &dyn ImageStore) -> Result<(), SrvErr> {
+pub(crate) async fn delete_unused_image(id: i32, db: &impl ConnectionTrait, store: &dyn ImageStore) -> Result<(), SrvErr> {
+    if let Some(directory) = delete_unused_image_rows(id, db).await? {
+        store.delete_directory(&directory).await?;
+    }
+    Ok(())
+}
+
+/// The database half of `delete_unused_image`: when nothing uses the image, deletes its rows and
+/// returns the directory that holds its files. The caller deletes that directory, so that a
+/// caller working inside a transaction can do it after the commit: files can't be rolled back.
+pub(crate) async fn delete_unused_image_rows(id: i32, db: &impl ConnectionTrait) -> Result<Option<String>, SrvErr> {
     let usages = Media::find()
         .filter(media::Column::BackdropImageId.eq(id).or(media::Column::PosterImageId.eq(id)))
         .count(db).await?;
@@ -215,19 +225,19 @@ pub(crate) async fn delete_unused_image(id: i32, db: &DbConn, store: &dyn ImageS
         .count(db).await?;
 
     if usages > 0 || manual_references > 0 || season_usages > 0 || episode_usages > 0 {
-        return Ok(())
+        return Ok(None)
     }
 
     let image = Images::find_by_id(id).one(db).await?;
     if image.is_none() {
-        return Ok(())
+        return Ok(None)
     }
     let image = image.unwrap();
     let directory = image.path.clone();
     ImageSizes::delete_many().filter(image_sizes::Column::ImageId.eq(id)).exec(db).await?;
     image.delete(db).await?;
 
-    store.delete_directory(&directory).await
+    Ok(Some(directory))
 }
 
 /// The sizes to save besides the original: for each threshold `100 + 200 * i` up to

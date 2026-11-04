@@ -311,17 +311,17 @@ pub async fn update(series_id: i32, metadata: SeriesMetadata, user: &CurrentUser
 
     let mut media_am: media::ActiveModel = (&metadata).into_active_model();
     media_am.bot_controllable = sea_orm::Set(media.bot_controllable && user.though_bot);
-    media_am.update(db).await?;
+    media_am.update(&tran).await?;
     let series_am: series::ActiveModel = (&metadata).into_active_model();
-    series_am.update(db).await?;
+    series_am.update(&tran).await?;
 
-    let db_title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(db).await?;
+    let db_title = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(&tran).await?;
 
     if let Some(title) = metadata.title {
         if let Some(title_mod) = db_title {
             let mut am = title_mod.into_active_model();
             am.title = Set(title);
-            am.update(db).await?;
+            am.update(&tran).await?;
         } else {
             let am = titles::ActiveModel {
                 id: NotSet,
@@ -329,11 +329,11 @@ pub async fn update(series_id: i32, metadata: SeriesMetadata, user: &CurrentUser
                 primary: Set(true),
                 title: Set(title),
             };
-            am.insert(db).await?;
+            am.insert(&tran).await?;
         }
     } else {
         if let Some(title_mod) = db_title {
-            title_mod.delete(db).await?;
+            title_mod.delete(&tran).await?;
         }
     }
 

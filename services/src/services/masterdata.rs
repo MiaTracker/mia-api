@@ -6,44 +6,46 @@ use crate::infrastructure::{SrvErr, Tmdb};
 use crate::infrastructure::traits::IntoActiveModel;
 
 pub async fn refresh(db: &DbConn, tmdb: &dyn Tmdb) -> Result<(), SrvErr> {
-    let tran = db.begin().await?;
+    // All HTTP calls are done before the transaction opens, so it only spans the DB writes.
     let languages = tmdb.languages().await?;
+    let movie_genres = tmdb.movie_genres().await?;
+    let series_genres = tmdb.tv_genres().await?;
+
+    let tran = db.begin().await?;
     for language in languages {
-        let existing = languages::Entity::find_by_id(language.iso_639_1.clone()).one(db).await?;
+        let existing = languages::Entity::find_by_id(language.iso_639_1.clone()).one(&tran).await?;
         let mut am = language.into_active_model();
         if let Some(model) = existing {
             am.iso6391 = Set(model.iso6391);
-            am.update(db).await?;
+            am.update(&tran).await?;
         } else {
-            am.insert(db).await?;
+            am.insert(&tran).await?;
         }
     }
 
-    let movie_genres = tmdb.movie_genres().await?;
     for genre in movie_genres.genres {
         let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
-            .filter(genres::Column::Type.eq(MediaType::Movie)).one(db).await?;
+            .filter(genres::Column::Type.eq(MediaType::Movie)).one(&tran).await?;
         let mut am = genre.into_active_model();
         am.r#type = Set(MediaType::Movie);
         if let Some(model) = existing {
             am.id = Set(model.id);
-            am.update(db).await?;
+            am.update(&tran).await?;
         } else {
-            am.insert(db).await?;
+            am.insert(&tran).await?;
         }
     }
 
-    let series_genres = tmdb.tv_genres().await?;
     for genre in series_genres.genres {
         let existing = genres::Entity::find().filter(genres::Column::TmdbId.eq(genre.id))
-            .filter(genres::Column::Type.eq(MediaType::Series)).one(db).await?;
+            .filter(genres::Column::Type.eq(MediaType::Series)).one(&tran).await?;
         let mut am = genre.into_active_model();
         am.r#type = Set(MediaType::Series);
         if let Some(model) = existing {
             am.id = Set(model.id);
-            am.update(db).await?;
+            am.update(&tran).await?;
         } else {
-            am.insert(db).await?;
+            am.insert(&tran).await?;
         }
     }
 

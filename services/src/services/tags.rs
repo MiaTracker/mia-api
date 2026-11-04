@@ -35,25 +35,25 @@ pub async fn create(media_id: i32, tag: TagCreate, media_type: MediaType, user: 
             media_id: Set(media_id),
             tag_id: Set(existing.id),
         };
-        rel.insert(db).await?;
+        rel.insert(&tran).await?;
     } else {
         let model = tags::ActiveModel {
             id: NotSet,
             name: Set(name),
         };
-        let model = model.insert(db).await?;
+        let model = model.insert(&tran).await?;
         let rel = media_tags::ActiveModel {
             media_id: Set(media_id),
             tag_id: Set(model.id),
         };
-        rel.insert(db).await?;
+        rel.insert(&tran).await?;
     }
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = sea_orm::Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
@@ -78,18 +78,18 @@ pub async fn delete(media_id: i32, tag_id: i32, media_type: MediaType, user: &Cu
 
     let tran = db.begin().await?;
 
-    let tag = media_tag.find_related(Tags).one(db).await?.expect("DB in invalid state!");
-    media_tag.delete(db).await?;
-    let count = tag.find_related(MediaTags).count(db).await?;
+    let tag = media_tag.find_related(Tags).one(&tran).await?.expect("DB in invalid state!");
+    media_tag.delete(&tran).await?;
+    let count = tag.find_related(MediaTags).count(&tran).await?;
     if count == 0 {
-        tag.delete(db).await?;
+        tag.delete(&tran).await?;
     }
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
         let mut media_am = media.into_active_model();
         media_am.bot_controllable = sea_orm::Set(bot_controllable);
-        media_am.update(db).await?;
+        media_am.update(&tran).await?;
     }
 
     tran.commit().await?;
