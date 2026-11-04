@@ -113,6 +113,16 @@ pub(crate) async fn search_library(query: SearchQuery, page_req: PageReq, media_
     }))
 }
 
+/// The number of items in the user's library that match `query`, ignoring any paging. The inner
+/// `Err` is as for `search_library`; no query is run then.
+pub(crate) async fn count_library(query: SearchQuery, media_type: Option<MediaType>, user: &CurrentUser, db: &DbConn) -> Result<Result<u64, Vec<String>>, SrvErr> {
+    let res = match transpiler::transpile(query, PageReq { offset: None, limit: None }, user, media_type.map(|m| m.into())) {
+        Ok(res) => res,
+        Err(errs) => return Ok(Err(errs.into_iter().map(|e| format!("{}: {}", e.source, e.message)).collect())),
+    };
+    Ok(Ok(res.query.count(db).await?))
+}
+
 /// A movie or series TMDB found; people and collections are never kept.
 #[derive(Clone, Debug)]
 pub(crate) enum TmdbHit {
@@ -1312,6 +1322,29 @@ mod tests {
         let db = test_support::db::mock().into_connection();
 
         let result = search_library(search_query(" : foo = 1"), page(None), None, &fixtures::user(), &db).await.ok().expect("search should succeed");
+
+        let Err(messages) = result else { panic!("query should be invalid") };
+        assert_eq!(messages, vec!["Construction: Unknown target 'foo'".to_string()]);
+        assert_statement_count(&test_support::db::log(db), 0);
+    }
+
+    #[tokio::test]
+    async fn count_library_returns_number_of_matches_when_query_is_valid() {
+        test_support::init();
+        let db = test_support::db::mock().append_query_results([[fixtures::count_row(42)]]).into_connection();
+
+        let result = count_library(search_query(" : stars >= 8"), None, &fixtures::user(), &db).await.ok().expect("count should succeed");
+
+        assert_eq!(result.ok(), Some(42));
+        assert_statement_count(&test_support::db::log(db), 1);
+    }
+
+    #[tokio::test]
+    async fn count_library_returns_transpile_messages_when_query_is_invalid() {
+        test_support::init();
+        let db = test_support::db::mock().into_connection();
+
+        let result = count_library(search_query(" : foo = 1"), None, &fixtures::user(), &db).await.ok().expect("count should succeed");
 
         let Err(messages) = result else { panic!("query should be invalid") };
         assert_eq!(messages, vec!["Construction: Unknown target 'foo'".to_string()]);

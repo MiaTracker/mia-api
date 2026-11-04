@@ -195,6 +195,8 @@ pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, u
     }
 
     select = select.order_by_asc(Expr::col((titles::Entity, titles::Column::Title)));
+    // Last, so that paging through items that tie on everything above is deterministic.
+    select = select.order_by_asc(media::Column::Id);
 
     if !query.search.is_empty() {
         select = select.filter(media::Column::Id.in_subquery(Query::select().distinct()

@@ -416,3 +416,50 @@ async fn watchlist_search_returns_only_watchlisted_media() {
 
     assert_eq!(titles_of(results), vec![ALIEN.to_string()]);
 }
+
+/// Runs the model's `mia_search` tool and returns its JSON result.
+async fn tool_result(input: serde_json::Value, library: &Library, db: &DbConn) -> serde_json::Value {
+    let outcome = services::chat::tools::mia_search::run(&input, &library.user, db).await.ok().expect("tool run");
+    assert!(!outcome.is_error, "{input} failed: {}", outcome.content);
+    serde_json::from_str(&outcome.content).expect("tool result is JSON")
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn mia_search_pages_and_counts_the_whole_match_when_offset_and_limit_are_given() {
+    let db = database().await;
+    let library = library(&db).await;
+
+    let first = tool_result(serde_json::json!({ "query": "", "limit": 2 }), &library, &db).await;
+    let second = tool_result(serde_json::json!({ "query": "", "offset": 2, "limit": 2 }), &library, &db).await;
+    let past_the_end = tool_result(serde_json::json!({ "query": "", "offset": 5 }), &library, &db).await;
+    let count_only = tool_result(serde_json::json!({ "query": " : stars > 1", "limit": 0 }), &library, &db).await;
+
+    let titles = |page: &serde_json::Value| page["results"].as_array().expect("results").iter().map(|hit| hit["title"].as_str().expect("title").to_string()).collect::<Vec<_>>();
+    assert_eq!(titles(&first), [ALIEN, DARK]);
+    assert_eq!(titles(&second), [MATRIX]);
+    assert_eq!(titles(&past_the_end), Vec::<String>::new());
+    // The other user's movie is in none of the totals.
+    assert_eq!([&first, &second, &past_the_end].map(|page| page["total"].as_i64()), [Some(3); 3]);
+    assert_eq!(count_only, serde_json::json!({ "results": [], "total": 2 }));
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn mia_search_pages_through_ties_without_repeating_or_skipping_when_items_share_title_and_sort_value() {
+    let db = database().await;
+    let user = seed::user(&db, 1).await;
+    let mut ids = Vec::new();
+    for tmdb_id in 1..=5 {
+        ids.push(seed::movie(&db, &user, tmdb_id, "Twin").await.id);
+    }
+    let library = Library { user, alien: ids[0] };
+
+    let mut paged = Vec::new();
+    for offset in 0..5 {
+        let page = tool_result(serde_json::json!({ "query": " :  : stars desc", "offset": offset, "limit": 1 }), &library, &db).await;
+        paged.push(page["results"][0]["id"].as_i64().expect("one hit per page") as i32);
+    }
+
+    assert_eq!(paged, ids);
+}

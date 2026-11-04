@@ -32,7 +32,11 @@ pub fn definitions() -> Vec<LlmTool> {
             description: mia_search::DESCRIPTION.into(),
             input_schema: json!({
                 "type": "object",
-                "properties": { "query": { "type": "string" } },
+                "properties": {
+                    "query": { "type": "string" },
+                    "offset": { "type": "integer", "minimum": 0 },
+                    "limit": { "type": "integer", "minimum": 0 }
+                },
                 "required": ["query"]
             })
         },
@@ -227,5 +231,16 @@ mod tests {
         let tmdb_search = &tools[2].input_schema;
         assert_eq!(tmdb_search["properties"]["type"]["enum"], json!(["movie", "series"]));
         assert_eq!(tools[3].input_schema, json!({ "type": "object", "properties": {} }));
+    }
+
+    #[test]
+    fn definitions_let_mia_search_take_optional_offset_and_limit() {
+        let schema = &definitions()[0].input_schema;
+
+        assert_eq!(schema["required"], json!(["query"]));
+        for field in ["offset", "limit"] {
+            assert_eq!(schema["properties"][field]["type"], "integer", "{field}");
+            assert_eq!(schema["properties"][field]["minimum"], 0, "{field}");
+        }
     }
 }

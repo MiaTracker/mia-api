@@ -54,7 +54,7 @@ openrouter:
     effort: medium        # low | medium | high | xhigh | max
   data_policy: deny     # optional, default deny: allow (any provider) | deny (no prompt collection) | zdr (zero retention); free models need allow
 assistant:            # optional; each limit defaults as shown and must be at least 1
-  mia_search_limit: 30    # results of one mia_search call
+  mia_search_limit: 30    # most results per page of one mia_search call (also the default page size)
   mia_details_limit: 60   # ids of one mia_details call
   max_tool_rounds: 8      # rounds of tool calls in one Exchange
 logging:

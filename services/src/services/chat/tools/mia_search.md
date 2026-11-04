@@ -1,6 +1,6 @@
 Searches the user's own library (movies and series they added to mia) and returns matching items with their mia id. Use it to answer questions about what the user owns, has rated or has watched. It never searches TMDB. Pass the mia ids to mia_details for full details.
 
-Input: {"query": "<query>"}. A query has up to three parts separated by " : " (space, colon, space):
+Input: {"query": "<query>", "offset": <integer>, "limit": <integer>}. "offset" and "limit" are optional and page through the matches (see Result). A query has up to three parts separated by " : " (space, colon, space):
 
     title : filter : sort
 
@@ -54,4 +54,5 @@ Examples (the value of "query" as a JSON string; mind the spaces around the colo
   " : last_watched >= 2026-01-01 and status = \"returning series\" : last_watched desc"   series watched this year that are still running, latest first
   " : has_log_containing = \"rewatch\""                       items with a viewing comment mentioning "rewatch"
 
-Result: {"results": [{"id", "type" ("movie" or "series"), "title", "release_year", "overview", "tmdb_id", "stars"}]}. Missing values are null; "stars" is the user's own rating. Results are capped at a fixed number and there is no paging: narrow the query (filter, sort) rather than expecting more. An invalid query returns an error message naming what is wrong; fix the query and retry.
+Result: {"results": [{"id", "type" ("movie" or "series"), "title", "release_year", "overview", "tmdb_id", "stars"}], "total": <integer>}. Missing values are null; "stars" is the user's own rating. "total" is the number of items matching the whole query, however many "results" this call returns, so use it to answer "how many" questions: pass "limit": 0 to get only "total" without any results.
+Paging: "results" is one page of the matches, in the query's sort order. "offset" is how many matches to skip (default 0) and "limit" is how many to return. There is a maximum page size; it is also the default "limit", and a larger "limit" is lowered to it. When offset + the number of results is below "total" there are more matches: repeat the same query with "offset" set to that sum to get the next page. Keep the query (including its sort) identical between pages. An "offset" past the end gives empty "results" and the same "total". Narrowing the query (filter, sort) is often better than reading many pages. An invalid query returns an error message naming what is wrong; fix the query and retry. "offset" and "limit" must be whole numbers of at least 0, otherwise the call is an error.

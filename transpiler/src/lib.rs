@@ -83,6 +83,20 @@ mod tests {
     }
 
     #[test]
+    fn transpile_orders_by_media_id_last_when_sorting_by_default_or_custom_target() {
+        use sea_orm::{DbBackend, QueryTrait};
+
+        for query in ["", "alien", " :  : stars desc", " :  : release_date asc"] {
+            let result = transpile(search(query), PageReq { offset: None, limit: None }, &user(), None).ok().expect("query transpiles");
+
+            let sql = result.query.build(DbBackend::Postgres).to_string();
+
+            let order_by = sql.rsplit("ORDER BY").next().expect("query has ORDER BY").trim_end();
+            assert!(order_by.ends_with(r#""media"."id" ASC"#), "query {query:?} does not end with the media id: {order_by}");
+        }
+    }
+
+    #[test]
     #[ignore = "known bug: parser ignores text after a complete filter condition"]
     fn transpile_returns_error_when_filter_has_trailing_text() {
         let result = transpile(search(" : stars > 5 rated = true"), PageReq { offset: None, limit: None }, &user(), None);
