@@ -97,7 +97,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known bug: parser ignores text after a complete filter condition"]
     fn transpile_returns_error_when_filter_has_trailing_text() {
         let result = transpile(search(" : stars > 5 rated = true"), PageReq { offset: None, limit: None }, &user(), None);
 

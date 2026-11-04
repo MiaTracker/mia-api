@@ -12,6 +12,7 @@ use image::{DynamicImage, ImageFormat};
 use log::error;
 use integrations::openrouter::Llm;
 use sea_orm::DbConn;
+use tokio_util::task::TaskTracker;
 use crate::chat::exchange::run_exchange;
 use crate::chat::registry::ExchangeRegistry;
 use crate::infrastructure::{Clock, ImageStore, SrvErr, Tmdb};
@@ -87,11 +88,20 @@ pub async fn run(job: Job, deps: &JobDeps) -> Result<(), SrvErr> {
 /// Runs each submitted job in its own Tokio task and logs failures.
 pub struct TokioJobs {
     deps: Arc<JobDeps>,
+    tasks: TaskTracker,
 }
 
 impl TokioJobs {
     pub fn new(deps: JobDeps) -> Self {
-        Self { deps: Arc::new(deps) }
+        Self { deps: Arc::new(deps), tasks: TaskTracker::new() }
+    }
+
+    /// Waits until every job submitted so far has finished. For short-lived processes such as the
+    /// CLI `refresh`, whose runtime would otherwise cancel unfinished jobs on exit.
+    pub async fn finish(&self) {
+        self.tasks.close();
+        self.tasks.wait().await;
+        self.tasks.reopen();
     }
 }
 
@@ -99,7 +109,7 @@ impl TokioJobs {
 impl Jobs for TokioJobs {
     async fn submit(&self, job: Job) {
         let deps = self.deps.clone();
-        tokio::spawn(async move {
+        self.tasks.spawn(async move {
             let description = job.describe();
             match AssertUnwindSafe(run(job, &deps)).catch_unwind().await {
                 Ok(Ok(())) => {}

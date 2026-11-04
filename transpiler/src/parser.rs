@@ -204,7 +204,11 @@ impl Parser {
             tokens,
             current: 0,
         };
-        d.expression()
+        let expr = d.expression()?;
+        if !d.at_end() {
+            return Err(d.error(d.peek(), "Unexpected token. Expected 'and', 'or' or the end of the filter."));
+        }
+        Ok(expr)
     }
 
     fn expression(&mut self) -> Result<Expr, ParseError> {
@@ -271,6 +275,8 @@ impl Parser {
         Ok(expr)
     }
 
+    /// By design, `and` binds looser than `or`: its right side is a whole `or` chain, so
+    /// `a and b or c` means `a and (b or c)`.
     fn logic_and(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.grouping()?;
         while self.match_this(TokenType::And) {
@@ -401,11 +407,27 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known bug: and binds looser than or in filters"]
-    fn parse_binds_and_tighter_than_or_when_filter_mixes_them() {
+    fn parse_binds_and_looser_than_or_when_filter_mixes_them() {
         assert_eq!(
             tree(" : stars > 5 and rated = true or watched = true"),
-            tree(" : (stars > 5 and rated = true) or watched = true"),
+            tree(" : stars > 5 and (rated = true or watched = true)"),
         );
+    }
+
+    #[test]
+    fn parse_returns_error_when_filter_has_trailing_text() {
+        for query in [" : stars > 5 rated = true", " : stars > 5)", " : (stars > 5) 7"] {
+            let parsed = parse(query.to_string());
+
+            assert!(parsed.expr.is_none(), "query {query:?} should not parse");
+            assert!(parsed.parsing_errs.is_some_and(|errs| errs.len() == 1), "query {query:?} should report one parsing error");
+        }
+    }
+
+    #[test]
+    fn parse_accepts_filter_when_conditions_are_joined() {
+        for query in [" : stars > 5 and rated = true", " : (stars > 5 or rated = true) and 1 < stars < 9"] {
+            assert!(parse(query.to_string()).expr.is_some(), "query {query:?} should parse");
+        }
     }
 }

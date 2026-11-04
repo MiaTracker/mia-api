@@ -22,7 +22,7 @@ pub enum Relation {
     Images,
     #[sea_orm(
         belongs_to = "super::media::Entity",
-        from = "Column::ImageId",
+        from = "Column::MediaId",
         to = "super::media::Column::Id",
         on_update = "Cascade",
         on_delete = "Cascade"

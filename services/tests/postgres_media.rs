@@ -8,7 +8,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use common::postgres::database;
 use common::{fakes, seed};
-use entities::prelude::{Episodes, Genres, ImageSizes, Images, Media, MediaGenres, Movies, Seasons, Series, Tags, Titles};
+use entities::prelude::{Episodes, Genres, ImageSizes, Images, ManualImageReferences, Media, MediaGenres, Movies, Seasons, Series, Tags, Titles};
 use entities::sea_orm_active_enums::{ImageType, MediaType};
 use entities::{episodes, genres, image_sizes, images, media as media_entity, seasons, titles};
 use integrations::tmdb::views::{Genre, MovieDetails, MovieTitle, MovieTitles, Season, SeasonDetails, SeriesDetails, SeriesTitles};
@@ -248,8 +248,32 @@ async fn media_delete_removes_rows_and_unused_images() {
     assert!(Media::find_by_id(kept_id).one(db).await.expect("querying media").is_some());
 }
 
+/// Deleting the media cascades to its manual image references, so `delete` must take them first
+/// or their images are never deleted.
 #[tokio::test]
-#[ignore = "known bug: media::delete_w_source deletes the media without deleting its unused images when the user is not a bot"]
+#[ignore = "requires docker"]
+async fn media_delete_removes_manual_images_of_media() {
+    let shared = Arc::new(database().await);
+    let db: &DbConn = &shared;
+    let f = fakes(&shared);
+    let user = seed::user(db, 1).await;
+    let deleted = seed::movie(db, &user, 1, "Deleted").await;
+    let kept = seed::movie(db, &user, 2, "Kept").await;
+    let deleted_image = seed::manual_image(db, deleted.id, 1).await;
+    let kept_image = seed::manual_image(db, kept.id, 2).await;
+    f.store.insert(&deleted_image.path, "300x450.png", b"deleted".to_vec());
+    f.store.insert(&kept_image.path, "300x450.png", b"kept".to_vec());
+
+    media::delete(deleted.id, ViewMediaType::Movie, &user, db, &f.store).await.ok().expect("delete should succeed");
+
+    let images: Vec<i32> = Images::find().all(db).await.expect("querying images").iter().map(|i| i.id).collect();
+    assert_eq!(images, vec![kept_image.id], "only the other media's manual image is kept");
+    assert_eq!(seed::count(db, ManualImageReferences).await, 1);
+    assert_eq!(f.store.files(), vec![(kept_image.path.clone(), "300x450.png".to_string())]);
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
 async fn media_delete_w_source_removes_unused_images_when_user_is_not_a_bot() {
     let shared = Arc::new(database().await);
     let db: &DbConn = &shared;
@@ -261,7 +285,7 @@ async fn media_delete_w_source_removes_unused_images_when_user_is_not_a_bot() {
     seed::source(db, id, "Jellyfin").await;
     assert_eq!(seed::count(db, Images).await, 2);
 
-    media::delete_w_source(603, "Jellyfin".into(), ViewMediaType::Movie, &user, db).await.ok().expect("delete should succeed");
+    media::delete_w_source(603, "Jellyfin".into(), ViewMediaType::Movie, &user, db, &f.store).await.ok().expect("delete should succeed");
 
     assert!(Media::find_by_id(id).one(db).await.expect("querying media").is_none());
     assert_eq!(seed::count(db, Images).await, 0, "the movie's backdrop and poster are deleted");

@@ -451,23 +451,31 @@ pub async fn images(media_id: i32, media_type: MediaType, user: &CurrentUser, db
 pub async fn update_images(media_id: i32, media_type: MediaType, images: ImagesUpdate, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tmdb, store: &dyn ImageStore, jobs: &dyn Jobs, random: &dyn Random) -> Result<(), SrvErr> {
     let media = fetch_media(media_id, media_type, user, db).await?;
 
-    let mut am = media.into_active_model();
+    // The images the media used before, for the properties this update replaces.
+    let mut replaced = Vec::new();
+    let mut am = media.clone().into_active_model();
     if let Some(backdrop) = images.backdrop_path {
         let source = images.backdrop_source.ok_or(SrvErr::BadRequest("Source not provided".to_string()))?;
         let backdrop_image_id = fetch_id_or_pull_image(source, backdrop.as_str(), ImageType::Backdrop, db, tmdb, store, jobs, random).await?;
         am.backdrop_image_id = Set(Some(backdrop_image_id));
+        replaced.extend(media.backdrop_image_id.filter(|&old| old != backdrop_image_id));
     }
     if let Some(poster) = images.poster_path {
         let source = images.poster_source.ok_or(SrvErr::BadRequest("Source not provided".to_string()))?;
         let poster_image_id = fetch_id_or_pull_image(source, poster.as_str(), ImageType::Poster, db, tmdb, store, jobs, random).await?;
         am.poster_image_id = Set(Some(poster_image_id));
+        replaced.extend(media.poster_image_id.filter(|&old| old != poster_image_id));
     }
     am.update(db).await?;
+
+    for old_image_id in replaced {
+        delete_unused_image(old_image_id, db, store).await?;
+    }
     Ok(())
 }
 
 
-pub async fn delete_w_source(tmdb_id: i32, source_name: String, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
+pub async fn delete_w_source(tmdb_id: i32, source_name: String, media_type: MediaType, user: &CurrentUser, db: &DbConn, store: &dyn ImageStore) -> Result<(), SrvErr> {
     let media = media::Entity::find().filter(media::Column::UserId.eq(user.id))
         .filter(media::Column::TmdbId.eq(tmdb_id))
         .filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into())).one(db).await?;
@@ -490,27 +498,7 @@ pub async fn delete_w_source(tmdb_id: i32, source_name: String, media_type: Medi
         return Ok(());
     }
 
-    let tran = db.begin().await?;
-    media.delete(&tran).await?;
-
-    Tags::delete_many().filter(tags::Column::Id.in_subquery(
-        Query::select().column(tags::Column::Id).from(Tags)
-            .left_join(MediaTags, Expr::col((Tags, tags::Column::Id)).equals((MediaTags, media_tags::Column::TagId)))
-            .cond_where(media_tags::Column::TagId.is_null())
-            .to_owned())
-    ).exec(&tran).await?;
-
-    Genres::delete_many().filter(genres::Column::Id.in_subquery(
-        Query::select().column(genres::Column::Id).from(Genres)
-            .left_join(MediaGenres, Expr::col((Genres, genres::Column::Id)).equals((MediaGenres, media_genres::Column::GenreId)))
-            .cond_where(media_genres::Column::GenreId.is_null())
-            .and_where(genres::Column::TmdbId.is_null())
-            .to_owned())
-    ).exec(&tran).await?;
-
-    tran.commit().await?;
-
-    Ok(())
+    delete_media(media, db, store).await
 }
 
 pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db: &DbConn, store: &dyn ImageStore) -> Result<(), SrvErr> {
@@ -520,10 +508,23 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
         return Err(SrvErr::Unauthorized);
     }
 
+    delete_media(media, db, store).await
+}
+
+/// Deletes `media`, the tags and user genres no other media has, and the images nothing uses any
+/// more: its backdrop, its poster and its manual images.
+async fn delete_media(media: media::Model, db: &DbConn, store: &dyn ImageStore) -> Result<(), SrvErr> {
+    let media_id = media.id;
     let poster_id = media.poster_image_id;
     let backdrop_id = media.backdrop_image_id;
 
     let tran = db.begin().await?;
+
+    // Before the media: deleting it cascades to its references, and their images would be lost.
+    let deleted_references = ManualImageReferences::delete_many()
+        .filter(manual_image_references::Column::MediaId.eq(media_id))
+        .exec_with_returning(&tran).await?;
+
     media.delete(&tran).await?;
 
     Tags::delete_many().filter(tags::Column::Id.in_subquery(
@@ -551,10 +552,6 @@ pub async fn delete(media_id: i32, media_type: MediaType, user: &CurrentUser, db
     if let Some(backdrop_id) = backdrop_id {
         directories.extend(delete_unused_image_rows(backdrop_id, &tran).await?);
     }
-
-    let deleted_references = ManualImageReferences::delete_many()
-        .filter(manual_image_references::Column::MediaId.eq(media_id))
-        .exec_with_returning(&tran).await?;
 
     for deleted_reference in deleted_references {
         directories.extend(delete_unused_image_rows(deleted_reference.image_id, &tran).await?);
@@ -1861,7 +1858,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "known bug: update_images never deletes the previous images"]
     async fn update_images_deletes_unused_previous_images() {
         test_support::init();
         let mut tmdb = MockTmdb::new();
@@ -1955,11 +1951,12 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock()
             .append_query_results([[tmdb_movie()]])
+            .append_query_results([Vec::<manual_image_references::Model>::new()])
             .append_exec_results([deleted(), deleted(), deleted()])
             .into_connection();
 
         // The source name is not consulted: a user deleting "with a source" deletes the whole media.
-        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::user(), &db).await;
+        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::user(), &db, &InMemoryImageStore::new()).await;
 
         assert!(result.is_ok());
         let log = test_support::db::log(db);
@@ -1975,10 +1972,11 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock()
             .append_query_results([[media::Model { bot_controllable: true, ..tmdb_movie() }]])
+            .append_query_results([Vec::<manual_image_references::Model>::new()])
             .append_exec_results([deleted(), deleted(), deleted()])
             .into_connection();
 
-        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db).await;
+        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db, &InMemoryImageStore::new()).await;
 
         assert!(result.is_ok());
         assert_wrote(&test_support::db::log(db), r#"DELETE FROM "media""#, &[Value::from(10)]);
@@ -1995,7 +1993,7 @@ mod tests {
             .append_exec_results([deleted()])
             .into_connection();
 
-        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db).await;
+        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db, &InMemoryImageStore::new()).await;
 
         assert!(result.is_ok());
         let log = test_support::db::log(db);
@@ -2008,7 +2006,7 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock().append_query_results([Vec::<media::Model>::new()]).into_connection();
 
-        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::user(), &db).await;
+        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::user(), &db, &InMemoryImageStore::new()).await;
 
         assert!(matches!(result, Err(SrvErr::NotFound)));
         assert_statement_count(&test_support::db::log(db), 1);
@@ -2022,7 +2020,7 @@ mod tests {
             .append_query_results([Vec::<entities::sources::Model>::new()])
             .into_connection();
 
-        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db).await;
+        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db, &InMemoryImageStore::new()).await;
 
         assert!(matches!(result, Err(SrvErr::NotFound)));
         assert_statement_count(&test_support::db::log(db), 2);
@@ -2036,7 +2034,7 @@ mod tests {
             .append_query_results([[fixtures::source_model(3, 10, "Torrent A")]])
             .into_connection();
 
-        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db).await;
+        let result = delete_w_source(603, "Torrent A".into(), MediaType::Movie, &fixtures::bot_user(), &db, &InMemoryImageStore::new()).await;
 
         assert!(matches!(result, Err(SrvErr::Unauthorized)));
         let log = test_support::db::log(db);
@@ -2052,12 +2050,12 @@ mod tests {
         let media = media::Model { poster_image_id: Some(7), backdrop_image_id: Some(8), ..tmdb_movie() };
         let db = test_support::db::mock()
             .append_query_results([[media]])
+            // manual image references of the media, whose image is deleted too
+            .append_query_results([[fixtures::manual_image_reference_model(9, 10)]])
             // the media, then the orphaned tags and genres
             .append_exec_results([deleted(), deleted(), deleted()]);
         let db = with_deleted_unused_image(db, 7);
-        let db = with_deleted_unused_image(db, 8)
-            // manual image references of the media, whose image is deleted too
-            .append_query_results([[fixtures::manual_image_reference_model(9, 10)]]);
+        let db = with_deleted_unused_image(db, 8);
         let db = with_deleted_unused_image(db, 9).into_connection();
         let store = InMemoryImageStore::new();
         for directory in ["image-7", "image-8", "image-9", "image-other"] {
@@ -2083,13 +2081,13 @@ mod tests {
         let media = media::Model { poster_image_id: Some(7), ..tmdb_movie() };
         let db = test_support::db::mock()
             .append_query_results([[media]])
+            .append_query_results([Vec::<manual_image_references::Model>::new()])
             .append_exec_results([deleted(), deleted(), deleted()])
             // image 7 is also used by another media
             .append_query_results([[fixtures::count_row(1)]])
             .append_query_results([[fixtures::count_row(0)]])
             .append_query_results([[fixtures::count_row(0)]])
             .append_query_results([[fixtures::count_row(0)]])
-            .append_query_results([Vec::<manual_image_references::Model>::new()])
             .into_connection();
         let store = InMemoryImageStore::new();
         store.insert("image-7", "300x450.jpg", b"image".to_vec());
@@ -2106,8 +2104,8 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock()
             .append_query_results([[media::Model { bot_controllable: true, ..tmdb_movie() }]])
-            .append_exec_results([deleted(), deleted(), deleted()])
             .append_query_results([Vec::<manual_image_references::Model>::new()])
+            .append_exec_results([deleted(), deleted(), deleted()])
             .into_connection();
 
         let result = delete(10, MediaType::Movie, &fixtures::bot_user(), &db, &InMemoryImageStore::new()).await;

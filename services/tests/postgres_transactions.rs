@@ -319,7 +319,7 @@ async fn media_delete_w_source_keeps_media_when_deleting_orphaned_tags_fails() {
     seed::source(&db, movie.id, "Jellyfin").await;
     fail_on(&db, "tags", "DELETE").await;
 
-    let result = media_service::delete_w_source(1, "Jellyfin".into(), MOVIE, &user, &db).await;
+    let result = media_service::delete_w_source(1, "Jellyfin".into(), MOVIE, &user, &db, &services::test_support::InMemoryImageStore::new()).await;
 
     assert!(result.is_err());
     assert!(Media::find_by_id(movie.id).one(&db).await.expect("querying media").is_some(), "the media deletion is rolled back");

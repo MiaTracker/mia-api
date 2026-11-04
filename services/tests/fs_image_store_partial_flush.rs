@@ -12,7 +12,7 @@ use services::infrastructure::{FsImageStore, ImageStore};
 const DIRECTORY: &str = "0123456789abcdef0123456789abcdef";
 
 #[tokio::test]
-#[ignore = "known bug: FsImageStore::write_new keeps a partial file when the write error only surfaces at flush"]
+#[ignore = "touches filesystem"]
 async fn write_new_removes_partial_file_when_flush_fails() {
     let root = tempfile::tempdir().expect("temp dir");
     let store = FsImageStore::new(root.path());

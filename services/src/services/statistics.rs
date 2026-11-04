@@ -142,40 +142,21 @@ pub async fn stats(user: &CurrentUser, db: &DbConn) -> Result<Stats, SrvErr> {
             watched_movie_future, watched_series_future, genres_future, languages_future,
             rated_movie_future, rated_series_future, media_avg_future, movies_avg_future, series_avg_future)?;
 
-    let watched_movie_id = watched_movie.as_ref().and_then(|p| Some(p.0.id));
-    let watched_series_id = watched_series.as_ref().and_then(|p| Some(p.0.id));
-    let rated_movie_id = rated_movie.as_ref().and_then(|p| Some(p.0.id));
-    let rated_series_id = rated_series.as_ref().and_then(|p| Some(p.0.id));
+    // One slot per entry. The same media can fill several of them (most watched and highest rated).
+    let picks = [watched_movie, watched_series, rated_movie, rated_series];
+    let filled = picks.each_ref().map(Option::is_some);
 
     let media_vec: Vec<(media::Model, Option<images::Model>, Option<titles::Model>)> =
-        vec![watched_movie, watched_series, rated_movie, rated_series].into_iter()
-        .filter_map(|p| p).collect();
+        picks.into_iter().flatten().collect();
     let poster_ids: Vec<i32> = media_vec.iter()
         .filter_map(|p| p.0.poster_image_id).collect();
     let poster_sizes = ImageSizes::find()
         .filter(image_sizes::Column::ImageId.is_in(poster_ids)).all(db).await?;
 
-    let indexes = crate::services::media::build_media_indexes(media_vec, poster_sizes);
-
-    let mut watched_movie_idx = Option::None;
-    let mut watched_series_idx = Option::None;
-    let mut rated_movie_idx = Option::None;
-    let mut rated_series_idx = Option::None;
-
-    for index in indexes {
-        if watched_movie_id.is_some_and(|i| i == index.id) {
-            watched_movie_idx = Some(index);
-        }
-        else if watched_series_id.is_some_and(|i| i == index.id) {
-            watched_series_idx = Some(index);
-        }
-        else if rated_movie_id.is_some_and(|i| i == index.id) {
-            rated_movie_idx = Some(index);
-        }
-        else if rated_series_id.is_some_and(|i| i == index.id) {
-            rated_series_idx = Some(index);
-        }
-    }
+    // One index per media, in order, so the filled slots take them in turn.
+    let mut indexes = crate::services::media::build_media_indexes(media_vec, poster_sizes).into_iter();
+    let [watched_movie_idx, watched_series_idx, rated_movie_idx, rated_series_idx] =
+        filled.map(|filled| if filled { indexes.next() } else { None });
 
 
     Ok(Stats {
@@ -351,10 +332,7 @@ mod tests {
         assert!(stats.genres.iter().all(|g| g.name != "Other"));
     }
 
-    /// Known bug: a media that is both the most watched and the highest rated of its type is
-    /// matched by the `most_watched` branch for both entries, so `highest_rated` stays empty.
     #[tokio::test]
-    #[ignore = "known bug: highest_rated is empty when the same media is also the most watched"]
     async fn stats_reports_media_as_highest_rated_when_it_is_also_most_watched() {
         test_support::init();
         let movie = media::Model { stars: Some(9.0), ..fixtures::movie_media_model(1, 1) };

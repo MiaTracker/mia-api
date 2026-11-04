@@ -50,12 +50,16 @@ impl ImageStore for FsImageStore {
             error!("Could not create new file {}: {}", path.display(), e);
             e
         })?;
-        if let Err(err) = file.write_all(bytes.as_slice()).await {
+        // A write that fits in tokio's buffer only reaches the file, and fails, at the flush.
+        let written = match file.write_all(bytes.as_slice()).await {
+            Ok(()) => file.flush().await,
+            Err(err) => Err(err),
+        };
+        if let Err(err) = written {
             drop(file);
             let _ = fs::remove_file(path).await;
             return Err(SrvErr::from(err));
         }
-        file.flush().await?;
         Ok(())
     }
 

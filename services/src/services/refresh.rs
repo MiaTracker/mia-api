@@ -30,7 +30,11 @@ pub async fn run_refresh() {
         clock: Arc::new(SystemClock),
     });
 
-    match refresh(&conn, tmdb.as_ref(), store.as_ref(), &jobs, &SystemClock, &OsRandom).await {
+    let refreshed = refresh(&conn, tmdb.as_ref(), store.as_ref(), &jobs, &SystemClock, &OsRandom).await;
+    // The image sizes are saved by background jobs, which exiting would cancel.
+    jobs.finish().await;
+
+    match refreshed {
         Ok(result) => {
             println!("Refresh complete. Updated: {}, Errors: {}", result.updates, result.errors);
         }

@@ -19,7 +19,10 @@ pub async fn create(media_id: i32, genre: &GenreCreate, media_type: MediaType, u
 
     let tran = db.begin().await?;
 
-    add_genre_to_media(&media, &genre.name, &tran).await?;
+    // Nothing changed, so the media keeps its bot_controllable flag; dropping `tran` rolls back.
+    if !add_genre_to_media(&media, &genre.name, &tran).await? {
+        return Ok(false);
+    }
 
     let bot_controllable = media.bot_controllable && user.though_bot;
     if bot_controllable != media.bot_controllable {
@@ -156,7 +159,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "known bug: create ignores add_genre_to_media's result and always returns true"]
     async fn create_returns_false_when_genre_already_on_media() {
         test_support::init();
         let user = fixtures::user();
@@ -168,6 +170,22 @@ mod tests {
         let created = create(10, &genre_create("comedy"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
 
         assert!(!created);
+    }
+
+    #[tokio::test]
+    async fn create_returns_true_when_genre_added_to_media() {
+        test_support::init();
+        let user = fixtures::user();
+        let db = test_support::db::mock()
+            .append_query_results([vec![movie_media(10, &user)]])
+            .append_query_results([Vec::<genres::Model>::new(), Vec::<genres::Model>::new(), vec![movie_genre(7, "Comedy")]])
+            .append_query_results([vec![fixtures::media_genre_model(10, 7)]])
+            .into_connection();
+
+        let created = create(10, &genre_create("comedy"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+
+        assert!(created);
+        assert_wrote(&test_support::db::log(db), "COMMIT", &[]);
     }
 
     #[tokio::test]

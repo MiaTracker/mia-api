@@ -70,7 +70,7 @@ impl MigrationTrait for Migration {
                     .to(Images::Table, Images::Id)
                     .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
                 .foreign_key(ForeignKey::create()
-                    .from(ManualImageReferences::Table, ManualImageReferences::ImageId)
+                    .from(ManualImageReferences::Table, ManualImageReferences::MediaId)
                     .to(Media::Table, Media::Id)
                     .on_update(ForeignKeyAction::Cascade).on_delete(ForeignKeyAction::Cascade))
                 .to_owned()

@@ -51,7 +51,7 @@ async fn entities_match_schema() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: manual_image_references.image_id has a foreign key to media.id (meant for media_id)"]
+#[ignore = "requires docker"]
 async fn manual_image_references_accepts_reference_when_image_id_is_not_a_media_id() {
     let db = database().await;
     let user = seed::user(&db, 1).await;
@@ -75,4 +75,19 @@ async fn manual_image_references_accepts_reference_when_image_id_is_not_a_media_
         .insert(&db).await;
 
     assert!(result.is_ok(), "inserting the reference failed: {:?}", result.err());
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn manual_image_references_rejects_reference_when_media_missing() {
+    let db = database().await;
+    let user = seed::user(&db, 1).await;
+    let media = seed::movie(&db, &user, 1, "Movie").await;
+    let image = seed::manual_image(&db, media.id, 1).await;
+    ManualImageReferences::delete_by_id(image.id).exec(&db).await.expect("deleting the seeded reference");
+
+    let result = manual_image_references::ActiveModel { image_id: Set(image.id), media_id: Set(media.id + 1000) }
+        .insert(&db).await;
+
+    assert!(result.is_err(), "a reference to a missing media should fail the foreign key");
 }

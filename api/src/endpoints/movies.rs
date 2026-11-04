@@ -414,6 +414,6 @@ pub async fn delete(state: State<AppState>, Extension(user): Extension<CurrentUs
 )]
 pub async fn delete_w_source(state: State<AppState>, Extension(user): Extension<CurrentUser>,
                              Json(json): Json<MediaSourceDelete>) -> impl IntoResponse {
-    let result = services::media::delete_w_source(json.tmdb_id, json.source, MediaType::Movie, &user, &state.conn).await;
+    let result = services::media::delete_w_source(json.tmdb_id, json.source, MediaType::Movie, &user, &state.conn, state.image_store.as_ref()).await;
     result.to_response(StatusCode::OK)
 }

@@ -1,8 +1,8 @@
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrait, FromQueryResult, IntoActiveModel as SOIntoActiveModel, ModelTrait, QueryFilter, QuerySelect, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrait, FromQueryResult, IntoActiveModel as SOIntoActiveModel, JoinType, ModelTrait, QueryFilter, QuerySelect, RelationTrait, TransactionTrait};
 use sea_orm::prelude::Expr;
 use entities::{logs, media, sea_orm_active_enums, sources};
-use entities::prelude::{Logs, Media, Sources};
+use entities::prelude::{Logs, Sources};
 use views::logs::{Log, LogCreate, LogUpdate};
 use views::media::MediaType;
 use views::users::CurrentUser;
@@ -64,14 +64,19 @@ pub async fn create(media_id: i32, log: &LogCreate, media_type: MediaType, user:
 }
 
 pub async fn details(media_id: i32, media_type: MediaType, log_id: i32, user: &CurrentUser, db: &DbConn) -> Result<Log, SrvErr> {
-    let log = Logs::find_by_id(log_id).left_join(Media)
+    let found = Logs::find_by_id(log_id).find_also_related(Sources)
+        .join(JoinType::InnerJoin, logs::Relation::Media.def())
         .filter(media::Column::Id.eq(media_id)).filter(media::Column::Type.eq::<sea_orm_active_enums::MediaType>(media_type.into()))
         .filter(media::Column::UserId.eq(user.id))
         .one(db).await?;
-    if log.is_none() {
+    let Some((log, source)) = found else {
         return Err(SrvErr::NotFound)
+    };
+    let mut view = Log::from(&log);
+    if let Some(source) = source {
+        view.source = source.name;
     }
-    Ok(Log::from(&log.unwrap()))
+    Ok(view)
 }
 
 pub async fn update(media_id: i32, log_id: i32, log: &LogUpdate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
@@ -333,12 +338,16 @@ mod tests {
         test_support::init();
         let user = fixtures::user();
         let db = test_support::db::mock()
-            .append_query_results([vec![logs::Model { stars: Some(7.5), comment: Some("Fine".to_string()), ..fixtures::log_model(1, 10, 3) }]])
+            .append_query_results([[(
+                logs::Model { stars: Some(7.5), comment: Some("Fine".to_string()), ..fixtures::log_model(1, 10, 3) },
+                Some(fixtures::source_model(3, 10, "Torrent A")),
+            )]])
             .into_connection();
 
         let found = details(10, MediaType::Movie, 1, &user, &db).await.ok().expect("details should succeed");
 
         assert_eq!(found.id, 1);
+        assert_eq!(found.source, "Torrent A");
         assert_eq!(found.date, test_support::date(2024, 1, 1));
         assert_eq!(found.stars, Some(7.5));
         assert!(found.completed);
@@ -353,7 +362,7 @@ mod tests {
         let user = fixtures::user();
         // Ownership is part of the single joined query, so another user's log yields no row.
         let db = test_support::db::mock()
-            .append_query_results([Vec::<logs::Model>::new()])
+            .append_query_results([Vec::<(logs::Model, Option<sources::Model>)>::new()])
             .into_connection();
 
         let result = details(10, MediaType::Movie, 1, &user, &db).await;

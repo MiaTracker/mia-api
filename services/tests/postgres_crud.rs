@@ -156,7 +156,7 @@ async fn logs_create_update_and_delete_round_trip_keep_media_rating() {
 }
 
 #[tokio::test]
-#[ignore = "known bug: logs::details never loads the source, so Log.source is always empty"]
+#[ignore = "requires docker"]
 async fn logs_details_returns_source_name() {
     let db = database().await;
     let user = seed::user(&db, 1).await;

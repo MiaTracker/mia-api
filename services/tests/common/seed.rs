@@ -2,8 +2,8 @@
 
 use chrono::NaiveDate;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use entities::sea_orm_active_enums::{ExchangeStatus, LlmCallPurpose, MediaType, MessageRole, SourceType};
-use entities::{conversations, episodes, exchanges, genres, languages, llm_calls, logs, media, media_genres, media_tags, messages, movies, seasons, series, sources, tags, titles, users, watchlist};
+use entities::sea_orm_active_enums::{ExchangeStatus, ImageFileType, ImageSource, ImageType, LlmCallPurpose, MediaType, MessageRole, SourceType};
+use entities::{conversations, episodes, exchanges, genres, images, languages, llm_calls, logs, manual_image_references, media, media_genres, media_tags, messages, movies, seasons, series, sources, tags, titles, users, watchlist};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DbConn, EntityTrait, NotSet, PaginatorTrait, Set};
 use serde_json::json;
 use uuid::Uuid;
@@ -144,6 +144,21 @@ pub async fn genre(db: &DbConn, media_id: i32, name: &str, media_type: MediaType
         .insert(db).await.expect("inserting genre");
     media_genres::ActiveModel { media_id: Set(media_id), genre_id: Set(genre.id) }.insert(db).await.expect("inserting media genre");
     genre
+}
+
+/// A manual poster (PNG, directory `{n:032x}`, no size rows) referenced by the media.
+pub async fn manual_image(db: &DbConn, media_id: i32, n: u128) -> images::Model {
+    let image = images::ActiveModel {
+        id: NotSet,
+        path: Set(format!("{n:032x}")),
+        source: Set(ImageSource::Manual),
+        source_path: Set(None),
+        r#type: Set(ImageType::Poster),
+        file_type: Set(ImageFileType::Png),
+    }.insert(db).await.expect("inserting image");
+    manual_image_references::ActiveModel { image_id: Set(image.id), media_id: Set(media_id) }
+        .insert(db).await.expect("inserting manual image reference");
+    image
 }
 
 /// A TMDB genre that no media has yet.

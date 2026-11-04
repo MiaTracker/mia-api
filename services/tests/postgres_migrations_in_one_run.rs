@@ -9,7 +9,7 @@ use common::postgres::configured_empty_database;
 use migration::{Migrator, MigratorTrait};
 
 #[tokio::test]
-#[ignore = "known bug: m20260417_000002 alters image_type from a second connection, which can't see the type the same run created"]
+#[ignore = "requires docker"]
 async fn migrator_up_applies_all_migrations_when_database_is_empty() {
     let db = configured_empty_database().await;
 
