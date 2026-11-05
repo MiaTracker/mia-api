@@ -150,7 +150,7 @@ mod tests {
             .append_query_results([vec![movie_genre(1, "Comedy"), movie_genre(2, "Drama")]])
             .into_connection();
 
-        let names = index(Some(MediaType::Movie), &user, &db).await.ok().expect("index should succeed");
+        let names = index(Some(MediaType::Movie), &user, &db).await.expect("index should succeed");
 
         assert_eq!(names, vec!["Comedy".to_string(), "Drama".to_string()]);
         let log = test_support::db::log(db);
@@ -167,7 +167,7 @@ mod tests {
             .append_query_results([vec![movie_genre(1, "Comedy")]])
             .into_connection();
 
-        let created = create(10, &genre_create("comedy"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, &genre_create("comedy"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(!created);
     }
@@ -182,7 +182,7 @@ mod tests {
             .append_query_results([vec![fixtures::media_genre_model(10, 7)]])
             .into_connection();
 
-        let created = create(10, &genre_create("comedy"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, &genre_create("comedy"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(created);
         assert_wrote(&test_support::db::log(db), "COMMIT", &[]);
@@ -235,7 +235,7 @@ mod tests {
             .append_query_results([vec![fixtures::media_genre_model(10, 7)]])
             .into_connection();
 
-        let added = add_genre_to_media(&media, "science fiction", &db).await.ok().expect("add should succeed");
+        let added = add_genre_to_media(&media, "science fiction", &db).await.expect("add should succeed");
 
         assert!(added);
         let log = test_support::db::log(db);

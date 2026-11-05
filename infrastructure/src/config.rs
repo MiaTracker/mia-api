@@ -22,7 +22,7 @@ pub fn config() -> Arc<Configuration> {
 pub(crate) async fn load_config() {
     let path = Path::new(CONFIG_FILE_PATH);
 
-    let file = match File::open(&path) {
+    let file = match File::open(path) {
         Ok(file) => { file }
         Err(err) => {
             fail!("Failed to open {}: {}", path.display(), err);

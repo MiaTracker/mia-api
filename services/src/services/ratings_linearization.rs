@@ -526,7 +526,7 @@ mod tests {
         test_support::init();
         let db = with_three_rated_logs(test_support::db::mock()).into_connection();
 
-        let result = linearize_ratings(&db, None, true).await.ok().expect("linearize");
+        let result = linearize_ratings(&db, None, true).await.expect("linearize");
 
         assert!(result.dry_run);
         assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (1, 0, 3, 1));
@@ -542,7 +542,7 @@ mod tests {
         let lookup = test_support::db::mock().append_query_results([[fixtures::user_model(1)]]);
         let db = with_three_rated_logs(lookup).into_connection();
 
-        let result = linearize_ratings(&db, Some(Uuid::from_u128(1)), false).await.ok().expect("linearize");
+        let result = linearize_ratings(&db, Some(Uuid::from_u128(1)), false).await.expect("linearize");
 
         assert!(!result.dry_run);
         assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (1, 0, 3, 1));
@@ -570,7 +570,7 @@ mod tests {
             .append_query_results([[fixtures::rated_log_row(1, MEDIA_ID, 2.0), fixtures::rated_log_row(2, MEDIA_ID, 9.0)]])
             .into_connection();
 
-        let result = linearize_ratings(&db, None, false).await.ok().expect("linearize");
+        let result = linearize_ratings(&db, None, false).await.expect("linearize");
 
         assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (0, 1, 0, 0));
         let user = &result.per_user[0];
@@ -591,7 +591,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let result = linearize_ratings(&db, None, false).await.ok().expect("linearize");
+        let result = linearize_ratings(&db, None, false).await.expect("linearize");
 
         assert_eq!((result.users_processed, result.users_skipped, result.logs_updated), (0, 1, 0));
         let user = &result.per_user[0];
@@ -609,7 +609,7 @@ mod tests {
             .append_query_results([Vec::<BTreeMap<&str, Value>>::new()])
             .into_connection();
 
-        let result = linearize_ratings(&db, None, false).await.ok().expect("linearize");
+        let result = linearize_ratings(&db, None, false).await.expect("linearize");
 
         assert_eq!((result.users_processed, result.users_skipped, result.logs_updated, result.media_recomputed), (0, 0, 0, 0));
         assert!(result.per_user.is_empty());

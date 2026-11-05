@@ -384,7 +384,7 @@ mod tests {
         let registry = ExchangeRegistry::new();
 
         let subscription = create(ExchangeCreate { content: " Hi ".into() }, &user(), &db, &registry, &jobs, &fixed_clock(2026, 3, 4, 5, 6, 7))
-            .await.ok().expect("create should succeed");
+            .await.expect("create should succeed");
 
         assert_eq!(subscription.replay, vec![ExchangeEvent::ConversationCreated { conversation_id: 3, exchange_id: 9 }]);
         assert!(subscription.live.is_some());
@@ -403,7 +403,7 @@ mod tests {
         let db = create_db();
 
         create(ExchangeCreate { content: " Hi ".into() }, &user(), &db, &ExchangeRegistry::new(), &RecordingJobs::new(), &clock)
-            .await.ok().expect("create should succeed");
+            .await.expect("create should succeed");
 
         let log = test_support::db::log(db);
         let now = Value::from(clock.now().fixed_offset());
@@ -439,7 +439,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let found = details(3, &user(), &db).await.ok().expect("details should succeed");
+        let found = details(3, &user(), &db).await.expect("details should succeed");
 
         assert_eq!(found.id, 3);
         assert_eq!(found.exchanges.len(), 2);
@@ -462,7 +462,7 @@ mod tests {
             .append_query_results([Vec::<messages::Model>::new()])
             .into_connection();
 
-        details(3, &user(), &db).await.ok().expect("details should succeed");
+        details(3, &user(), &db).await.expect("details should succeed");
 
         let log = test_support::db::log(db);
         let sql = &log.iter().find(|statement| statement.sql.contains(r#"FROM "exchanges""#)).expect("exchanges query").sql;
@@ -476,7 +476,7 @@ mod tests {
             .append_query_results([[conversation_model(2, 1), conversation_model(1, 1)]])
             .into_connection();
 
-        let found = index(page(), &user(), &db).await.ok().expect("index should succeed");
+        let found = index(page(), &user(), &db).await.expect("index should succeed");
 
         assert_eq!(found.iter().map(|c| c.id).collect::<Vec<_>>(), vec![2, 1]);
         let log = test_support::db::log(db);
@@ -539,7 +539,7 @@ mod tests {
         let registry = ExchangeRegistry::new();
 
         let subscription = start_exchange(3, ExchangeCreate { content: " Hi ".into() }, &user(), &db, &registry, &jobs, &clock)
-            .await.ok().expect("start_exchange should succeed");
+            .await.expect("start_exchange should succeed");
 
         assert!(subscription.replay.is_empty());
         assert!(subscription.live.is_some());
@@ -669,7 +669,7 @@ mod tests {
         let jobs = RecordingJobs::new();
         let registry = ExchangeRegistry::new();
 
-        let subscription = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &clock).await.ok().expect("retry_exchange should succeed");
+        let subscription = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &clock).await.expect("retry_exchange should succeed");
 
         assert_eq!(subscription.replay, vec![ExchangeEvent::TextDelta { block: 0, text: "Hel".into() }]);
         assert!(subscription.live.is_some());
@@ -695,7 +695,7 @@ mod tests {
         let _title = registry.open_title(3);
 
         let subscription = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &fixed_clock(2026, 3, 4, 5, 6, 7))
-            .await.ok().expect("retry_exchange should succeed");
+            .await.expect("retry_exchange should succeed");
 
         assert_eq!(subscription.replay, vec![ExchangeEvent::TextDelta { block: 0, text: "Hel".into() }]);
         assert!(subscription.replay.iter().all(|event| !matches!(event, ExchangeEvent::Title { .. })));
@@ -710,7 +710,7 @@ mod tests {
         let db = retry_db(vec![message_model(1, 7, MessageRole::User, text("Hi"))]);
 
         let subscription = retry_exchange(3, 7, &user(), &db, &ExchangeRegistry::new(), &RecordingJobs::new(), &fixed_clock(2026, 1, 1, 0, 0, 0))
-            .await.ok().expect("retry_exchange should succeed");
+            .await.expect("retry_exchange should succeed");
 
         assert!(subscription.replay.is_empty());
         assert!(subscription.live.is_some());
@@ -733,7 +733,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.ok().expect("subscribe should succeed");
+        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.expect("subscribe should succeed");
 
         assert_eq!(subscription.replay, vec![
             ExchangeEvent::TextDelta { block: 0, text: "Hel".into() },
@@ -757,7 +757,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.ok().expect("subscribe should succeed");
+        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.expect("subscribe should succeed");
 
         assert_eq!(subscription.replay, vec![
             ExchangeEvent::ThinkingDelta { block: 0, text: "hmm".into() },
@@ -787,7 +787,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.ok().expect("subscribe should succeed");
+        let subscription = subscribe(3, 7, &user(), &db, &ExchangeRegistry::new()).await.expect("subscribe should succeed");
 
         let call = ToolCallView { name: "mia_search".into(), query: Some("Alien".into()), media_type: None, count: Some(2), titles: None, failed: false };
         assert_eq!(subscription.replay, vec![
@@ -825,7 +825,7 @@ mod tests {
             .append_query_results([[exchange_model(7, 3, ExchangeStatus::InProgress)]])
             .into_connection();
 
-        let subscription = subscribe(3, 7, &user(), &db, &registry).await.ok().expect("subscribe should succeed");
+        let subscription = subscribe(3, 7, &user(), &db, &registry).await.expect("subscribe should succeed");
 
         assert_eq!(subscription.replay, vec![ExchangeEvent::TextDelta { block: 0, text: "Hel".into() }]);
         assert!(subscription.live.is_some());

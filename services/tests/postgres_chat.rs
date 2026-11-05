@@ -56,7 +56,7 @@ async fn recover_interrupted_marks_exchange_failed_and_closes_open_llm_call() {
     let completed_call = seed::llm_call(&db, &user, completed.id).await;
     let clock = fixed_clock(2024, 1, 2, 8, 0, 0);
 
-    let marked = chat::recover_interrupted(&db, &clock).await.ok().expect("recovering");
+    let marked = chat::recover_interrupted(&db, &clock).await.expect("recovering");
 
     assert_eq!(marked, 1);
     let running_after = exchange(&db, running.id).await;
@@ -83,7 +83,7 @@ async fn recover_interrupted_closes_open_title_call_when_server_stopped_during_t
     let exchange_call = seed::llm_call(&db, &user, finished.id).await;
     let clock = fixed_clock(2024, 1, 2, 8, 0, 0);
 
-    let marked = chat::recover_interrupted(&db, &clock).await.ok().expect("recovering");
+    let marked = chat::recover_interrupted(&db, &clock).await.expect("recovering");
 
     assert_eq!(marked, 0);
     let title_after = llm_call(&db, open_title.id).await;
@@ -154,7 +154,7 @@ async fn start_exchange_persists_answer_and_ledger_when_stream_completes() {
     });
 
     let subscription = chat::start_exchange(conversation.id, ExchangeCreate { content: "Hi".into() }, &user, &db, &registry, &jobs, &*clock)
-        .await.ok().expect("starting the Exchange");
+        .await.expect("starting the Exchange");
 
     let stored = Messages::find().order_by_asc(messages::Column::Id).all(&*db).await.expect("querying messages");
     assert_eq!(stored.iter().map(|message| message.role.clone()).collect::<Vec<_>>(), vec![MessageRole::User, MessageRole::Assistant]);
@@ -167,7 +167,7 @@ async fn start_exchange_persists_answer_and_ledger_when_stream_completes() {
     assert_eq!(calls[0].stop_reason.as_deref(), Some("end_turn"));
     assert_eq!(calls[0].error, None);
     assert_eq!(calls[0].completed_at, Some(seed::chat_time()));
-    let details = chat::details(conversation.id, &user, &db).await.ok().expect("details");
+    let details = chat::details(conversation.id, &user, &db).await.expect("details");
     assert_eq!(details.exchanges.len(), 1);
     assert_eq!(details.exchanges[0].status, ExchangeStatusView::Completed);
     assert_eq!(details.exchanges[0].blocks, vec![DisplayBlock::Text { text: "Hello, world".into() }]);
@@ -193,7 +193,7 @@ async fn create_persists_conversation_exchange_and_message_when_content_given() 
     });
 
     let subscription = chat::create(ExchangeCreate { content: "Hi".into() }, &user, &db, &registry, &jobs, &*clock)
-        .await.ok().expect("creating the Conversation");
+        .await.expect("creating the Conversation");
 
     let conversations = conversations::Entity::find().all(&*db).await.expect("querying conversations");
     assert_eq!(conversations.len(), 1);
@@ -201,7 +201,7 @@ async fn create_persists_conversation_exchange_and_message_when_content_given() 
     assert_eq!(conversation.user_id, user.id);
     assert_eq!(conversation.title.as_deref(), Some("Alien rewatch"));
     assert_eq!((conversation.created_at, conversation.updated_at), (clock_time(&clock), clock_time(&clock)));
-    let details = chat::details(conversation.id, &user, &db).await.ok().expect("details");
+    let details = chat::details(conversation.id, &user, &db).await.expect("details");
     assert_eq!(details.exchanges.len(), 1);
     let exchange_id = details.exchanges[0].id;
     assert_eq!(details.exchanges[0].status, ExchangeStatusView::Completed);
@@ -273,9 +273,9 @@ async fn retry_exchange_moves_exchange_behind_newer_one_and_completes_it_when_ex
     let (llm, requests) = with_recorded_answers(vec![text_answer(&["Hello"], StopReason::EndTurn)]);
     let jobs = inline_jobs(&db, &registry, &clock, llm);
 
-    let subscription = chat::retry_exchange(conversation.id, failed.id, &user, &db, &registry, &jobs, &*clock).await.ok().expect("retrying the Exchange");
+    let subscription = chat::retry_exchange(conversation.id, failed.id, &user, &db, &registry, &jobs, &*clock).await.expect("retrying the Exchange");
 
-    let details = chat::details(conversation.id, &user, &db).await.ok().expect("details");
+    let details = chat::details(conversation.id, &user, &db).await.expect("details");
     assert_eq!(details.exchanges.iter().map(|exchange| exchange.id).collect::<Vec<_>>(), vec![newer.id, failed.id]);
     assert_eq!(details.exchanges[1].status, ExchangeStatusView::Completed);
     assert_eq!(details.exchanges[1].blocks, vec![DisplayBlock::Text { text: "Hello".into() }]);
@@ -311,7 +311,7 @@ async fn retry_exchange_deletes_only_trailing_assistant_message_when_partial_fol
     let (llm, requests) = with_recorded_answers(vec![text_answer(&["It is noon"], StopReason::EndTurn)]);
     let jobs = inline_jobs(&db, &registry, &clock, llm);
 
-    chat::retry_exchange(conversation.id, failed.id, &user, &db, &registry, &jobs, &*clock).await.ok().expect("retrying the Exchange");
+    chat::retry_exchange(conversation.id, failed.id, &user, &db, &registry, &jobs, &*clock).await.expect("retrying the Exchange");
 
     let sent: Vec<serde_json::Value> = {
         let requests = requests.lock().expect("requests lock");
@@ -337,7 +337,7 @@ async fn retry_exchange_deletes_unanswered_tool_use_message_when_tool_round_fail
     let (llm, requests) = with_recorded_answers(vec![text_answer(&["Hello"], StopReason::EndTurn)]);
     let jobs = inline_jobs(&db, &registry, &clock, llm);
 
-    chat::retry_exchange(conversation.id, failed.id, &user, &db, &registry, &jobs, &*clock).await.ok().expect("retrying the Exchange");
+    chat::retry_exchange(conversation.id, failed.id, &user, &db, &registry, &jobs, &*clock).await.expect("retrying the Exchange");
 
     assert_eq!(requests.lock().expect("requests lock")[0].messages.len(), 1);
     let stored = messages_of(&db, failed.id).await;

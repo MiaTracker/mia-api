@@ -120,7 +120,7 @@ mod tests {
             .append_query_results([vec![fixtures::media_tag_model(10, 7)]])
             .into_connection();
 
-        let created = create(10, tag_create("favourite"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, tag_create("favourite"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(created);
         let log = test_support::db::log(db);
@@ -139,7 +139,7 @@ mod tests {
             .append_query_results([vec![fixtures::media_tag_model(10, 7)]])
             .into_connection();
 
-        let created = create(10, tag_create("Favourite"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, tag_create("Favourite"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(created);
         let log = test_support::db::log(db);
@@ -156,7 +156,7 @@ mod tests {
             .append_query_results([vec![fixtures::tag_model(7, "Favourite")]])
             .into_connection();
 
-        let created = create(10, tag_create("favourite"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, tag_create("favourite"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(!created);
         let log = test_support::db::log(db);
@@ -175,7 +175,7 @@ mod tests {
             .append_query_results([vec![fixtures::media_tag_model(10, 7)]])
             .into_connection();
 
-        let created = create(10, tag_create("SCI-FI"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, tag_create("SCI-FI"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(created);
         let log = test_support::db::log(db);

@@ -158,7 +158,7 @@ mod tests {
             .append_query_results([[fixtures::watchlist_model(3)]])
             .into_connection();
 
-        let parts = load_parts(&media, &db).await.ok().expect("load_parts should succeed");
+        let parts = load_parts(&media, &db).await.expect("load_parts should succeed");
 
         assert_eq!(parts.len(), 3);
         let alien = &parts[&1];
@@ -195,7 +195,7 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock().into_connection();
 
-        let parts = load_parts(&[], &db).await.ok().expect("load_parts should succeed");
+        let parts = load_parts(&[], &db).await.expect("load_parts should succeed");
 
         assert!(parts.is_empty());
         assert_statement_count(&test_support::db::log(db), 0);

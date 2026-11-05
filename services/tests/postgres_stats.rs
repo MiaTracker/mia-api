@@ -46,7 +46,7 @@ fn title(index: &Option<MediaIndex>) -> Option<&str> {
 /// | Lost   | series | 7     | en       | Drama  | 1 (1)            |
 ///
 /// Another user's movie with a log must not count. The most watched and the highest rated media
-/// differ within each type (when they coincide, `stats` has a known bug).
+/// differ within each type.
 #[tokio::test]
 #[ignore = "requires docker"]
 async fn stats_runs_against_real_schema() {
@@ -89,7 +89,7 @@ async fn stats_runs_against_real_schema() {
     let source = seed::source(&db, others.id, "Jellyfin").await;
     seed::log(&db, others.id, source.id, Some(10.0), true).await;
 
-    let stats = statistics::stats(&user, &db).await.ok().expect("stats should succeed");
+    let stats = statistics::stats(&user, &db).await.expect("stats should succeed");
 
     assert_eq!((stats.media.count, stats.media.movies, stats.media.series), (4, 2, 2));
     assert_eq!((stats.logs.logs, stats.logs.completed, stats.logs.uncompleted), (6, 4, 2));

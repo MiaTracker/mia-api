@@ -39,8 +39,8 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tm
 
     match med_res {
         Ok(media) => {
-            if media.is_some() {
-                return Ok((false, media.unwrap().id))
+            if let Some(media) = media {
+                return Ok((false, media.id))
             }
         }
         Err(err) => { return Err(SrvErr::from(err)); }
@@ -340,8 +340,9 @@ pub async fn update(series_id: i32, metadata: SeriesMetadata, user: &CurrentUser
 
     let mut rule_violations = Vec::new();
 
-    if metadata.original_language != media.original_language && metadata.original_language.is_some() {
-        let found = Languages::find_by_id(metadata.original_language.as_ref().unwrap()).count(db).await?;
+    if metadata.original_language != media.original_language
+        && let Some(language) = metadata.original_language.as_ref() {
+        let found = Languages::find_by_id(language).count(db).await?;
         if found == 0 {
             rule_violations.push(RuleViolation::MediaInvalidOriginalLanguage);
         }
@@ -450,27 +451,26 @@ pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyCha
 
         match change.key.as_str() {
             "status" => {
-                if !series_locks.as_ref().map_or(false, |l| l.status) {
+                if !series_locks.as_ref().is_some_and(|l| l.status) {
                     series_am.status = Set(value.as_str().map(|s| s.to_string()));
                     any_change = true;
                 }
             }
             "type" => {
-                if !series_locks.as_ref().map_or(false, |l| l.r#type) {
+                if !series_locks.as_ref().is_some_and(|l| l.r#type) {
                     series_am.r#type = Set(value.as_str().map(|s| s.to_string()));
                     any_change = true;
                 }
             }
             "first_air_date" => {
-                if !series_locks.as_ref().map_or(false, |l| l.first_air_date) {
-                    if let Some(date_str) = value.as_str() {
+                if !series_locks.as_ref().is_some_and(|l| l.first_air_date)
+                    && let Some(date_str) = value.as_str() {
                         let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok();
                         if let Some(date) = date {
                             series_am.first_air_date = Set(Some(date));
                             any_change = true;
                         }
                     }
-                }
             }
             "season" => {
                 let season_tmdb_id = value.get("season_id").and_then(|v| v.as_i64()).map(|n| n as i32);
@@ -491,11 +491,10 @@ pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyCha
                         .one(db).await?;
 
                     if last_item.action == "added" || season_opt.is_none() {
-                        if let Some(series_tmdb_id) = media.tmdb_id {
-                            if let Err(e) = upsert_season_with_episodes(series_tmdb_id, media.id, sn, db, tmdb, store, jobs, random).await {
+                        if let Some(series_tmdb_id) = media.tmdb_id
+                            && let Err(e) = upsert_season_with_episodes(series_tmdb_id, media.id, sn, db, tmdb, store, jobs, random).await {
                                 error!("Failed to create new season series_id={} season={}: {}", media.id, sn, e);
                             }
-                        }
                     } else if let Some(season) = season_opt {
                         match tmdb.season_property_changes(stid, start_date, end_date).await {
                             Err(e) => error!("Failed season property_changes series_id={} season={}: {}", media.id, sn, e),
@@ -526,11 +525,10 @@ pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyCha
                                             .one(db).await?;
 
                                         if last_ep_item.action == "added" || episode.is_none() {
-                                            if let Some(series_tmdb_id) = media.tmdb_id {
-                                                if let Err(e) = upsert_season_with_episodes(series_tmdb_id, media.id, sn, db, tmdb, store, jobs, random).await {
+                                            if let Some(series_tmdb_id) = media.tmdb_id
+                                                && let Err(e) = upsert_season_with_episodes(series_tmdb_id, media.id, sn, db, tmdb, store, jobs, random).await {
                                                     error!("Failed to create new episode series_id={} season={}: {}", media.id, sn, e);
                                                 }
-                                            }
                                         } else if let Some(ep) = episode {
                                             match tmdb.episode_property_changes(etid, start_date, end_date).await {
                                                 Err(e) => error!("Failed episode property_changes ep_tmdb_id={}: {}", etid, e),
@@ -587,13 +585,11 @@ async fn upsert_season_with_episodes(
         am.episode_count = Set(Some(season_details.episodes.len() as i32));
         am.name = Set(season_details.name.clone());
         am.overview = Set(season_details.overview.clone());
-        if needs_poster {
-            if let Some(path) = &season_details.poster_path {
-                if !path.is_empty() {
+        if needs_poster
+            && let Some(path) = &season_details.poster_path
+                && !path.is_empty() {
                     am.poster_image_id = Set(Some(save_tmdb_image(path, ImageType::Poster, db, tmdb, store, jobs, random).await?));
                 }
-            }
-        }
         am.tmdb_vote_average = Set(season_details.vote_average);
         am.tmdb_id = Set(Some(season_details.id));
         am.stars = NotSet;
@@ -601,11 +597,10 @@ async fn upsert_season_with_episodes(
     } else {
         let mut am = <&SeasonDetails as IntoActiveModel<seasons::ActiveModel>>::into_active_model(&season_details);
         am.series_id = Set(series_db_id);
-        if let Some(path) = &season_details.poster_path {
-            if !path.is_empty() {
+        if let Some(path) = &season_details.poster_path
+            && !path.is_empty() {
                 am.poster_image_id = Set(Some(save_tmdb_image(path, ImageType::Poster, db, tmdb, store, jobs, random).await?));
             }
-        }
         am.insert(db).await?
     };
 
@@ -749,13 +744,12 @@ async fn apply_season_property_changes(
                 }
             }
             "poster_path" => {
-                if season.poster_image_id.is_none() {
-                    if let Some(s) = value.as_str() {
+                if season.poster_image_id.is_none()
+                    && let Some(s) = value.as_str() {
                         let id = save_tmdb_image(s, ImageType::Poster, db, tmdb, store, jobs, random).await?;
                         am.poster_image_id = Set(Some(id));
                         any_change = true;
                     }
-                }
             }
             _ => {}
         }
@@ -813,13 +807,12 @@ async fn apply_episode_changes(
                 }
             }
             "still_path" => {
-                if episode.still_image_id.is_none() {
-                    if let Some(s) = value.as_str() {
+                if episode.still_image_id.is_none()
+                    && let Some(s) = value.as_str() {
                         let id = save_tmdb_image(s, ImageType::Still, db, tmdb, store, jobs, random).await?;
                         am.still_image_id = Set(Some(id));
                         any_change = true;
                     }
-                }
             }
             _ => {}
         }
@@ -1338,7 +1331,7 @@ mod tests {
             .into_connection();
 
         let page = PageReq { offset: Some(20), limit: Some(10) };
-        let result = index(page, &fixtures::user(), &db).await.ok().expect("index should succeed");
+        let result = index(page, &fixtures::user(), &db).await.expect("index should succeed");
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].id, 1);
@@ -1362,7 +1355,7 @@ mod tests {
             .append_query_results([Vec::<media::Model>::new()])
             .into_connection();
 
-        let result = details(7, &fixtures::user(), &db).await.ok().expect("details should succeed");
+        let result = details(7, &fixtures::user(), &db).await.expect("details should succeed");
 
         assert!(result.is_none());
         let log = test_support::db::log(db);
@@ -1403,7 +1396,7 @@ mod tests {
             .append_query_results([[fixtures::series_count_row(1, 24)]])
             .into_connection();
 
-        let series = details(1, &fixtures::user(), &db).await.ok().expect("details should succeed")
+        let series = details(1, &fixtures::user(), &db).await.expect("details should succeed")
             .expect("series should be found");
 
         assert_eq!(series.id, 1);
@@ -1457,7 +1450,7 @@ mod tests {
             .append_query_results([fixtures::no_series_count_rows()])
             .into_connection();
 
-        let series = details(1, &fixtures::user(), &db).await.ok().expect("details should succeed")
+        let series = details(1, &fixtures::user(), &db).await.expect("details should succeed")
             .expect("series should be found");
 
         assert_eq!(series.title, "Unknown");
@@ -1479,7 +1472,7 @@ mod tests {
             .append_query_results([[fixtures::series_count_row(1, 24)]])
             .into_connection();
 
-        let counts = load_counts(&[1, 2], &db).await.ok().expect("load_counts should succeed");
+        let counts = load_counts(&[1, 2], &db).await.expect("load_counts should succeed");
 
         assert_eq!(counts.len(), 2);
         assert_eq!(counts[&1], (2, 24));
@@ -1504,7 +1497,7 @@ mod tests {
             .append_query_results([[fixtures::title_model(1, 1, "Andor", true)]])
             .into_connection();
 
-        let metadata = metadata(1, &fixtures::user(), &db).await.ok().expect("metadata should succeed");
+        let metadata = metadata(1, &fixtures::user(), &db).await.expect("metadata should succeed");
 
         assert_eq!(metadata.id, 1);
         assert_eq!(metadata.title.as_deref(), Some("Andor"));

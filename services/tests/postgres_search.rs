@@ -356,11 +356,11 @@ async fn search_applies_search_options() {
     }
 
     let series_only = media_service::search(query(""), false, all(), Some(ViewMediaType::Series), &library.user, &db, &tmdb).await
-        .ok().expect("search should succeed");
+        .expect("search should succeed");
     assert_eq!(titles_of(series_only), vec![DARK.to_string()]);
 
     let paged = media_service::search(query(""), false, PageReq { offset: Some(1), limit: Some(1) }, None, &library.user, &db, &tmdb).await
-        .ok().expect("search should succeed");
+        .expect("search should succeed");
     assert_eq!(titles_of(paged), vec![DARK.to_string()]);
 }
 
@@ -399,7 +399,7 @@ async fn search_by_ids_returns_matching_media_among_ids() {
     let library = library(&db).await;
 
     let results = media_service::search_by_ids(MediaByIdsQuery { query: " : stars > 1".into(), ids: vec![library.alien] }, all(), &library.user, &db).await
-        .ok().expect("search should succeed");
+        .expect("search should succeed");
 
     assert!(results.query_valid);
     let titles: Vec<String> = results.indexes.into_iter().map(|index| index.title).collect();
@@ -412,14 +412,14 @@ async fn watchlist_search_returns_only_watchlisted_media() {
     let db = database().await;
     let library = library(&db).await;
 
-    let results = watchlist::search(query(" : stars > 1"), all(), &library.user, &db).await.ok().expect("search should succeed");
+    let results = watchlist::search(query(" : stars > 1"), all(), &library.user, &db).await.expect("search should succeed");
 
     assert_eq!(titles_of(results), vec![ALIEN.to_string()]);
 }
 
 /// Runs the model's `mia_search` tool and returns its JSON result.
 async fn tool_result(input: serde_json::Value, library: &Library, db: &DbConn) -> serde_json::Value {
-    let outcome = services::chat::tools::mia_search::run(&input, &library.user, db).await.ok().expect("tool run");
+    let outcome = services::chat::tools::mia_search::run(&input, &library.user, db).await.expect("tool run");
     assert!(!outcome.is_error, "{input} failed: {}", outcome.content);
     serde_json::from_str(&outcome.content).expect("tool result is JSON")
 }

@@ -341,7 +341,7 @@ mod services {
         let reader = match ImageReader::new(Cursor::new(image_bytes)).with_guessed_format() {
             Ok(reader) => reader,
             Err(err) => {
-                warn!("Failed to parse TMDB image: {}", err.to_string());
+                warn!("Failed to parse TMDB image: {}", err);
                 return Err(DbErr::Custom("Failed to parse TMDB image".to_string()));
             }
         };
@@ -351,7 +351,7 @@ mod services {
         let image = match reader.decode() {
             Ok(img) => img,
             Err(err) => {
-                warn!("Failed to decode TMDB image: {}", err.to_string());
+                warn!("Failed to decode TMDB image: {}", err);
                 return Err(DbErr::Custom("Failed to decode TMDB image".to_string()));
             }
         };
@@ -404,6 +404,7 @@ mod services {
         Ok(db_image.id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn save_image_sizes_task(
         image_id: i32,
         width: u32,
@@ -474,11 +475,12 @@ mod services {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn save_image_size(
         image_id: i32,
         width: u32,
         height: u32,
-        directory_path: &PathBuf,
+        directory_path: &Path,
         extension: &str,
         format: ImageFormat,
         image: &DynamicImage,
@@ -509,7 +511,7 @@ mod services {
                 error!("File {} for size {}x{} already exists. Error: {}", path.display(), width, height, e);
                 DbErr::Custom("File already exists".to_string())
             })?;
-            if let Err(_) = file.write_all(buffer.as_slice()).await {
+            if file.write_all(buffer.as_slice()).await.is_err() {
                 drop(file);
                 let _ = fs::remove_file(path).await;
                 return Err(DbErr::Custom("Error writing image file".to_string()));

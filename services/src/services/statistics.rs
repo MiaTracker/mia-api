@@ -255,7 +255,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let stats = stats(&fixtures::user(), &db).await.ok().expect("stats");
+        let stats = stats(&fixtures::user(), &db).await.expect("stats");
 
         assert_eq!((stats.media.count, stats.media.movies, stats.media.series), (10, 6, 4));
         assert_eq!((stats.logs.logs, stats.logs.completed, stats.logs.uncompleted), (20, 15, 5));
@@ -299,7 +299,7 @@ mod tests {
             .append_query_results([Vec::<entities::image_sizes::Model>::new()])
             .into_connection();
 
-        let stats = stats(&fixtures::user(), &db).await.ok().expect("stats");
+        let stats = stats(&fixtures::user(), &db).await.expect("stats");
 
         assert_eq!((stats.media.count, stats.media.movies, stats.media.series), (0, 0, 0));
         assert_eq!((stats.logs.logs, stats.logs.completed, stats.logs.uncompleted), (0, 0, 0));
@@ -326,7 +326,7 @@ mod tests {
             .append_query_results([Vec::<entities::image_sizes::Model>::new()])
             .into_connection();
 
-        let stats = stats(&fixtures::user(), &db).await.ok().expect("stats");
+        let stats = stats(&fixtures::user(), &db).await.expect("stats");
 
         assert_eq!(stats.genres.len(), 6);
         assert!(stats.genres.iter().all(|g| g.name != "Other"));
@@ -348,7 +348,7 @@ mod tests {
             .append_query_results([Vec::<entities::image_sizes::Model>::new()])
             .into_connection();
 
-        let stats = stats(&fixtures::user(), &db).await.ok().expect("stats");
+        let stats = stats(&fixtures::user(), &db).await.expect("stats");
 
         assert_eq!(stats.most_watched.movie.expect("most watched movie").id, 1);
         assert_eq!(stats.highest_rated.movie.expect("highest rated movie").id, 1);

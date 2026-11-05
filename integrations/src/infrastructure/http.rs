@@ -18,7 +18,7 @@ pub(crate) async fn retry_get(request_fn: impl Fn() -> reqwest::RequestBuilder) 
                     .and_then(|v| v.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok())
                     .map(std::time::Duration::from_secs)
-                    .unwrap_or(std::time::Duration::from_secs(1 * 2u64.pow(attempt + 1)));
+                    .unwrap_or(std::time::Duration::from_secs(2u64.pow(attempt + 1)));
 
                 tracing::warn!("Rate limited (attempt {}/{}). Retrying in {:?}.", attempt + 1, MAX_RETRIES, delay);
                 tokio::time::sleep(delay).await;

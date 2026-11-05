@@ -90,7 +90,7 @@ Images are downloaded from TMDB, resized to multiple fixed dimensions, and store
 
 ```bash
 cargo test --workspace                              # unit tests only; touch nothing outside the process
-cargo test -p services --no-fail-fast --tests -- --ignored   # Postgres (needs Docker) and filesystem tests; known-bug tests fail by design
+cargo test -p services --no-fail-fast --tests -- --ignored   # Postgres (needs Docker) and filesystem tests
 cargo test -p services --test fs_image_store -- --ignored   # filesystem only (temp dir)
 cargo test -p integrations -- --ignored             # TMDB and OpenRouter contract tests (live; needs config.yaml)
 cargo test -p integrations --test openrouter_contract -- --ignored  # OpenRouter contract test (live, free model; needs config.yaml)
@@ -112,7 +112,7 @@ After changing code, run `cargo test --workspace` and clippy. Run the relevant `
 | `Clock` | `SystemClock` | `FixedClock` (`new`, `set`, `advance`), `fixed_clock(y, m, d, h, min, s)` |
 | `Random` | `OsRandom` | `SeqRandom` (`new()` yields `Uuid::from_u128(1000 + n)`; `with_uuids`) |
 
-`test_support` also has: `init()` (call first in every test; fixed config, no `config.yaml`), `db` (`mock()`, `log`, `assert_statement_count`, `assert_wrote`, `string_value_written`, `assert_no_statement_starting_with`, `deleted`), `fixtures` (model builders such as `media_model`, `movie_model`, `image_model`), `errors` (`violations`, `assert_single_violation`), `time::date`, and `tmdb` builders (`movie_details`, `series_details`, `season_details`, `genre_list`, `property_changes`, `png_bytes`, …). Add new builders to `fixtures`, never locally in a test module. `SrvErr` has no `Debug`; use `.ok().expect(..)` or `matches!`.
+`test_support` also has: `init()` (call first in every test; fixed config, no `config.yaml`), `db` (`mock()`, `log`, `assert_statement_count`, `assert_wrote`, `string_value_written`, `assert_no_statement_starting_with`, `deleted`), `fixtures` (model builders such as `media_model`, `movie_model`, `image_model`), `errors` (`violations`, `assert_single_violation`), `time::date`, and `tmdb` builders (`movie_details`, `series_details`, `season_details`, `genre_list`, `property_changes`, `png_bytes`, …). Add new builders to `fixtures`, never locally in a test module. `SrvErr` derives `Debug`, so `.expect(..)` works on its results.
 
 ### Rules for services code
 
@@ -124,13 +124,9 @@ After changing code, run `cargo test --workspace` and clippy. Run the relevant `
 
 - Unit tests go in `#[cfg(test)] mod tests` at the bottom of the file under test. Real integration tests go in `services/tests/` (Postgres, filesystem) and `integrations/tests/` (TMDB, OpenRouter).
 - Names are `<function>_<expected outcome>_when_<condition>`, e.g. `create_returns_existing_id_when_movie_already_added`.
-- Anything that touches the network, Docker, the filesystem, `config.yaml`, env vars or the wall clock is `#[ignore = "<reason>"]` with exactly one of: `"requires TMDB token"`, `"requires OpenRouter key"`, `"requires docker"`, `"touches filesystem"`. The only other ignore reason is `"known bug: <one line>"`.
+- Anything that touches the network, Docker, the filesystem, `config.yaml`, env vars or the wall clock is `#[ignore = "<reason>"]` with exactly one of: `"requires TMDB token"`, `"requires OpenRouter key"`, `"requires docker"`, `"touches filesystem"`.
 - Mock DB: queue only the results the code path consumes, in the order the queries run (futures in `try_join!` run in source order). Assert returned values first, and written values (`assert_wrote`) only when the write is the behaviour. Never assert full SQL strings. Early-return tests assert `assert_statement_count`.
 - Postgres inserts use `RETURNING`, so queue a query result, not an exec result.
 - `InMemoryImageStore::delete_directory` errors on a directory with no files; seed at least one file for any image a test deletes.
 - `MockDatabase` cannot detect transaction-scope bugs: it logs every statement after `BEGIN` as inside the transaction, even when the code wrote through `db` instead of `tran`. Test those against real Postgres, using a trigger to inject a failure (see `services/tests/postgres_transactions.rs`).
-- Postgres tests need Docker (testcontainers). Each `services/tests/postgres_*.rs` binary starts one container, migrates a template database once, and clones it per test via `common::postgres::database()`. Containers are removed when the test process exits. Use `--no-fail-fast` with `--ignored`, or cargo stops at the first binary whose known-bug tests fail.
-
-### Known bugs
-
-If a characterization test shows the code is wrong, do not fix the code and do not weaken the test. Keep the test asserting the correct behaviour, mark it `#[ignore = "known bug: <one line>"]`, and add a row (function, problem, test name) to the Known bugs table at the end of `docs/superpowers/specs/2026-10-29-testing-infrastructure-design.md`. Those tests fail under `--ignored` by design. Bugs a mock test cannot see get a row with a real-Postgres test instead.
+- Postgres tests need Docker (testcontainers). Each `services/tests/postgres_*.rs` binary starts one container, migrates a template database once, and clones it per test via `common::postgres::database()`. Containers are removed when the test process exits. Use `--no-fail-fast` with `--ignored`, or cargo stops at the first binary that fails.

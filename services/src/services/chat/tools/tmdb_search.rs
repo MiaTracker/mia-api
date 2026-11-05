@@ -147,7 +147,7 @@ mod tests {
         let tmdb = tmdb_returning(vec![full_multi_movie(348), full_multi_tv(1399)]);
         let conn = db::mock().append_query_results([vec![library_row(5, 348, MediaType::Movie)]]).into_connection();
 
-        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.expect("run");
 
         assert!(!outcome.is_error);
         let results = content(&outcome)["results"].clone();
@@ -170,7 +170,7 @@ mod tests {
         let conn = db::mock().append_query_results([Vec::<media::Model>::new()]).into_connection();
         let user = CurrentUser::from(user_model(4));
 
-        run(&json!({ "query": "alien" }), &user, &conn, &tmdb).await.ok().expect("run");
+        run(&json!({ "query": "alien" }), &user, &conn, &tmdb).await.expect("run");
 
         let log = db::log(conn);
         db::assert_statement_count(&log, 1);
@@ -185,7 +185,7 @@ mod tests {
         let tmdb = tmdb_returning(vec![full_multi_movie(348)]);
         let conn = db::mock().append_query_results([vec![library_row(5, 348, MediaType::Series)]]).into_connection();
 
-        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.expect("run");
 
         assert_eq!(content(&outcome)["results"][0]["mia_id"], Value::Null);
     }
@@ -204,7 +204,7 @@ mod tests {
         let tmdb = tmdb_returning(vec![unvoted_movie, uncounted_tv]);
         let conn = db::mock().append_query_results([Vec::<media::Model>::new()]).into_connection();
 
-        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.expect("run");
 
         let results = content(&outcome)["results"].clone();
         assert_eq!(results[0]["tmdb_rating"], Value::Null);
@@ -217,7 +217,7 @@ mod tests {
         let tmdb = tmdb_returning(vec![full_multi_movie(348), full_multi_tv(1399)]);
         let conn = db::mock().append_query_results([Vec::<media::Model>::new()]).into_connection();
 
-        let outcome = run(&json!({ "query": "alien", "type": "series" }), &user(), &conn, &tmdb).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien", "type": "series" }), &user(), &conn, &tmdb).await.expect("run");
 
         let results = content(&outcome)["results"].clone();
         assert_eq!(results.as_array().expect("array").len(), 1);
@@ -232,7 +232,7 @@ mod tests {
         let tmdb = tmdb_returning(vec![]);
         let conn = db::mock().into_connection();
 
-        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien" }), &user(), &conn, &tmdb).await.expect("run");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"results":[]}"#);
@@ -245,7 +245,7 @@ mod tests {
         init();
         let conn = db::mock().into_connection();
 
-        let outcome = run(&json!({ "query": "alien", "type": "tv" }), &user(), &conn, &MockTmdb::new()).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien", "type": "tv" }), &user(), &conn, &MockTmdb::new()).await.expect("run");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "type must be \"movie\" or \"series\"");
@@ -258,7 +258,7 @@ mod tests {
         init();
         let conn = db::mock().into_connection();
 
-        let outcome = run(&json!({}), &user(), &conn, &MockTmdb::new()).await.ok().expect("run");
+        let outcome = run(&json!({}), &user(), &conn, &MockTmdb::new()).await.expect("run");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "input must have a string 'query'");
@@ -272,7 +272,7 @@ mod tests {
         tmdb.expect_search_multi().times(1).returning(|_| Err(error("down")));
         let conn = db::mock().into_connection();
 
-        let outcome = run(&json!({ "query": "alien", "type": "movie" }), &user(), &conn, &tmdb).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien", "type": "movie" }), &user(), &conn, &tmdb).await.expect("run");
 
         assert!(outcome.is_error);
         assert!(outcome.content.starts_with("TMDB search failed: "), "{}", outcome.content);

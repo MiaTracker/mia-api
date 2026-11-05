@@ -52,7 +52,7 @@ async fn movie_create_persists_movie_with_images_and_sizes() {
     let tmdb = movie_tmdb(action_movie, png_bytes(1000, 1500));
 
     let (created, id) = movies::create(603, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await
-        .ok().expect("create should succeed");
+        .expect("create should succeed");
 
     assert!(created);
     let media = Media::find_by_id(id).one(db).await.expect("querying media").expect("media row");
@@ -100,7 +100,7 @@ async fn series_create_persists_seasons_and_episodes() {
     tmdb.expect_image().returning(|_| Ok(png_bytes(300, 450)));
 
     let (created, id) = series::create(1399, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await
-        .ok().expect("create should succeed");
+        .expect("create should succeed");
 
     assert!(created);
     assert!(Series::find_by_id(id).one(db).await.expect("querying series").is_some());
@@ -156,7 +156,7 @@ async fn load_parts_gives_each_media_only_its_own_parts_when_given_two_movies() 
     let media = Media::find().filter(media_entity::Column::Id.is_in([alien.id, scream.id]))
         .order_by_asc(media_entity::Column::Id).all(db).await.expect("querying media");
 
-    let parts = media_details::load_parts(&media, db).await.ok().expect("load_parts should succeed");
+    let parts = media_details::load_parts(&media, db).await.expect("load_parts should succeed");
 
     assert_eq!(parts.len(), 2);
     let alien = &parts[&alien.id];
@@ -197,7 +197,7 @@ async fn load_counts_gives_each_series_only_its_own_counts_when_given_three_seri
     seed::episode(db, andor_2.id, 1).await;
     seed::season(db, pilot_only.id, 1).await;
 
-    let counts = series::load_counts(&[andor.id, pilot_only.id, announced.id], db).await.ok().expect("load_counts should succeed");
+    let counts = series::load_counts(&[andor.id, pilot_only.id, announced.id], db).await.expect("load_counts should succeed");
 
     assert_eq!(counts.len(), 3);
     assert_eq!(counts[&andor.id], (2, 3));
@@ -221,15 +221,15 @@ async fn media_delete_removes_rows_and_unused_images() {
         backdrop_path: (id == 1).then(|| "/movie-1-backdrop.jpg".to_string()),
         ..action_movie(id)
     }, png_bytes(300, 450));
-    let (_, deleted_id) = movies::create(1, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await.ok().expect("create movie 1");
-    let (_, kept_id) = movies::create(2, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await.ok().expect("create movie 2");
+    let (_, deleted_id) = movies::create(1, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await.expect("create movie 1");
+    let (_, kept_id) = movies::create(2, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await.expect("create movie 2");
     seed::tag(db, deleted_id, "Favourite").await;
     seed::genre(db, deleted_id, "Heist", MediaType::Movie, None).await;
     let deleted = Media::find_by_id(deleted_id).one(db).await.expect("querying media").expect("movie 1");
     let backdrop = Images::find_by_id(deleted.backdrop_image_id.expect("backdrop")).one(db).await.expect("querying images").expect("backdrop row");
     let poster_id = deleted.poster_image_id.expect("poster");
 
-    media::delete(deleted_id, ViewMediaType::Movie, &user, db, &f.store).await.ok().expect("delete should succeed");
+    media::delete(deleted_id, ViewMediaType::Movie, &user, db, &f.store).await.expect("delete should succeed");
 
     assert!(Media::find_by_id(deleted_id).one(db).await.expect("querying media").is_none());
     assert!(Movies::find_by_id(deleted_id).one(db).await.expect("querying movies").is_none());
@@ -264,7 +264,7 @@ async fn media_delete_removes_manual_images_of_media() {
     f.store.insert(&deleted_image.path, "300x450.png", b"deleted".to_vec());
     f.store.insert(&kept_image.path, "300x450.png", b"kept".to_vec());
 
-    media::delete(deleted.id, ViewMediaType::Movie, &user, db, &f.store).await.ok().expect("delete should succeed");
+    media::delete(deleted.id, ViewMediaType::Movie, &user, db, &f.store).await.expect("delete should succeed");
 
     let images: Vec<i32> = Images::find().all(db).await.expect("querying images").iter().map(|i| i.id).collect();
     assert_eq!(images, vec![kept_image.id], "only the other media's manual image is kept");
@@ -281,11 +281,11 @@ async fn media_delete_w_source_removes_unused_images_when_user_is_not_a_bot() {
     seed::language(db, "en", "English").await;
     let user = seed::user(db, 1).await;
     let tmdb = movie_tmdb(movie_details, png_bytes(300, 450));
-    let (_, id) = movies::create(603, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await.ok().expect("create movie");
+    let (_, id) = movies::create(603, &user, db, &tmdb, &f.store, &f.jobs, &f.clock, &f.random).await.expect("create movie");
     seed::source(db, id, "Jellyfin").await;
     assert_eq!(seed::count(db, Images).await, 2);
 
-    media::delete_w_source(603, "Jellyfin".into(), ViewMediaType::Movie, &user, db, &f.store).await.ok().expect("delete should succeed");
+    media::delete_w_source(603, "Jellyfin".into(), ViewMediaType::Movie, &user, db, &f.store).await.expect("delete should succeed");
 
     assert!(Media::find_by_id(id).one(db).await.expect("querying media").is_none());
     assert_eq!(seed::count(db, Images).await, 0, "the movie's backdrop and poster are deleted");

@@ -7,11 +7,11 @@ pub struct LexingError {
     pub message: String
 }
 
-impl Into<TranspilationError> for &LexingError {
-    fn into(self) -> TranspilationError {
+impl From<&LexingError> for TranspilationError {
+    fn from(val: &LexingError) -> Self {
         TranspilationError {
             source: ErrorSource::Lexing,
-            message: self.message.clone(),
+            message: val.message.clone(),
         }
     }
 }
@@ -40,9 +40,9 @@ pub fn scan(source: &str) -> Result<Vec<Token>, Vec<LexingError>> {
         d.scan_token();
     }
 
-    d.tokens.push(Token { typ: TokenType::EOF, lexeme: "".to_string() });
+    d.tokens.push(Token { typ: TokenType::Eof, lexeme: "".to_string() });
 
-    if d.errors.len() > 0 { Err(d.errors) }
+    if !d.errors.is_empty() { Err(d.errors) }
     else { Ok(d.tokens) }
 }
 
@@ -100,7 +100,7 @@ impl Lexer<'_> {
         if !self.source.chars().nth(self.current).is_some_and(|c| { c == expected })  { return false }
 
         self.current += 1;
-        return true
+        true
     }
 
     fn peek_at(&self, offset: usize) -> char {

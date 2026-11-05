@@ -93,7 +93,7 @@ mod tests {
             .into_connection();
 
         let token = generate("laptop".to_string(), &"test-secret".to_string(), &user, &db, &clock, &SeqRandom::new())
-            .await.ok().expect("generate should succeed");
+            .await.expect("generate should succeed");
 
         assert_eq!(token.name, "laptop");
         assert_eq!(token.generated, clock.now());
@@ -143,7 +143,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let tokens = index(&user, &db).await.ok().expect("index should succeed");
+        let tokens = index(&user, &db).await.expect("index should succeed");
 
         let names: Vec<&str> = tokens.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, vec!["laptop", "phone"]);

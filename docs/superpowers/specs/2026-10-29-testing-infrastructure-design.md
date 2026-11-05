@@ -85,18 +85,7 @@ The resulting production behaviour change is small and accepted: sizes beyond th
 
 This pass covers every public function in `services` (and the job handlers), not just the infrastructure plus samples.
 
-### 7. Existing bugs found by tests: correct test, ignored, listed
-
-When writing a test exposes a bug in existing code:
-
-- Write the test for the **correct** behaviour, not today's.
-- Mark it `#[ignore = "known bug: <one-line description>"]`.
-- Don't fix the bug in this work.
-- Add it to the **Known bugs** list at the end of this document: the function, what's wrong, and the name of the ignored test.
-
-Fixing a bug later then means fixing the code and removing the `ignore`.
-
-### 8. Time and randomness behind traits (`Clock`, `Random`)
+### 7. Time and randomness behind traits (`Clock`, `Random`)
 
 Passed explicitly to the functions that need them, like `db`, `tmdb` and `jobs`.
 
@@ -163,16 +152,7 @@ Dependencies still only flow downward (`api → services → integrations/entiti
 - The exact `ImageStore` method set and the streaming type returned for served images.
 - Order of work. Suggested: traits and test support first, then refactor services module by module with their tests, then the real integration tests, then `CLAUDE.md`.
 
-## Known bugs
-
-Found while designing or writing tests. Each has an ignored test asserting the correct behaviour where one is possible; rows without one say why.
-
-| Function | Problem | Ignored test |
-|----------|---------|--------------|
-
-The bugs listed here earlier were fixed on 2026-11-04, and their tests now run as ordinary unit tests or under their `requires docker` / `touches filesystem` ignore reasons.
-
-### Not bugs
+## Not bugs
 
 | Function | Behaviour | Test |
 |----------|-----------|------|

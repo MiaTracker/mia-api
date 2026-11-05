@@ -36,7 +36,7 @@ pub async fn create(logset: &LogsetCreate, user: &CurrentUser, db: &DbConn, tmdb
 
     let source_name;
     if let Some(source) = &logset.new_source {
-        crate::services::sources::create(media_id, &source, logset.media_type, user, db).await?;
+        crate::services::sources::create(media_id, source, logset.media_type, user, db).await?;
         source_name = source.name.clone();
     } else { source_name = logset.source.clone().unwrap() }
 

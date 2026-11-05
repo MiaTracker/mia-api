@@ -13,6 +13,7 @@ mod constructor;
 
 pub use constructor::{FILTER_FIELDS, SORT_TARGETS};
 
+#[derive(Debug)]
 pub enum ErrorSource {
     Lexing,
     Parsing,
@@ -29,6 +30,7 @@ impl Display for ErrorSource {
     }
 }
 
+#[derive(Debug)]
 pub struct TranspilationError {
     pub source: ErrorSource,
     pub message: String
@@ -87,7 +89,7 @@ mod tests {
         use sea_orm::{DbBackend, QueryTrait};
 
         for query in ["", "alien", " :  : stars desc", " :  : release_date asc"] {
-            let result = transpile(search(query), PageReq { offset: None, limit: None }, &user(), None).ok().expect("query transpiles");
+            let result = transpile(search(query), PageReq { offset: None, limit: None }, &user(), None).expect("query transpiles");
 
             let sql = result.query.build(DbBackend::Postgres).to_string();
 

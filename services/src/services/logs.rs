@@ -11,11 +11,10 @@ use crate::infrastructure::traits::IntoActiveModel;
 
 pub async fn create(media_id: i32, log: &LogCreate, media_type: MediaType, user: &CurrentUser, db: &DbConn) -> Result<(), SrvErr> {
     let mut rule_violations = Vec::new();
-    if let Some(rating) = log.stars {
-        if rating < 0f32 || rating > 10f32 {
+    if let Some(rating) = log.stars
+        && (!(0f32..=10f32).contains(&rating)) {
             rule_violations.push(RuleViolation::LogRatingOutOfBounds);
         }
-    }
 
     if !rule_violations.is_empty() {
         return Err(SrvErr::RuleViolation(rule_violations));
@@ -85,11 +84,10 @@ pub async fn update(media_id: i32, log_id: i32, log: &LogUpdate, media_type: Med
     }
 
     let mut rule_violations = Vec::new();
-    if let Some(stars) = log.stars {
-        if stars < 0f32 || stars > 10f32 {
+    if let Some(stars) = log.stars
+        && (!(0f32..=10f32).contains(&stars)) {
             rule_violations.push(RuleViolation::LogRatingOutOfBounds);
         }
-    }
 
     if !rule_violations.is_empty() {
         return Err(SrvErr::RuleViolation(rule_violations));
@@ -344,7 +342,7 @@ mod tests {
             )]])
             .into_connection();
 
-        let found = details(10, MediaType::Movie, 1, &user, &db).await.ok().expect("details should succeed");
+        let found = details(10, MediaType::Movie, 1, &user, &db).await.expect("details should succeed");
 
         assert_eq!(found.id, 1);
         assert_eq!(found.source, "Torrent A");

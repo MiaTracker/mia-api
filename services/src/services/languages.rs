@@ -33,7 +33,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let result = index(&db).await.ok().expect("index should succeed");
+        let result = index(&db).await.expect("index should succeed");
 
         let pairs: Vec<(&str, &str)> = result.iter().map(|l| (l.iso_639_1.as_str(), l.english_name.as_str())).collect();
         assert_eq!(pairs, vec![("de", "German"), ("en", "English")]);

@@ -43,11 +43,11 @@ impl From<&str> for ConstructionError {
     }
 }
 
-impl Into<TranspilationError> for ConstructionError {
-    fn into(self) -> TranspilationError {
+impl From<ConstructionError> for TranspilationError {
+    fn from(val: ConstructionError) -> Self {
         TranspilationError {
             source: ErrorSource::Construction,
-            message: self.message,
+            message: val.message,
         }
     }
 }
@@ -57,7 +57,7 @@ trait FromLiteral {
 }
 
 impl Literal {
-    fn to_value<T: FromLiteral>(self) -> Result<Option<T>, ConstructionError> {
+    fn into_value<T: FromLiteral>(self) -> Result<Option<T>, ConstructionError> {
         T::from_literal(self)
     }
 }
@@ -182,12 +182,11 @@ pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, u
     let (naive_expr, sort_expr, prim) = build_naive_search(search)?;
     select = select.filter(naive_expr);
     primitive &= prim;
-    if !custom_sort {
-        if let Some(sort_expr) = sort_expr {
+    if !custom_sort
+        && let Some(sort_expr) = sort_expr {
             select = select.order_by_desc(sort_expr);
             custom_sort = true;
         }
-    }
     if !custom_sort {
         select = select.order_by_asc(functions::default_media_sort())
     } else {
@@ -209,7 +208,7 @@ pub fn construct(query: parser::Query, search: SearchQuery, page_req: PageReq, u
     }
 
     if let Some(media_type) = media_type {
-        select = select.filter(media::Column::Type.eq::<MediaType>(media_type.into()));
+        select = select.filter(media::Column::Type.eq::<MediaType>(media_type));
     }
 
     let mut external_id: Option<ExternalId> = None;
@@ -255,24 +254,16 @@ fn try_get_external_val_bin_expr(expr: &parser::Expr, id: Option<i32>, t: Option
             let lower = b.identifier.to_snake_case();
             if lower == "tmdb_id" {
                 if id.is_none() {
-                    if let Ok(num) = b.literal.clone().to_value::<i32>() {
-                        if let Some(tid) = num {
-                            return Some((Some(tid), t));
-                        } else {
-                            return None;
-                        }
-                    } else { return None; }
-                } else { return None; }
+                    if let Ok(num) = b.literal.clone().into_value::<i32>() {
+                        num.map(|tid| (Some(tid), t))
+                    } else { None}
+                } else { None}
             } else if lower == "type" {
                 if t.is_none() {
-                    if let Ok(typ) = b.literal.clone().to_value::<MediaType>() {
-                        if let Some(tp) = typ {
-                            return Some((id, Some(tp.into())));
-                        } else {
-                            return None;
-                        }
-                    } else { return None; }
-                } else { return None; }
+                    if let Ok(typ) = b.literal.clone().into_value::<MediaType>() {
+                        typ.map(|tp| (id, Some(tp.into())))
+                    } else { None}
+                } else { None}
             } else { None }
         },
         _ => None
@@ -310,7 +301,7 @@ fn build_naive_search(search: SearchQuery) -> Result<(SimpleExpr, Option<SimpleE
         SortTarget::Title => { None }
         SortTarget::Stars => { Some(stars_sort_target()) }
         SortTarget::TimesWatched => { Some(times_watched_sort_target()) }
-    }.and_then(|e| Some(SimpleExpr::SubQuery(None, Box::new(e.into_sub_query_statement()))));
+    }.map(|e| SimpleExpr::SubQuery(None, Box::new(e.into_sub_query_statement())));
 
 
     Ok((expr, sort_expr, primitive))
@@ -410,7 +401,7 @@ fn target(target: &String, op: ComparisonOperator, literal: Literal) -> Result<S
         "last_watched" => { last_watched_target(op, literal) }
         "status" => { status_target(op, literal) }
         "has_log_containing" => { has_log_containing_target(op, literal) }
-        _ => { return Err(ConstructionError::from(format!("Unknown target '{}'", target))) }
+        _ => { Err(ConstructionError::from(format!("Unknown target '{}'", target))) }
     }
 }
 
@@ -419,7 +410,7 @@ fn stars_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatem
         Query::select()
             .columns([media::Column::Id])
             .from(media::Entity)
-            .and_where(Expr::col((media::Entity, media::Column::Stars)).binary(operator(op), literal.to_value::<f32>()?))
+            .and_where(Expr::col((media::Entity, media::Column::Stars)).binary(operator(op), literal.into_value::<f32>()?))
             .to_owned()
     )
 }
@@ -440,7 +431,7 @@ fn watched_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStat
             .from(media::Entity)
             .left_join(logs::Entity, Expr::col((logs::Entity, logs::Column::MediaId)).equals((media::Entity, media::Column::Id)))
             .group_by_col((media::Entity, media::Column::Id))
-            .and_having(Expr::col((logs::Entity, logs::Column::Id)).count().binary(BinOper::GreaterThan, 0).eq(literal.to_value::<bool>()?))
+            .and_having(Expr::col((logs::Entity, logs::Column::Id)).count().binary(BinOper::GreaterThan, 0).eq(literal.into_value::<bool>()?))
             .to_owned()
     )
 }
@@ -462,7 +453,7 @@ fn times_watched_target(op: ComparisonOperator, literal: Literal) -> Result<Sele
             .from(media::Entity)
             .left_join(logs::Entity, Expr::col((logs::Entity, logs::Column::MediaId)).equals((media::Entity, media::Column::Id)))
             .group_by_col((media::Entity, media::Column::Id))
-            .and_having(Expr::col((logs::Entity, logs::Column::Id)).count().binary(operator(op), literal.to_value::<i32>()?))
+            .and_having(Expr::col((logs::Entity, logs::Column::Id)).count().binary(operator(op), literal.into_value::<i32>()?))
             .to_owned()
     )
 }
@@ -483,7 +474,7 @@ fn media_type_target(op: ComparisonOperator, literal: Literal) -> Result<SelectS
         Query::select()
             .columns([(media::Entity, media::Column::Id)])
             .from(media::Entity)
-            .and_where(media::Column::Type.eq(literal.to_value::<MediaType>()?))
+            .and_where(media::Column::Type.eq(literal.into_value::<MediaType>()?))
             .to_owned()
     )
 }
@@ -503,7 +494,7 @@ fn number_of_sources_target(op: ComparisonOperator, literal: Literal) -> Result<
             .from(media::Entity)
             .left_join(sources::Entity, Expr::col((sources::Entity, sources::Column::MediaId)).equals((media::Entity, media::Column::Id)))
             .group_by_col((media::Entity, media::Column::Id))
-            .and_having(Expr::col((sources::Entity, sources::Column::Id)).count().binary(operator(op), literal.to_value::<i32>()?))
+            .and_having(Expr::col((sources::Entity, sources::Column::Id)).count().binary(operator(op), literal.into_value::<i32>()?))
             .to_owned()
     )
 }
@@ -526,7 +517,7 @@ fn has_source_target(op: ComparisonOperator, literal: Literal) -> Result<SelectS
             .from(media::Entity)
             .left_join(sources::Entity, Expr::col((sources::Entity, sources::Column::MediaId)).equals((media::Entity, media::Column::Id)))
             .group_by_col((media::Entity, media::Column::Id))
-            .and_having(Expr::col((sources::Entity, sources::Column::Id)).count().binary(BinOper::GreaterThan, 0).eq(literal.to_value::<bool>()?))
+            .and_having(Expr::col((sources::Entity, sources::Column::Id)).count().binary(BinOper::GreaterThan, 0).eq(literal.into_value::<bool>()?))
             .to_owned()
     )
 }
@@ -547,7 +538,7 @@ fn has_source_with_name_target(op: ComparisonOperator, literal: Literal) -> Resu
         Query::select()
             .columns([(sources::Entity, sources::Column::MediaId)])
             .from(sources::Entity)
-            .and_where(Expr::expr(Func::lower(Expr::col((sources::Entity, sources::Column::Name)))).eq(literal.to_value::<String>()?.map(|s| s.to_lowercase())))
+            .and_where(Expr::expr(Func::lower(Expr::col((sources::Entity, sources::Column::Name)))).eq(literal.into_value::<String>()?.map(|s| s.to_lowercase())))
             .to_owned()
     )
 }
@@ -559,7 +550,7 @@ fn has_tag_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStat
             .columns([(media_tags::Entity, media_tags::Column::MediaId)])
             .from(media_tags::Entity)
             .inner_join(tags::Entity, Expr::col((tags::Entity, tags::Column::Id)).equals((media_tags::Entity, media_tags::Column::TagId)))
-            .and_where(Expr::expr(Func::lower(Expr::col((tags::Entity, tags::Column::Name)))).eq(literal.to_value::<String>()?.map(|s| s.to_lowercase())))
+            .and_where(Expr::expr(Func::lower(Expr::col((tags::Entity, tags::Column::Name)))).eq(literal.into_value::<String>()?.map(|s| s.to_lowercase())))
             .to_owned()
     )
 }
@@ -571,14 +562,14 @@ fn has_genre_target(op: ComparisonOperator, literal: Literal) -> Result<SelectSt
             .columns([(media_genres::Entity, media_genres::Column::MediaId)])
             .from(media_genres::Entity)
             .inner_join(genres::Entity, Expr::col((genres::Entity, genres::Column::Id)).equals((media_genres::Entity, media_genres::Column::GenreId)))
-            .and_where(Expr::expr(Func::lower(Expr::col((genres::Entity, genres::Column::Name)))).eq(literal.to_value::<String>()?.map(|s| s.to_lowercase())))
+            .and_where(Expr::expr(Func::lower(Expr::col((genres::Entity, genres::Column::Name)))).eq(literal.into_value::<String>()?.map(|s| s.to_lowercase())))
             .to_owned()
     )
 }
 
 fn language_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     assert_eq!(op);
-    let name = literal.to_value::<String>()?.map(|s| s.to_lowercase());
+    let name = literal.into_value::<String>()?.map(|s| s.to_lowercase());
     Ok(
         Query::select()
             .columns([(media::Entity, media::Column::Id)])
@@ -595,7 +586,7 @@ fn language_target(op: ComparisonOperator, literal: Literal) -> Result<SelectSta
 }
 
 fn id_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
-    let id = literal.to_value::<i32>()?;
+    let id = literal.into_value::<i32>()?;
     let operator = operator(op);
     Ok(
         Query::select()
@@ -607,7 +598,7 @@ fn id_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement
 }
 
 fn tmdb_id_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
-    let tmdb_id = literal.to_value::<i32>()?;
+    let tmdb_id = literal.into_value::<i32>()?;
     let operator = operator(op);
     Ok(
         Query::select()
@@ -619,7 +610,7 @@ fn tmdb_id_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStat
 }
 
 fn release_date_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
-    let date = literal.to_value::<chrono::NaiveDate>()?;
+    let date = literal.into_value::<chrono::NaiveDate>()?;
     let operator = operator(op);
     Ok(
         Query::select()
@@ -638,7 +629,7 @@ fn release_date_target(op: ComparisonOperator, literal: Literal) -> Result<Selec
 }
 
 fn date_added_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
-    let date = literal.to_value::<chrono::NaiveDate>()?;
+    let date = literal.into_value::<chrono::NaiveDate>()?;
     let operator = operator(op);
     Ok(
         Query::select()
@@ -678,7 +669,7 @@ fn date_added_sort_target() -> SelectStatement {
 
 fn on_watchlist_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     assert_eq!(op);
-    let t = literal.to_value::<bool>()?;
+    let t = literal.into_value::<bool>()?;
     if let Some(val) = t {
         if val {
             Ok(
@@ -711,7 +702,7 @@ fn on_watchlist_target(op: ComparisonOperator, literal: Literal) -> Result<Selec
 
 fn rated_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     assert_eq!(op);
-    let t = literal.to_value::<bool>()?;
+    let t = literal.into_value::<bool>()?;
     if let Some(val) = t {
         if val {
             Ok(
@@ -740,7 +731,7 @@ fn tmdb_rating_target(op: ComparisonOperator, literal: Literal) -> Result<Select
         Query::select()
             .columns([media::Column::Id])
             .from(media::Entity)
-            .and_where(Expr::col((media::Entity, media::Column::TmdbVoteAverage)).binary(operator(op), literal.to_value::<f32>()?))
+            .and_where(Expr::col((media::Entity, media::Column::TmdbVoteAverage)).binary(operator(op), literal.into_value::<f32>()?))
             .to_owned()
     )
 }
@@ -756,7 +747,7 @@ fn tmdb_rating_sort_target() -> SelectStatement {
 /// Media whose earliest (`latest` false) or latest (`latest` true) log date satisfies the comparison.
 /// The inner join leaves out media without logs.
 fn watched_date_target(op: ComparisonOperator, literal: Literal, latest: bool) -> Result<SelectStatement, ConstructionError> {
-    let date = literal.to_value::<chrono::NaiveDate>()?;
+    let date = literal.into_value::<chrono::NaiveDate>()?;
     let log_date = Expr::col((logs::Entity, logs::Column::Date));
     let log_date = if latest { log_date.max() } else { log_date.min() };
     Ok(
@@ -801,7 +792,7 @@ fn last_watched_sort_target() -> SelectStatement {
 
 fn status_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     assert_eq!(op);
-    let status = literal.to_value::<String>()?.map(|s| s.to_lowercase());
+    let status = literal.into_value::<String>()?.map(|s| s.to_lowercase());
     Ok(
         Query::select()
             .columns([(media::Entity, media::Column::Id)])
@@ -823,7 +814,7 @@ fn escape_like(text: &str) -> String {
 
 fn has_log_containing_target(op: ComparisonOperator, literal: Literal) -> Result<SelectStatement, ConstructionError> {
     assert_eq!(op);
-    let text = literal.to_value::<String>()?.ok_or_else(|| ConstructionError::from("Cannot compare with null!"))?;
+    let text = literal.into_value::<String>()?.ok_or_else(|| ConstructionError::from("Cannot compare with null!"))?;
     Ok(
         Query::select()
             .columns([(logs::Entity, logs::Column::MediaId)])

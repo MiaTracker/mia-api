@@ -107,14 +107,14 @@ pub async fn login(user: &UserLogin, jwt_secret: &String, db: &DbConn, clock: &d
         return Err(SrvErr::RuleViolation(violations));
     }
 
-    let model = Users::find().filter(users::Column::Username.eq(user.username.clone())).one(db).await.map_err(|err| SrvErr::DB(err))?;
+    let model = Users::find().filter(users::Column::Username.eq(user.username.clone())).one(db).await.map_err(SrvErr::DB)?;
     if model.is_none() {
         return Err(SrvErr::Unauthorized);
     }
     let model = model.unwrap();
 
     let valid = match PasswordHash::new(&model.password_hash) {
-        Ok(parsed_hash) => { Argon2::default().verify_password(user.password.as_bytes(), &parsed_hash).map_or(false, |_| true ) }
+        Ok(parsed_hash) => { Argon2::default().verify_password(user.password.as_bytes(), &parsed_hash).is_ok_and(|_| true ) }
         Err(_) => { false }
     };
 
@@ -202,14 +202,14 @@ pub async fn change_password(pass_change: PasswordChange, user: &CurrentUser, db
         return Err(SrvErr::RuleViolation(violations));
     }
 
-    let model = Users::find_by_id(user.id).one(db).await.map_err(|err| SrvErr::DB(err))?;
+    let model = Users::find_by_id(user.id).one(db).await.map_err(SrvErr::DB)?;
     if model.is_none() {
         return Err(SrvErr::Unauthorized);
     }
     let model = model.unwrap();
 
     let valid = match PasswordHash::new(&model.password_hash) {
-        Ok(parsed_hash) => { Argon2::default().verify_password(pass_change.old_password.as_bytes(), &parsed_hash).map_or(false, |_| true ) }
+        Ok(parsed_hash) => { Argon2::default().verify_password(pass_change.old_password.as_bytes(), &parsed_hash).is_ok_and(|_| true ) }
         Err(_) => { false }
     };
 
@@ -317,7 +317,7 @@ mod tests {
             .append_query_results([Vec::<users::Model>::new()])
             .into_connection();
 
-        let result = query_user_by_uuid(Uuid::from_u128(99), &db).await.ok().expect("query should succeed");
+        let result = query_user_by_uuid(Uuid::from_u128(99), &db).await.expect("query should succeed");
 
         assert!(result.is_none());
         let log = test_support::db::log(db);
@@ -332,7 +332,7 @@ mod tests {
             .append_query_results([vec![fixtures::user_model(3)]])
             .into_connection();
 
-        let user = query_user_by_app_token(token_id, &db).await.ok().expect("query should succeed")
+        let user = query_user_by_app_token(token_id, &db).await.expect("query should succeed")
             .expect("owner should be found");
 
         assert_eq!(user.id, 3);
@@ -352,7 +352,7 @@ mod tests {
             ]])
             .into_connection();
 
-        let result = index(&db).await.ok().expect("index should succeed");
+        let result = index(&db).await.expect("index should succeed");
 
         let rows: Vec<(Uuid, bool)> = result.iter().map(|u| (u.uuid, u.admin)).collect();
         assert_eq!(rows, vec![(Uuid::from_u128(1), false), (Uuid::from_u128(2), true)]);
@@ -493,7 +493,7 @@ mod tests {
         let db = test_support::db::mock().append_query_results([vec![model.clone()]]).into_connection();
         let login_request = UserLogin { username: "tester".into(), password: fixtures::PASSWORD.into() };
 
-        let view = login(&login_request, &"test-secret".to_string(), &db, &clock).await.ok().expect("login should succeed");
+        let view = login(&login_request, &"test-secret".to_string(), &db, &clock).await.expect("login should succeed");
 
         let mut validation = Validation::default();
         validation.validate_exp = false;

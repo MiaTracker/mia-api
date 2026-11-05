@@ -7,6 +7,7 @@ use log::error;
 use views::api::{ApiErr, ApiErrView, ErrorKey};
 use crate::infrastructure::rule_violation::RuleViolation;
 
+#[derive(Debug)]
 pub enum SrvErr {
     DB(DbErr),
     IO(io::Error),
@@ -21,7 +22,7 @@ pub enum SrvErr {
 
 impl From<DbErr> for SrvErr {
     fn from(value: DbErr) -> Self {
-        error!("DB error: {}", value.to_string());
+        error!("DB error: {}", value);
         SrvErr::DB(value)
     }
 }
@@ -35,14 +36,14 @@ impl From<integrations::infrastructure::Error> for SrvErr {
 
 impl From<io::Error> for SrvErr {
     fn from(value: Error) -> Self {
-        error!("IO error: {}", value.to_string());
+        error!("IO error: {}", value);
         SrvErr::IO(value)
     }
 }
 
-impl Into<ApiErr> for &SrvErr {
-    fn into(self) -> ApiErr {
-        match self {
+impl From<&SrvErr> for ApiErr {
+    fn from(val: &SrvErr) -> Self {
+        match val {
             SrvErr::DB(db) => {
                 ApiErr {
                     errors: vec![

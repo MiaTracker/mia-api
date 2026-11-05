@@ -53,7 +53,7 @@ pub async fn get_local(slug: String, name: String, store: &dyn ImageStore) -> Re
     }
 
     let extension = path.extension().ok_or(SrvErr::BadRequest("File name invalid".to_string()))?;
-    let file_type = ImageFileType::try_from_extension(&extension.to_str()
+    let file_type = ImageFileType::try_from_extension(extension.to_str()
         .ok_or(SrvErr::BadRequest("File name invalid".to_string()))?).ok_or(
         SrvErr::BadRequest("File name invalid".to_string())
     )?;
@@ -105,7 +105,7 @@ pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &DbConn, tm
     let reader = match ImageReader::new(Cursor::new(backdrop_bytes)).with_guessed_format() {
         Ok(reader) => reader,
         Err(err) => {
-            warn!("Failed to parse TMDB image: {}", err.to_string());
+            warn!("Failed to parse TMDB image: {}", err);
             return Err(SrvErr::Integration("Failed to parse TMDB image".to_string()))
         }
     };
@@ -115,7 +115,7 @@ pub async fn save_tmdb_image(tmdb_path: &str, r#type: ImageType, db: &DbConn, tm
     let image = match reader.decode() {
         Ok(img) => img,
         Err(err) => {
-            warn!("Failed to decode TMDB image: {}", err.to_string());
+            warn!("Failed to decode TMDB image: {}", err);
             return Err(SrvErr::Integration("Failed to decode TMDB image".to_string()))
         }
     };
@@ -349,7 +349,7 @@ mod tests {
             });
 
         let (status, content_type, stream) = get_tmdb("w500".into(), "poster.jpg".into(), &tmdb).await
-            .ok().expect("get_tmdb should succeed");
+            .expect("get_tmdb should succeed");
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(content_type, "image/jpeg");
@@ -429,7 +429,7 @@ mod tests {
         store.insert(DIRECTORY, "300x450.webp", b"webp-bytes".to_vec());
 
         let (mime, stream) = get_local("300x450".into(), format!("{DIRECTORY}.webp"), &store).await
-            .ok().expect("get_local should succeed");
+            .expect("get_local should succeed");
 
         assert_eq!(mime, "image/webp");
         assert_eq!(collect(stream).await, b"webp-bytes");
@@ -452,7 +452,7 @@ mod tests {
         let store = store_with_image_files();
         let db = test_support::db::mock().append_query_results(counts([1, 0, 0, 0])).into_connection();
 
-        delete_unused_image(5, &db, &store).await.ok().expect("delete_unused_image should succeed");
+        delete_unused_image(5, &db, &store).await.expect("delete_unused_image should succeed");
 
         assert_eq!(store.files().len(), 3, "no file should have been removed");
         let log = test_support::db::log(db);
@@ -466,7 +466,7 @@ mod tests {
             let store = store_with_image_files();
             let db = test_support::db::mock().append_query_results(counts(usage)).into_connection();
 
-            delete_unused_image(5, &db, &store).await.ok().expect("delete_unused_image should succeed");
+            delete_unused_image(5, &db, &store).await.expect("delete_unused_image should succeed");
 
             assert_eq!(store.files().len(), 3, "no file should have been removed for usage {usage:?}");
             let log = test_support::db::log(db);
@@ -484,7 +484,7 @@ mod tests {
             .append_exec_results([test_support::db::deleted(), test_support::db::deleted()])
             .into_connection();
 
-        delete_unused_image(5, &db, &store).await.ok().expect("delete_unused_image should succeed");
+        delete_unused_image(5, &db, &store).await.expect("delete_unused_image should succeed");
 
         assert_eq!(store.files(), vec![("other".to_string(), "300x450.jpg".to_string())]);
         let log = test_support::db::log(db);
@@ -537,7 +537,7 @@ mod tests {
         let db = test_support::db::mock().append_query_results([[fixtures::image_model(5)]]).into_connection();
 
         let id = save_tmdb_image(TMDB_PATH, ImageType::Poster, &db, &tmdb, &store, &jobs, &SeqRandom::new()).await
-            .ok().expect("save_tmdb_image should succeed");
+            .expect("save_tmdb_image should succeed");
 
         assert_eq!(id, 5);
         assert!(jobs.take().is_empty(), "no jobs should be submitted");
@@ -621,7 +621,7 @@ mod tests {
         let deps = job_deps(db.clone(), Arc::new(store.clone()));
 
         for job in jobs {
-            jobs::run(job, &deps).await.ok().expect("the job should succeed");
+            jobs::run(job, &deps).await.expect("the job should succeed");
         }
 
         let expected = [(100, 150), (300, 450), (500, 750), (700, 1050)];
@@ -682,7 +682,7 @@ mod tests {
             poster_image_id: Some(1), backdrop_image_id: Some(2), ..fixtures::movie_media_model(1, 1)
         };
 
-        let (backdrop, poster) = fetch_backdrop_and_poster(&media, &db).await.ok().expect("fetch should succeed");
+        let (backdrop, poster) = fetch_backdrop_and_poster(&media, &db).await.expect("fetch should succeed");
 
         let backdrop = backdrop.expect("backdrop should be set");
         let poster = poster.expect("poster should be set");

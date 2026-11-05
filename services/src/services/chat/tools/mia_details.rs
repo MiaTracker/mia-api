@@ -128,7 +128,7 @@ mod tests {
             .append_query_results([[fixtures::series_count_row(9, 20)]])
             .into_connection();
 
-        let outcome = run(&json!({ "ids": [5, 6, 9] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [5, 6, 9] }), &fixtures::user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
@@ -158,7 +158,7 @@ mod tests {
             .append_query_results([[fixtures::movie_model(5)]])
             .into_connection();
 
-        let outcome = run(&json!({ "ids": [5] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [5] }), &fixtures::user(), &conn).await.expect("run");
 
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
         assert_eq!(media_ids(&content), [5]);
@@ -170,7 +170,7 @@ mod tests {
         init();
         let conn = mock().append_query_results([Vec::<MediaModel>::new()]).into_connection();
 
-        let outcome = run(&json!({ "ids": [7] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [7] }), &fixtures::user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"media":[],"not_found":[7]}"#);
@@ -186,7 +186,7 @@ mod tests {
         let conn = mock().append_query_results([Vec::<MediaModel>::new()]).into_connection();
         let user = CurrentUser::from(fixtures::user_model(4));
 
-        run(&json!({ "ids": [7] }), &user, &conn).await.ok().expect("run");
+        run(&json!({ "ids": [7] }), &user, &conn).await.expect("run");
 
         let log = log(conn);
         assert_statement_count(&log, 1);
@@ -204,7 +204,7 @@ mod tests {
             .append_query_results([fixtures::no_series_count_rows()])
             .into_connection();
 
-        let outcome = run(&json!({ "ids": [9] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [9] }), &fixtures::user(), &conn).await.expect("run");
 
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
         assert_eq!(media_ids(&content), [9]);
@@ -221,7 +221,7 @@ mod tests {
             .append_query_results([[fixtures::movie_model(5), fixtures::movie_model(6)]])
             .into_connection();
 
-        let outcome = run(&json!({ "ids": [6, 8, 5] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [6, 8, 5] }), &fixtures::user(), &conn).await.expect("run");
 
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
         assert_eq!(media_ids(&content), [6, 5]);
@@ -260,7 +260,7 @@ mod tests {
         init();
         let conn = mock().into_connection();
 
-        let outcome = run(&json!({ "ids": [1, 2, 3, 4] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [1, 2, 3, 4] }), &fixtures::user(), &conn).await.expect("run");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "at most 3 ids per call");
@@ -273,7 +273,7 @@ mod tests {
         init();
         let conn = mock().into_connection();
 
-        let outcome = run(&json!({ "ids": [] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [] }), &fixtures::user(), &conn).await.expect("run");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "ids must not be empty");
@@ -286,7 +286,7 @@ mod tests {
         let conn = mock().into_connection();
 
         for input in [json!({}), json!({ "ids": "5" }), json!({ "ids": [1, "2"] }), json!({ "ids": [1.5] })] {
-            let outcome = run(&input, &fixtures::user(), &conn).await.ok().expect("run");
+            let outcome = run(&input, &fixtures::user(), &conn).await.expect("run");
 
             assert!(outcome.is_error, "{input}");
             assert_eq!(outcome.content, "input must have an integer array 'ids'");
@@ -299,7 +299,7 @@ mod tests {
         init();
         let conn = mock().append_query_results([Vec::<MediaModel>::new()]).into_connection();
 
-        let outcome = run(&json!({ "ids": [7, 7] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [7, 7] }), &fixtures::user(), &conn).await.expect("run");
 
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
         assert_eq!(content["not_found"], json!([7]));
@@ -311,7 +311,7 @@ mod tests {
         init();
         let conn = mock().append_query_results([Vec::<MediaModel>::new()]).into_connection();
 
-        let outcome = run(&json!({ "ids": [1, 1, 2, 2, 3, 3] }), &fixtures::user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "ids": [1, 1, 2, 2, 3, 3] }), &fixtures::user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"media":[],"not_found":[1,2,3]}"#);

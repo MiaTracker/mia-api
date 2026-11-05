@@ -29,8 +29,8 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tm
         .filter(media::Column::Type.eq(MediaType::Movie)).one(db).await;
     match med_res {
         Ok(media) => {
-            if media.is_some() {
-                return Ok((false, media.unwrap().id));
+            if let Some(media) = media {
+                return Ok((false, media.id));
             }
         }
         Err(err) => { return Err(SrvErr::DB(err)); }
@@ -251,18 +251,18 @@ pub async fn update(movie_id: i32, metadata: MovieMetadata, user: &CurrentUser, 
 
     let mut rule_violations = Vec::new();
 
-    if metadata.original_language != media.original_language && metadata.original_language.is_some() {
-        let found = Languages::find_by_id(metadata.original_language.as_ref().unwrap()).count(db).await?;
+    if metadata.original_language != media.original_language
+        && let Some(language) = metadata.original_language.as_ref() {
+        let found = Languages::find_by_id(language).count(db).await?;
         if found == 0 {
             rule_violations.push(RuleViolation::MediaInvalidOriginalLanguage);
         }
     }
 
-    if let Some(runtime) = metadata.runtime {
-        if runtime < 0 {
+    if let Some(runtime) = metadata.runtime
+        && runtime < 0 {
             rule_violations.push(RuleViolation::MovieNegativeRuntime);
         }
-    }
 
     if !rule_violations.is_empty() {
         return Err(SrvErr::RuleViolation(rule_violations));
@@ -381,8 +381,8 @@ pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyCha
             "release_dates" => {
                 if !is_locked(&movie_locks, |l| l.release_date) {
                     let country = value.get("iso_3166_1").and_then(|v| v.as_str()).unwrap_or("");
-                    if media.origin_country.as_ref().is_some_and(|c| c.iter().any(|c| c == country)) {
-                        if let Some(date_str) = value.get("release_date").and_then(|v| v.as_str()) {
+                    if media.origin_country.as_ref().is_some_and(|c| c.iter().any(|c| c == country))
+                        && let Some(date_str) = value.get("release_date").and_then(|v| v.as_str()) {
                             let date = chrono::DateTime::parse_from_rfc3339(date_str)
                                 .map(|dt| dt.date_naive())
                                 .or_else(|_| NaiveDate::parse_from_str(date_str, "%Y-%m-%d"))
@@ -392,7 +392,6 @@ pub async fn apply_changes(media: &entities::media::Model, changes: &PropertyCha
                                 any_change = true;
                             }
                         }
-                    }
                 }
             }
             _ => {}
@@ -744,7 +743,7 @@ mod tests {
             .into_connection();
 
         let page = PageReq { offset: Some(20), limit: Some(10) };
-        let result = index(page, &fixtures::user(), &db).await.ok().expect("index should succeed");
+        let result = index(page, &fixtures::user(), &db).await.expect("index should succeed");
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].id, 1);
@@ -768,7 +767,7 @@ mod tests {
             .append_query_results([Vec::<media::Model>::new()])
             .into_connection();
 
-        let result = details(7, &fixtures::user(), &db).await.ok().expect("details should succeed");
+        let result = details(7, &fixtures::user(), &db).await.expect("details should succeed");
 
         assert!(result.is_none());
         let log = test_support::db::log(db);
@@ -807,7 +806,7 @@ mod tests {
             .append_query_results([[(fixtures::image_model(2), Some(fixtures::image_size_model(1, 2, 300, 450)))]])
             .into_connection();
 
-        let movie = details(1, &fixtures::user(), &db).await.ok().expect("details should succeed")
+        let movie = details(1, &fixtures::user(), &db).await.expect("details should succeed")
             .expect("movie should be found");
 
         assert_eq!(movie.id, 1);
@@ -857,7 +856,7 @@ mod tests {
             .append_query_results([Vec::<(images::Model, Option<image_sizes::Model>)>::new()])
             .into_connection();
 
-        let movie = details(1, &fixtures::user(), &db).await.ok().expect("details should succeed")
+        let movie = details(1, &fixtures::user(), &db).await.expect("details should succeed")
             .expect("movie should be found");
 
         assert_eq!(movie.title, "Unknown");
@@ -886,7 +885,7 @@ mod tests {
             .append_query_results([[fixtures::title_model(1, 1, "The Matrix", true)]])
             .into_connection();
 
-        let metadata = metadata(1, &fixtures::user(), &db).await.ok().expect("metadata should succeed");
+        let metadata = metadata(1, &fixtures::user(), &db).await.expect("metadata should succeed");
 
         assert_eq!(metadata.id, 1);
         assert_eq!(metadata.title.as_deref(), Some("The Matrix"));

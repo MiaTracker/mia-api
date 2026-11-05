@@ -122,18 +122,18 @@ impl From<&image_sizes::Model> for ImageSize {
     }
 }
 
-impl Into<entities::sea_orm_active_enums::MediaType> for MediaType {
-    fn into(self) -> entities::sea_orm_active_enums::MediaType {
-        match self {
+impl From<MediaType> for entities::sea_orm_active_enums::MediaType {
+    fn from(val: MediaType) -> Self {
+        match val {
             MediaType::Movie => { entities::sea_orm_active_enums::MediaType::Movie }
             MediaType::Series => { entities::sea_orm_active_enums::MediaType::Series }
         }
     }
 }
 
-impl Into<entities::sea_orm_active_enums::SourceType> for &SourceType {
-    fn into(self) -> crate::sea_orm_active_enums::SourceType {
-        match self {
+impl From<&SourceType> for entities::sea_orm_active_enums::SourceType {
+    fn from(val: &SourceType) -> Self {
+        match val {
             SourceType::Torrent => { entities::sea_orm_active_enums::SourceType::Torrent }
             SourceType::Web => { entities::sea_orm_active_enums::SourceType::Web }
             SourceType::Jellyfin => { entities::sea_orm_active_enums::SourceType::Jellyfin }

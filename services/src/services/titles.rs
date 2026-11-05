@@ -61,8 +61,8 @@ pub async fn set_primary(media_id: i32, title_id: i32, media_type: MediaType, us
     let tran = db.begin().await?;
 
     let primary = media.find_related(Titles).filter(titles::Column::Primary.eq(true)).one(&tran).await?;
-    if primary.is_some() {
-        let mut model: titles::ActiveModel = primary.unwrap().into();
+    if let Some(primary) = primary {
+        let mut model: titles::ActiveModel = primary.into();
         model.primary = Set(false);
         model.update(&tran).await?;
     }
@@ -104,8 +104,8 @@ pub async fn delete(media_id: i32, title_id: i32, media_type: MediaType, user: &
     if title.primary {
         let first = media.find_related(Titles).filter(titles::Column::Primary.eq(false)).one(&tran).await?;
         title.delete(&tran).await?;
-        if first.is_some() {
-            let mut model: titles::ActiveModel = first.unwrap().into();
+        if let Some(first) = first {
+            let mut model: titles::ActiveModel = first.into();
             model.primary = Set(true);
             model.update(&tran).await?;
         }
@@ -148,7 +148,7 @@ mod tests {
             .append_query_results([vec![fixtures::title_model(1, 10, "Alien", true)]])
             .into_connection();
 
-        let created = create(10, &title_create("Alien"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, &title_create("Alien"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(created);
         let log = test_support::db::log(db);
@@ -166,7 +166,7 @@ mod tests {
             .append_query_results([vec![fixtures::title_model(2, 10, "Aliens", false)]])
             .into_connection();
 
-        let created = create(10, &title_create("Aliens"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, &title_create("Aliens"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(created);
         let log = test_support::db::log(db);
@@ -182,7 +182,7 @@ mod tests {
             .append_query_results([vec![fixtures::title_model(1, 10, "Alien", true)]])
             .into_connection();
 
-        let created = create(10, &title_create("Alien"), MediaType::Movie, &user, &db).await.ok().expect("create should succeed");
+        let created = create(10, &title_create("Alien"), MediaType::Movie, &user, &db).await.expect("create should succeed");
 
         assert!(!created);
         let log = test_support::db::log(db);

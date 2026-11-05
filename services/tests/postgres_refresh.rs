@@ -49,7 +49,7 @@ async fn refresh_applies_movie_property_changes() {
             ("title", json!("Matrix")),
         ])));
 
-    let result = refresh(db, &tmdb, &f.store, &f.jobs, &clock, &f.random).await.ok().expect("refresh should succeed");
+    let result = refresh(db, &tmdb, &f.store, &f.jobs, &clock, &f.random).await.expect("refresh should succeed");
 
     assert_eq!((result.updates, result.errors), (1, 0));
     let media = Media::find_by_id(movie.id).one(db).await.expect("querying media").expect("media row");
@@ -83,7 +83,7 @@ async fn refresh_checks_every_movie_in_windows_when_last_sync_is_older_than_two_
     tmdb.expect_series_property_changes().withf(|id, _, _| *id == 70523).times(3).returning(|_, _, _| Ok(property_changes(&[])));
     tmdb.expect_season_property_changes().never();
 
-    let result = refresh(db, &tmdb, &f.store, &f.jobs, &clock, &f.random).await.ok().expect("refresh should succeed");
+    let result = refresh(db, &tmdb, &f.store, &f.jobs, &clock, &f.random).await.expect("refresh should succeed");
 
     assert_eq!((result.updates, result.errors), (6, 0));
     let latest = SyncState::find().order_by_desc(sync_state::Column::SyncedAt).one(db).await.expect("querying sync state").expect("a sync state");
@@ -112,7 +112,7 @@ async fn linearize_ratings_updates_real_rows() {
     let db = database().await;
     let (user, media_id) = three_rated_logs(&db).await;
 
-    let result = linearize_ratings(&db, Some(user.uuid), false).await.ok().expect("linearization should succeed");
+    let result = linearize_ratings(&db, Some(user.uuid), false).await.expect("linearization should succeed");
 
     assert_eq!((result.users_processed, result.logs_updated, result.media_recomputed), (1, 3, 1));
     assert_eq!(log_ratings(&db).await, vec![(Some(0.0), Some(2.0)), (Some(5.0), Some(5.0)), (Some(10.0), Some(9.0))]);
@@ -126,7 +126,7 @@ async fn linearize_ratings_leaves_rows_unchanged_when_dry_run() {
     let db = database().await;
     let (user, media_id) = three_rated_logs(&db).await;
 
-    let result = linearize_ratings(&db, Some(user.uuid), true).await.ok().expect("linearization should succeed");
+    let result = linearize_ratings(&db, Some(user.uuid), true).await.expect("linearization should succeed");
 
     assert_eq!((result.dry_run, result.logs_updated), (true, 3));
     assert_eq!(log_ratings(&db).await, vec![(Some(2.0), None), (Some(5.0), None), (Some(9.0), None)]);

@@ -157,7 +157,7 @@ mod tests {
             .append_query_results([vec![movie]])
             .into_connection();
 
-        let outcome = run(&json!({ "query": "alien" }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien" }), &user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
@@ -185,7 +185,7 @@ mod tests {
             .append_query_results([vec![series, no_date]])
             .into_connection();
 
-        let outcome = run(&json!({ "query": "" }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "" }), &user(), &conn).await.expect("run");
 
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
         let results = content["results"].as_array().expect("results");
@@ -203,7 +203,7 @@ mod tests {
         init();
         let conn = db::mock().append_query_results([[count_row(0)]]).append_query_results([Vec::<std::collections::BTreeMap<String, DbValue>>::new()]).into_connection();
 
-        let outcome = run(&json!({ "query": "nothing" }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "nothing" }), &user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"results":[],"total":0}"#);
@@ -216,7 +216,7 @@ mod tests {
         init();
         let conn = db::mock().into_connection();
 
-        let outcome = run(&json!({ "query": " : foo = 1" }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": " : foo = 1" }), &user(), &conn).await.expect("run");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "Construction: Unknown target 'foo'");
@@ -229,7 +229,7 @@ mod tests {
         init();
         let conn = db::mock().into_connection();
 
-        let outcome = run(&json!({}), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({}), &user(), &conn).await.expect("run");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "input must have a string 'query'");
@@ -242,7 +242,7 @@ mod tests {
         init();
         let conn = db::mock().into_connection();
 
-        let outcome = run(&json!({ "query": 5 }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": 5 }), &user(), &conn).await.expect("run");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "input must have a string 'query'");
@@ -260,7 +260,7 @@ mod tests {
             .append_query_results([vec![movie]])
             .into_connection();
 
-        let outcome = run(&json!({ "query": "" }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "" }), &user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         let content: Value = serde_json::from_str(&outcome.content).expect("content is JSON");
@@ -284,7 +284,7 @@ mod tests {
         init();
         let conn = db::mock().append_query_results([[count_row(0)]]).append_query_results([no_rows()]).into_connection();
 
-        run(&json!({ "query": "alien" }), &user(), &conn).await.ok().expect("run");
+        run(&json!({ "query": "alien" }), &user(), &conn).await.expect("run");
 
         let values = page_values(&db::log(conn));
         assert!(values.contains(&DbValue::BigUnsigned(Some(30))), "no LIMIT of 30 among {values:?}");
@@ -295,7 +295,7 @@ mod tests {
         init();
         let conn = db::mock().append_query_results([[count_row(40)]]).append_query_results([no_rows()]).into_connection();
 
-        run(&json!({ "query": "alien", "offset": 10, "limit": 5 }), &user(), &conn).await.ok().expect("run");
+        run(&json!({ "query": "alien", "offset": 10, "limit": 5 }), &user(), &conn).await.expect("run");
 
         let values = page_values(&db::log(conn));
         assert!(values.contains(&DbValue::BigUnsigned(Some(5))), "no LIMIT of 5 among {values:?}");
@@ -307,7 +307,7 @@ mod tests {
         init();
         let conn = db::mock().append_query_results([[count_row(0)]]).append_query_results([no_rows()]).into_connection();
 
-        run(&json!({ "query": "alien", "limit": 1000 }), &user(), &conn).await.ok().expect("run");
+        run(&json!({ "query": "alien", "limit": 1000 }), &user(), &conn).await.expect("run");
 
         let values = page_values(&db::log(conn));
         assert!(values.contains(&DbValue::BigUnsigned(Some(30))), "no LIMIT of 30 among {values:?}");
@@ -319,7 +319,7 @@ mod tests {
         init();
         let conn = db::mock().append_query_results([[count_row(0)]]).append_query_results([no_rows()]).into_connection();
 
-        let outcome = run(&json!({ "query": "alien", "offset": null, "limit": null }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien", "offset": null, "limit": null }), &user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         let values = page_values(&db::log(conn));
@@ -331,7 +331,7 @@ mod tests {
         init();
         let conn = db::mock().append_query_results([[count_row(5)]]).append_query_results([no_rows()]).into_connection();
 
-        let outcome = run(&json!({ "query": "alien", "offset": 100 }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": "alien", "offset": 100 }), &user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"results":[],"total":5}"#);
@@ -343,7 +343,7 @@ mod tests {
         init();
         let conn = db::mock().append_query_results([[count_row(42)]]).into_connection();
 
-        let outcome = run(&json!({ "query": " : has_genre = \"comedy\"", "limit": 0 }), &user(), &conn).await.ok().expect("run");
+        let outcome = run(&json!({ "query": " : has_genre = \"comedy\"", "limit": 0 }), &user(), &conn).await.expect("run");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"results":[],"total":42}"#);
@@ -358,7 +358,7 @@ mod tests {
             for bad in [json!(-1), json!(1.5), json!("5"), json!(true), json!([1]), json!(u64::MAX)] {
                 let conn = db::mock().into_connection();
 
-                let outcome = run(&json!({ "query": "alien", field: bad }), &user(), &conn).await.ok().expect("run");
+                let outcome = run(&json!({ "query": "alien", field: bad }), &user(), &conn).await.expect("run");
 
                 assert!(outcome.is_error, "{field}={bad} was accepted");
                 assert!(outcome.content.starts_with(&format!("'{field}' must be an integer")), "unexpected message for {field}={bad}: {}", outcome.content);

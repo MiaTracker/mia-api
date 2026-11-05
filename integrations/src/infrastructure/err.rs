@@ -40,7 +40,7 @@ impl From<Error> for std::io::Error {
     fn from(value: Error) -> Self {
         value.source.map_or_else(
             || std::io::Error::from(std::io::ErrorKind::Other),
-            |s| std::io::Error::new(std::io::ErrorKind::Other, s)
+            std::io::Error::other
         )
     }
 }

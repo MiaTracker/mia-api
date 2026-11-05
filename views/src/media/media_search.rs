@@ -12,11 +12,11 @@ pub struct SearchParams {
     pub limit: Option<u64>
 }
 
-impl Into<PageReq> for SearchParams {
-    fn into(self) -> PageReq {
+impl From<SearchParams> for PageReq {
+    fn from(val: SearchParams) -> Self {
         PageReq {
-            offset: self.offset,
-            limit: self.limit,
+            offset: val.offset,
+            limit: val.limit,
         }
     }
 }
@@ -35,8 +35,10 @@ pub struct SearchQuery {
 }
 
 #[derive(Deserialize, ToSchema)]
+#[derive(Default)]
 pub enum SortTarget {
     #[serde(rename = "title")]
+    #[default]
     Title,
     #[serde(rename = "stars")]
     Stars,
@@ -44,11 +46,6 @@ pub enum SortTarget {
     TimesWatched
 }
 
-impl Default for SortTarget {
-    fn default() -> Self {
-        Self::Title
-    }
-}
 
 #[derive(Serialize, ToSchema)]
 pub struct SearchResults {

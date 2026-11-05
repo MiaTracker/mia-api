@@ -256,6 +256,7 @@ enum Media {
 #[derive(Iden, EnumIter)]
 enum ImageSource {
     Table,
+    #[allow(clippy::upper_case_acronyms)]
     TMDB,
     Manual
 }
@@ -408,7 +409,7 @@ use std::io::Cursor;
         let reader = match ImageReader::new(Cursor::new(backdrop_bytes)).with_guessed_format() {
             Ok(reader) => reader,
             Err(err) => {
-                warn!("Failed to parse TMDB image: {}", err.to_string());
+                warn!("Failed to parse TMDB image: {}", err);
                 return Err(DbErr::Custom("Failed to parse TMDB image".to_string()))
             }
         };
@@ -418,7 +419,7 @@ use std::io::Cursor;
         let image = match reader.decode() {
             Ok(img) => img,
             Err(err) => {
-                warn!("Failed to decode TMDB image: {}", err.to_string());
+                warn!("Failed to decode TMDB image: {}", err);
                 return Err(DbErr::Custom("Failed to decode TMDB image".to_string()))
             }
         };
@@ -467,6 +468,7 @@ use std::io::Cursor;
         Ok(db_image.id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn save_image_sizes_task(image_id: i32, width: u32, height: u32, directory_path: PathBuf,
                                       extension: &str, format: ImageFormat, image: DynamicImage, db: &SchemaManagerConnection<'_>) -> Result<(), DbErr> {
         let gcd = gcd::binary_u32(width, height);
@@ -503,7 +505,7 @@ use std::io::Cursor;
 
         let results = results.into_iter().map(|r| r.map_err(|err| {
             error!("An error returned by Tokio while joining tasks: {:?}", err);
-            return DbErr::Custom("A Tokio task failed".to_string());
+            DbErr::Custom("A Tokio task failed".to_string())
         })).collect::<Result<Vec<_>, DbErr>>();
         for result in results? {
             result?
@@ -528,7 +530,8 @@ use std::io::Cursor;
         }
     }
 
-    async fn save_image_size(image_id: i32, width: u32, height: u32, directory_path: &PathBuf,
+    #[allow(clippy::too_many_arguments)]
+    async fn save_image_size(image_id: i32, width: u32, height: u32, directory_path: &Path,
                                 extension: &str, format: ImageFormat, image: &DynamicImage, db: &SchemaManagerConnection<'_>) -> Result<(), DbErr> {
 
         let path = directory_path
@@ -557,7 +560,7 @@ use std::io::Cursor;
                     error!("File {} for size {}x{} already exists. Error: {}", path.display(), width, height, e);
                     DbErr::Custom("File already exists".to_string())
                 })?;
-            if let Err(_) = file.write_all(buffer.as_slice()).await {
+            if file.write_all(buffer.as_slice()).await.is_err() {
                 drop(file);
                 let _ = fs::remove_file(path).await;
                 return Err(DbErr::Custom("Error writing image file".to_string()));

@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
         manager.create_index(
             Index::create().name("tmdbid_unique_constr").col(Media::TMDBId).col(Media::Type).unique().to_owned()
         ).await?;
-        manager.get_connection().execute(Statement::from_string(DatabaseBackend::Postgres, "ALTER TABLE media DROP CONSTRAINT tmdbid_unique_constr;")).await.map(|_| { () })
+        manager.get_connection().execute(Statement::from_string(DatabaseBackend::Postgres, "ALTER TABLE media DROP CONSTRAINT tmdbid_unique_constr;")).await.map(|_| {  })
     }
 }
 

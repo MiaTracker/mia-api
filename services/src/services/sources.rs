@@ -267,7 +267,7 @@ mod tests {
             .append_query_results([vec![fixtures::source_model(3, 10, "Torrent A"), fixtures::source_model(4, 10, "Torrent B")]])
             .into_connection();
 
-        let sources = index(10, MediaType::Movie, &user, &db).await.ok().expect("index should succeed");
+        let sources = index(10, MediaType::Movie, &user, &db).await.expect("index should succeed");
 
         assert_eq!(sources.iter().map(|s| (s.id, s.name.as_str())).collect::<Vec<_>>(), vec![(3, "Torrent A"), (4, "Torrent B")]);
         assert_eq!(sources[0].url, "https://source-3.example.test");
@@ -300,7 +300,7 @@ mod tests {
             .append_query_results([vec![fixtures::source_model(3, 10, "Torrent A")]])
             .into_connection();
 
-        let source = details(10, MediaType::Movie, 3, &user, &db).await.ok().expect("details should succeed");
+        let source = details(10, MediaType::Movie, 3, &user, &db).await.expect("details should succeed");
 
         assert_eq!(source.id, 3);
         assert_eq!(source.name, "Torrent A");

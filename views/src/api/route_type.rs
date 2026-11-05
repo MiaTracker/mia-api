@@ -10,9 +10,9 @@ pub enum RouteType {
     Series
 }
 
-impl Into<MediaType> for RouteType {
-    fn into(self) -> MediaType {
-        match self {
+impl From<RouteType> for MediaType {
+    fn from(val: RouteType) -> Self {
+        match val {
             RouteType::Movies => { MediaType::Movie }
             RouteType::Series => { MediaType::Series }
         }
@@ -29,9 +29,9 @@ pub enum MaybeRouteType {
     Series
 }
 
-impl Into<Option<MediaType>> for MaybeRouteType {
-    fn into(self) -> Option<MediaType> {
-        match self {
+impl From<MaybeRouteType> for Option<MediaType> {
+    fn from(val: MaybeRouteType) -> Self {
+        match val {
             MaybeRouteType::All => { None }
             MaybeRouteType::Movies => { Some(MediaType::Movie) }
             MaybeRouteType::Series => { Some(MediaType::Series) }

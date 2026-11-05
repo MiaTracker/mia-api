@@ -1362,7 +1362,7 @@ mod tests {
             .append_query_results([Vec::<entities::messages::Model>::new()])
             .into_connection();
 
-        load_history(3, &db).await.ok().expect("history should load");
+        load_history(3, &db).await.expect("history should load");
 
         let log = test_support::db::log(db);
         assert!(
@@ -1378,7 +1378,7 @@ mod tests {
             .append_exec_results([updated(1), updated(2)])
             .into_connection();
 
-        let marked = recover_interrupted(&db, &fixed_clock(2024, 1, 1, 12, 0, 0)).await.ok().expect("recovered");
+        let marked = recover_interrupted(&db, &fixed_clock(2024, 1, 1, 12, 0, 0)).await.expect("recovered");
 
         assert_eq!(marked, 2);
         let log = test_support::db::log(db);

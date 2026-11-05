@@ -14,5 +14,5 @@ pub trait SortCompare {
 }
 
 pub trait IntoImage {
-    fn into_image(self, languages: &Vec<languages::Model>,  sizes: &Vec<views::configuration::ImageSize>) -> ImageCandidate;
+    fn into_image(self, languages: &[languages::Model],  sizes: &[views::configuration::ImageSize]) -> ImageCandidate;
 }

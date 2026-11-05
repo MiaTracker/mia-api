@@ -48,7 +48,7 @@ impl MigrationTrait for Migration {
             .table(MediaTags::Table)
             .drop_column(MediaTags::UserId)
             .to_owned()).await?;
-        manager.get_connection().execute(Statement::from_string(DatabaseBackend::Postgres, "ALTER TABLE media_tags ADD PRIMARY KEY (media_id, tag_id);")).await.map(|_| { () })
+        manager.get_connection().execute(Statement::from_string(DatabaseBackend::Postgres, "ALTER TABLE media_tags ADD PRIMARY KEY (media_id, tag_id);")).await.map(|_| {  })
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

@@ -6,8 +6,8 @@
 //! connection to it. Each call then clones the template with `CREATE DATABASE ... TEMPLATE`, so
 //! every test gets an isolated, already migrated database.
 //!
-//! The template is migrated one migration at a time. Applying them all in one `Migrator::up` call
-//! fails on an empty database (a known bug, see `postgres_migrations_in_one_run.rs`).
+//! The template is migrated one migration at a time. `postgres_migrations_in_one_run.rs` covers
+//! applying them all in one `Migrator::up` call on an empty database.
 //!
 //! testcontainers-rs has no Ryuk reaper and a static is never dropped, so an `atexit` hook removes
 //! the container when the test process exits (the `watchdog` feature covers Ctrl-C).

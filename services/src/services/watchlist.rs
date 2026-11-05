@@ -117,7 +117,7 @@ mod tests {
             .append_query_results([vec![fixtures::watchlist_model(10)]])
             .into_connection();
 
-        let added = add(10, &user, &db, &fixed_clock(2026, 3, 15, 23, 59, 0)).await.ok().expect("add should succeed");
+        let added = add(10, &user, &db, &fixed_clock(2026, 3, 15, 23, 59, 0)).await.expect("add should succeed");
 
         assert!(added);
         let log = test_support::db::log(db);
@@ -134,7 +134,7 @@ mod tests {
             .append_query_results([[fixtures::count_row(1)]])
             .into_connection();
 
-        let added = add(10, &user, &db, &fixed_clock(2026, 3, 15, 23, 59, 0)).await.ok().expect("add should succeed");
+        let added = add(10, &user, &db, &fixed_clock(2026, 3, 15, 23, 59, 0)).await.expect("add should succeed");
 
         assert!(!added);
         assert_no_statement_starting_with(&test_support::db::log(db), "INSERT");
@@ -193,7 +193,7 @@ mod tests {
             .into_connection();
 
         let page = PageReq { offset: Some(20), limit: Some(10) };
-        let result = index(page, &fixtures::user(), &db).await.ok().expect("index should succeed");
+        let result = index(page, &fixtures::user(), &db).await.expect("index should succeed");
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].id, 1);
@@ -219,7 +219,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = index(PageReq { offset: None, limit: None }, &fixtures::user(), &db).await.ok().expect("index should succeed");
+        let result = index(PageReq { offset: None, limit: None }, &fixtures::user(), &db).await.expect("index should succeed");
 
         assert!(result.is_empty());
     }
@@ -236,7 +236,7 @@ mod tests {
             .into_connection();
         let query = SearchQuery { query: "alien".to_string(), genres: None, only_watched: false, min_stars: None, sort_by: Default::default() };
 
-        let result = search(query, PageReq { offset: None, limit: Some(10) }, &fixtures::user(), &db).await.ok().expect("search should succeed");
+        let result = search(query, PageReq { offset: None, limit: Some(10) }, &fixtures::user(), &db).await.expect("search should succeed");
 
         assert!(result.query_valid);
         assert!(result.external.is_empty());
@@ -257,7 +257,7 @@ mod tests {
         // The part after " : " is an expression; "@" is not a valid token.
         let query = SearchQuery { query: "alien : @".to_string(), genres: None, only_watched: false, min_stars: None, sort_by: Default::default() };
 
-        let result = search(query, PageReq { offset: None, limit: None }, &fixtures::user(), &db).await.ok().expect("search should succeed");
+        let result = search(query, PageReq { offset: None, limit: None }, &fixtures::user(), &db).await.expect("search should succeed");
 
         assert!(!result.query_valid);
         assert!(result.indexes.is_empty());

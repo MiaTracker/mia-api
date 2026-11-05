@@ -39,7 +39,7 @@ impl IntoResponse for ApiErr {
     fn into_response(self) -> Response {
         let json = match serde_json::to_string(&self.errors) {
             Ok(str) => { str }
-            Err(err) => { format!("Error serializing ApiErr: {}", err.to_string()) }
+            Err(err) => { format!("Error serializing ApiErr: {}", err) }
         };
         Response::builder()
             .status(self.status)

@@ -34,7 +34,7 @@ pub async fn create_w_source(view: MediaSourceCreate, media_type: MediaType, use
         MediaType::Series => { series::create(view.tmdb_id, user, db, tmdb, store, jobs, clock, random).await? }
     };
 
-    sources::create(id, &view.source, media_type, &user, &db).await?;
+    sources::create(id, &view.source, media_type, user, db).await?;
 
     Ok((created, id))
 }
@@ -576,7 +576,7 @@ pub(crate) fn build_media_indexes(data: Vec<(media::Model, Option<images::Model>
         }
         else {
             let vec = vec![size];
-            sizes_map.insert(size.image_id.clone(), vec);
+            sizes_map.insert(size.image_id, vec);
         }
     }
 
@@ -732,63 +732,58 @@ pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: 
                 }
             }
             "origin_country" => {
-                if !is_locked(&locks, |l| l.origin_country) {
-                    if let Some(arr) = value.as_array() {
+                if !is_locked(&locks, |l| l.origin_country)
+                    && let Some(arr) = value.as_array() {
                         let countries: Vec<String> = arr.iter()
                             .filter_map(|v| v.as_str().map(|s| s.to_string()))
                             .collect();
                         media_am.origin_country = Set(Some(countries));
                         any_change = true;
                     }
-                }
             }
             "images" => {
                 if media.poster_image_id.is_none() && !is_locked(&locks, |l| l.poster_path) {
-                    let poster = change.items.iter().filter(|i| i.value.as_ref()
-                        .is_some_and(|o| o.get("poster").is_some())).next()
+                    let poster = change.items.iter().find(|i| i.value.as_ref()
+                        .is_some_and(|o| o.get("poster").is_some()))
                         .map(|v| v.value.as_ref().unwrap().get("poster").unwrap());
 
-                    if let Some(poster) = poster {
-                        if let Some(file_path) = poster.get("file_path").and_then(|v| v.as_str()) {
+                    if let Some(poster) = poster
+                        && let Some(file_path) = poster.get("file_path").and_then(|v| v.as_str()) {
                         let new_id = save_tmdb_image(file_path, ImageType::Poster, db, tmdb, store, jobs, random).await?;
                             media_am.poster_image_id = Set(Some(new_id));
                             any_change = true;
                         }
-                    }
                 }
                 if media.backdrop_image_id.is_none() && !is_locked(&locks, |l| l.backdrop_path) {
-                    let backdrop = change.items.iter().filter(|i| i.value.as_ref()
-                        .is_some_and(|o| o.get("backdrop").is_some())).next()
+                    let backdrop = change.items.iter().find(|i| i.value.as_ref()
+                        .is_some_and(|o| o.get("backdrop").is_some()))
                         .map(|v| v.value.as_ref().unwrap().get("backdrop").unwrap());
 
-                    if let Some(backdrop) = backdrop {
-                        if let Some(file_path) = backdrop.get("file_path").and_then(|v| v.as_str()) {
+                    if let Some(backdrop) = backdrop
+                        && let Some(file_path) = backdrop.get("file_path").and_then(|v| v.as_str()) {
                         let new_id = save_tmdb_image(file_path, ImageType::Backdrop, db, tmdb, store, jobs, random).await?;
                             media_am.backdrop_image_id = Set(Some(new_id));
                             any_change = true;
                         }
-                    }
                 }
             }
             "title" | "original_title" | "name" | "original_name" => {
                 let lang = last_item.iso_639_1.as_deref().unwrap_or("");
-                if lang == "en" || media.original_language.as_ref().map(|l| l == lang).unwrap_or(false) {
-                    if let Some(title_str) = value.as_str() {
+                if (lang == "en" || media.original_language.as_ref().map(|l| l == lang).unwrap_or(false))
+                    && let Some(title_str) = value.as_str() {
                         add_title(media.id, title_str, db).await?;
                     }
-                }
             }
             "alternative_titles" => {
                 let lang = last_item.iso_639_1.as_deref().unwrap_or("");
-                if lang == "en" || media.original_language.as_ref().map(|l| l == lang).unwrap_or(false) {
-                    if let Some(title_str) = value.get("title").and_then(|t| t.as_str()) {
+                if (lang == "en" || media.original_language.as_ref().map(|l| l == lang).unwrap_or(false))
+                    && let Some(title_str) = value.get("title").and_then(|t| t.as_str()) {
                         add_title(media.id, title_str, db).await?;
                     }
-                }
             }
             "genres" => {
                 if let Some(genre_str) = value.get("name").and_then(|n| n.as_str()) {
-                    add_genre_to_media(media, &genre_str, db).await?;
+                    add_genre_to_media(media, genre_str, db).await?;
                 }
             }
             _ => {}
@@ -803,7 +798,7 @@ pub async fn apply_changes(media: &media::Model, changes: &PropertyChanges, db: 
 }
 
 pub fn is_locked<T>(locks: &Option<T>, f: impl Fn(&T) -> bool) -> bool {
-    locks.as_ref().map_or(false, f)
+    locks.as_ref().is_some_and(f)
 }
 
 #[cfg(test)]
@@ -1002,7 +997,7 @@ mod tests {
             .append_query_results([[fixtures::image_size_model(1, 2, 300, 450), fixtures::image_size_model(2, 2, 100, 150)]])
             .into_connection();
 
-        let result = index(PageReq { offset: Some(20), limit: Some(10) }, &fixtures::user(), &db).await.ok().expect("index should succeed");
+        let result = index(PageReq { offset: Some(20), limit: Some(10) }, &fixtures::user(), &db).await.expect("index should succeed");
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].id, 1);
@@ -1032,7 +1027,7 @@ mod tests {
             .into_connection();
         let req = MediaByIdsQuery { query: String::new(), ids: vec![4, 6] };
 
-        let result = search_by_ids(req, page(None), &fixtures::user(), &db).await.ok().expect("search should succeed");
+        let result = search_by_ids(req, page(None), &fixtures::user(), &db).await.expect("search should succeed");
 
         assert!(result.query_valid);
         assert_eq!(result.indexes.iter().map(|i| i.id).collect::<Vec<_>>(), vec![4, 6]);
@@ -1048,7 +1043,7 @@ mod tests {
         let db = test_support::db::mock().into_connection();
         let req = MediaByIdsQuery { query: String::new(), ids: Vec::new() };
 
-        let result = search_by_ids(req, page(None), &fixtures::user(), &db).await.ok().expect("search should succeed");
+        let result = search_by_ids(req, page(None), &fixtures::user(), &db).await.expect("search should succeed");
 
         assert!(result.query_valid);
         assert!(result.indexes.is_empty());
@@ -1062,7 +1057,7 @@ mod tests {
         // The part after " : " is an expression; "@" is not a valid token.
         let req = MediaByIdsQuery { query: "alien : @".to_string(), ids: vec![4] };
 
-        let result = search_by_ids(req, page(None), &fixtures::user(), &db).await.ok().expect("search should succeed");
+        let result = search_by_ids(req, page(None), &fixtures::user(), &db).await.expect("search should succeed");
 
         assert!(!result.query_valid);
         assert!(result.indexes.is_empty());
@@ -1088,7 +1083,7 @@ mod tests {
             .into_connection();
 
         // The page is filled by internal results, so TMDB is not asked (the mock has no expectations).
-        let result = run_search(search_query("alien"), true, Some(2), None, &db, &MockTmdb::new()).await.ok().expect("search should succeed");
+        let result = run_search(search_query("alien"), true, Some(2), None, &db, &MockTmdb::new()).await.expect("search should succeed");
 
         assert!(result.query_valid);
         assert_eq!(result.indexes.iter().map(|i| i.id).collect::<Vec<_>>(), vec![4, 6]);
@@ -1112,7 +1107,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query("matrix"), false, Some(10), None, &db, &tmdb).await.ok().expect("search should succeed");
+        let result = run_search(search_query("matrix"), false, Some(10), None, &db, &tmdb).await.expect("search should succeed");
 
         assert!(result.query_valid);
         assert_eq!(result.indexes.len(), 1);
@@ -1141,7 +1136,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query("matrix"), false, Some(3), None, &db, &tmdb).await.ok().expect("search should succeed");
+        let result = run_search(search_query("matrix"), false, Some(3), None, &db, &tmdb).await.expect("search should succeed");
 
         assert_eq!(result.external.iter().map(|e| e.external_id).collect::<Vec<_>>(), vec![1, 2]);
     }
@@ -1156,7 +1151,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query("matrix"), true, None, Some(MediaType::Series), &db, &tmdb).await.ok().expect("search should succeed");
+        let result = run_search(search_query("matrix"), true, None, Some(MediaType::Series), &db, &tmdb).await.expect("search should succeed");
 
         assert_eq!(result.external.len(), 1);
         assert_eq!(result.external[0].external_id, 70);
@@ -1173,7 +1168,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query("al"), true, None, None, &db, &tmdb).await.ok().expect("search should succeed");
+        let result = run_search(search_query("al"), true, None, None, &db, &tmdb).await.expect("search should succeed");
 
         assert_eq!(result.external.len(), 1);
     }
@@ -1186,7 +1181,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query("ali"), false, None, None, &db, &MockTmdb::new()).await.ok().expect("search should succeed");
+        let result = run_search(search_query("ali"), false, None, None, &db, &MockTmdb::new()).await.expect("search should succeed");
 
         assert_eq!(result.indexes.len(), 1);
         assert!(result.external.is_empty());
@@ -1202,7 +1197,7 @@ mod tests {
             .into_connection();
         let query = SearchQuery { only_watched: true, ..search_query("matrix") };
 
-        let result = run_search(query, true, None, None, &db, &MockTmdb::new()).await.ok().expect("search should succeed");
+        let result = run_search(query, true, None, None, &db, &MockTmdb::new()).await.expect("search should succeed");
 
         assert!(result.query_valid);
         assert!(result.external.is_empty());
@@ -1218,7 +1213,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query(MOVIE_603_QUERY), false, None, None, &db, &tmdb).await.ok().expect("search should succeed");
+        let result = run_search(search_query(MOVIE_603_QUERY), false, None, None, &db, &tmdb).await.expect("search should succeed");
 
         assert_eq!(result.external.len(), 1);
         assert_eq!(result.external[0].external_id, 603);
@@ -1236,7 +1231,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query(SERIES_70_QUERY), false, None, None, &db, &tmdb).await.ok().expect("search should succeed");
+        let result = run_search(search_query(SERIES_70_QUERY), false, None, None, &db, &tmdb).await.expect("search should succeed");
 
         assert_eq!(result.external.len(), 1);
         assert_eq!(result.external[0].external_id, 70);
@@ -1252,7 +1247,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query(MOVIE_603_QUERY), false, None, None, &db, &MockTmdb::new()).await.ok().expect("search should succeed");
+        let result = run_search(search_query(MOVIE_603_QUERY), false, None, None, &db, &MockTmdb::new()).await.expect("search should succeed");
 
         assert_eq!(result.indexes.len(), 1);
         assert!(result.external.is_empty());
@@ -1268,7 +1263,7 @@ mod tests {
             .append_query_results([Vec::<image_sizes::Model>::new()])
             .into_connection();
 
-        let result = run_search(search_query(MOVIE_603_QUERY), false, None, None, &db, &tmdb).await.ok().expect("search should succeed");
+        let result = run_search(search_query(MOVIE_603_QUERY), false, None, None, &db, &tmdb).await.expect("search should succeed");
 
         assert!(result.query_valid);
         assert!(result.external.is_empty());
@@ -1310,7 +1305,7 @@ mod tests {
         let db = test_support::db::mock().into_connection();
 
         // The part after " : " is an expression; "@" is not a valid token.
-        let result = run_search(search_query("matrix : @"), true, None, None, &db, &MockTmdb::new()).await.ok().expect("search should succeed");
+        let result = run_search(search_query("matrix : @"), true, None, None, &db, &MockTmdb::new()).await.expect("search should succeed");
 
         assert!(!result.query_valid);
         assert!(result.indexes.is_empty());
@@ -1325,7 +1320,7 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock().into_connection();
 
-        let result = search_library(search_query(" : foo = 1"), page(None), None, &fixtures::user(), &db).await.ok().expect("search should succeed");
+        let result = search_library(search_query(" : foo = 1"), page(None), None, &fixtures::user(), &db).await.expect("search should succeed");
 
         let Err(messages) = result else { panic!("query should be invalid") };
         assert_eq!(messages, vec!["Construction: Unknown target 'foo'".to_string()]);
@@ -1337,7 +1332,7 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock().append_query_results([[fixtures::count_row(42)]]).into_connection();
 
-        let result = count_library(search_query(" : stars >= 8"), None, &fixtures::user(), &db).await.ok().expect("count should succeed");
+        let result = count_library(search_query(" : stars >= 8"), None, &fixtures::user(), &db).await.expect("count should succeed");
 
         assert_eq!(result.ok(), Some(42));
         assert_statement_count(&test_support::db::log(db), 1);
@@ -1348,7 +1343,7 @@ mod tests {
         test_support::init();
         let db = test_support::db::mock().into_connection();
 
-        let result = count_library(search_query(" : foo = 1"), None, &fixtures::user(), &db).await.ok().expect("count should succeed");
+        let result = count_library(search_query(" : foo = 1"), None, &fixtures::user(), &db).await.expect("count should succeed");
 
         let Err(messages) = result else { panic!("query should be invalid") };
         assert_eq!(messages, vec!["Construction: Unknown target 'foo'".to_string()]);
@@ -1370,7 +1365,7 @@ mod tests {
             multi_movie(4, "Four"),
         ])));
 
-        let hits = search_tmdb("matrix".into(), Some(MediaType::Movie), &tmdb).await.ok().expect("search should succeed");
+        let hits = search_tmdb("matrix".into(), Some(MediaType::Movie), &tmdb).await.expect("search should succeed");
 
         assert!(hit_ids(&hits) == vec![(MediaType::Movie, 2), (MediaType::Movie, 4)]);
     }
@@ -1386,7 +1381,7 @@ mod tests {
             multi_movie(4, "Four"),
         ])));
 
-        let hits = search_tmdb("matrix".into(), None, &tmdb).await.ok().expect("search should succeed");
+        let hits = search_tmdb("matrix".into(), None, &tmdb).await.expect("search should succeed");
 
         assert!(hit_ids(&hits) == vec![(MediaType::Series, 1), (MediaType::Movie, 4)]);
     }
@@ -1451,7 +1446,7 @@ mod tests {
             .append_query_results([Vec::<images::Model>::new()])
             .into_connection();
 
-        let result = backdrops(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.ok().expect("backdrops should succeed");
+        let result = backdrops(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.expect("backdrops should succeed");
 
         // Largest first
         assert_eq!(result.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), vec!["/backdrop-2.jpg", "/backdrop-1.jpg"]);
@@ -1477,7 +1472,7 @@ mod tests {
             .append_query_results([[(manual, Some(fixtures::image_size_model(2, 8, 800, 450)))]])
             .into_connection();
 
-        let result = backdrops(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.ok().expect("backdrops should succeed");
+        let result = backdrops(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.expect("backdrops should succeed");
 
         // The current backdrop first, then by size; the TMDB candidate for the current backdrop is dropped.
         // Records current behaviour: internal candidate paths have no leading slash, unlike index posters.
@@ -1500,7 +1495,7 @@ mod tests {
             .append_query_results([Vec::<images::Model>::new()])
             .into_connection();
 
-        let result = backdrops(10, MediaType::Series, &fixtures::user(), &db, &tmdb).await.ok().expect("backdrops should succeed");
+        let result = backdrops(10, MediaType::Series, &fixtures::user(), &db, &tmdb).await.expect("backdrops should succeed");
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].path, "/backdrop-1.jpg");
@@ -1514,7 +1509,7 @@ mod tests {
             .append_query_results([[fixtures::movie_media_model(10, 1)]])
             .into_connection();
 
-        let result = backdrops(10, MediaType::Movie, &fixtures::user(), &db, &MockTmdb::new()).await.ok().expect("backdrops should succeed");
+        let result = backdrops(10, MediaType::Movie, &fixtures::user(), &db, &MockTmdb::new()).await.expect("backdrops should succeed");
 
         assert!(result.is_empty());
         assert_statement_count(&test_support::db::log(db), 1);
@@ -1648,7 +1643,7 @@ mod tests {
             .append_query_results([Vec::<images::Model>::new()])
             .into_connection();
 
-        let result = posters(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.ok().expect("posters should succeed");
+        let result = posters(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.expect("posters should succeed");
 
         // Largest first
         assert_eq!(result.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), vec!["/poster-2.jpg", "/poster-1.jpg"]);
@@ -1674,7 +1669,7 @@ mod tests {
             .append_query_results([[(manual, Some(fixtures::image_size_model(2, 8, 100, 150)))]])
             .into_connection();
 
-        let result = posters(10, MediaType::Series, &fixtures::user(), &db, &tmdb).await.ok().expect("posters should succeed");
+        let result = posters(10, MediaType::Series, &fixtures::user(), &db, &tmdb).await.expect("posters should succeed");
 
         // Records current behaviour: internal candidate paths have no leading slash, unlike index posters.
         assert_eq!(result.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), vec!["image-7.jpg", "/poster-2.jpg", "image-8.jpg"]);
@@ -1688,7 +1683,7 @@ mod tests {
             .append_query_results([[fixtures::movie_media_model(10, 1)]])
             .into_connection();
 
-        let result = posters(10, MediaType::Movie, &fixtures::user(), &db, &MockTmdb::new()).await.ok().expect("posters should succeed");
+        let result = posters(10, MediaType::Movie, &fixtures::user(), &db, &MockTmdb::new()).await.expect("posters should succeed");
 
         assert!(result.is_empty());
         assert_statement_count(&test_support::db::log(db), 1);
@@ -1784,7 +1779,7 @@ mod tests {
             .append_query_results([[fixtures::language_model("en", "English")]])
             .into_connection();
 
-        let result = images(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.ok().expect("images should succeed");
+        let result = images(10, MediaType::Movie, &fixtures::user(), &db, &tmdb).await.expect("images should succeed");
 
         assert_eq!(result.backdrops.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), vec!["/backdrop-2.jpg", "/backdrop-1.jpg"]);
         assert_eq!(result.posters.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), vec!["/poster-2.jpg", "/poster-1.jpg"]);
@@ -1806,7 +1801,7 @@ mod tests {
             .append_query_results([Vec::<languages::Model>::new()])
             .into_connection();
 
-        let result = images(10, MediaType::Series, &fixtures::user(), &db, &tmdb).await.ok().expect("images should succeed");
+        let result = images(10, MediaType::Series, &fixtures::user(), &db, &tmdb).await.expect("images should succeed");
 
         assert_eq!(result.backdrops.len(), 1);
         assert_eq!(result.posters.len(), 1);
@@ -1819,7 +1814,7 @@ mod tests {
             .append_query_results([[fixtures::movie_media_model(10, 1)]])
             .into_connection();
 
-        let result = images(10, MediaType::Movie, &fixtures::user(), &db, &MockTmdb::new()).await.ok().expect("images should succeed");
+        let result = images(10, MediaType::Movie, &fixtures::user(), &db, &MockTmdb::new()).await.expect("images should succeed");
 
         assert!(result.backdrops.is_empty());
         assert!(result.posters.is_empty());
@@ -2602,7 +2597,7 @@ mod tests {
 
         let result = fetch_media(10, MediaType::Movie, &fixtures::user(), &db).await;
 
-        assert_eq!(result.ok().expect("media should be found").id, 10);
+        assert_eq!(result.expect("media should be found").id, 10);
         assert_wrote(&test_support::db::log(db), "SELECT", &[Value::from(10), Value::from(1)]);
     }
 

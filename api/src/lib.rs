@@ -29,7 +29,7 @@ pub async fn launch() {
 
     let db_url = config().db.connection_url.clone();
     let conn = Database::connect(db_url.clone()).await
-        .expect(format!("Failed to connect to database using connection string \"{}\"", db_url).as_str());
+        .unwrap_or_else(|_| panic!("Failed to connect to database using connection string \"{}\"", db_url));
 
     let conn = Arc::new(conn);
     let scheduler_conn = conn.clone();
@@ -74,7 +74,7 @@ pub async fn launch() {
 
     // Spawn the built-in refresh scheduler if configured
     if let Some(interval) = &config().tmdb.refresh_interval {
-        let interval = interval.clone();
+        let interval = *interval;
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(interval);
             interval.tick().await; // First tick finishes immediately

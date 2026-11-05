@@ -82,7 +82,7 @@ pub enum TokenType {
     Or,
     True,
 
-    EOF
+    Eof
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -137,8 +137,8 @@ pub fn parse(str: String) -> Query {
     let mut expr = None;
     let mut lexing_errs = None;
     let mut parsing_errs = None;
-    if let Some(expr_str) = it.next() {
-        if !expr_str.is_empty() {
+    if let Some(expr_str) = it.next()
+        && !expr_str.is_empty() {
             let res = scan(expr_str);
             match res {
                 Ok(t) => {
@@ -154,7 +154,6 @@ pub fn parse(str: String) -> Query {
                 }
             }
         }
-    }
 
     let sort_target;
     if let Some(sort_str) = it.next() {
@@ -189,11 +188,11 @@ pub struct ParseError {
     pub message: String
 }
 
-impl Into<TranspilationError> for &ParseError {
-    fn into(self) -> TranspilationError {
+impl From<&ParseError> for TranspilationError {
+    fn from(val: &ParseError) -> Self {
         TranspilationError {
             source: ErrorSource::Parsing,
-            message: self.message.clone(),
+            message: val.message.clone(),
         }
     }
 }
@@ -221,7 +220,7 @@ impl Parser {
     }
 
     fn comparison(&mut self) -> Result<Expr, ParseError> {
-        return if self.peek().typ == TokenType::Identifier {
+        if self.peek().typ == TokenType::Identifier {
             self.binary_comparison()
         } else {
             self.ternary_comparison()
@@ -256,7 +255,7 @@ impl Parser {
     }
 
     fn grouping(&mut self) -> Result<Expr, ParseError> {
-        return if self.match_this(TokenType::LeftParen) {
+        if self.match_this(TokenType::LeftParen) {
             let expr = self.logic_or();
             self.consume(TokenType::RightParen, "Expected ')'")?;
             expr
@@ -287,7 +286,7 @@ impl Parser {
     }
 
     fn operator(&mut self) -> Result<ComparisonOperator, ParseError> {
-        if self.at_end() { return Err(self.error(&Token { typ: TokenType::EOF, lexeme: "EOF".to_string() }, "Unexpected end of expression")) }
+        if self.at_end() { return Err(self.error(&Token { typ: TokenType::Eof, lexeme: "EOF".to_string() }, "Unexpected end of expression")) }
         let token = self.peek();
         let op = match token.typ {
             TokenType::Equal => { ComparisonOperator::Equal }
@@ -305,15 +304,15 @@ impl Parser {
     }
 
     fn literal(&mut self) -> Result<Literal, ParseError> {
-        if self.at_end() { return Err(self.error(&Token { typ: TokenType::EOF, lexeme: "EOF".to_string() }, "Unexpected end of expression")) }
+        if self.at_end() { return Err(self.error(&Token { typ: TokenType::Eof, lexeme: "EOF".to_string() }, "Unexpected end of expression")) }
         let token = self.peek();
         let op = match &token.typ {
             TokenType::True => Literal::True,
             TokenType::False => Literal::False,
             TokenType::Null => Literal::Null,
             TokenType::String(s) => Literal::String(s.clone()),
-            TokenType::Int(i) => Literal::Int(i.clone()),
-            TokenType::Float(f) => Literal::Float(f.clone()),
+            TokenType::Int(i) => Literal::Int(*i),
+            TokenType::Float(f) => Literal::Float(*f),
             TokenType::Date(d) => Literal::Date(*d),
             _ => {
                 return Err(self.error(token, "Unexpected token. Literal expected."))
@@ -345,7 +344,7 @@ impl Parser {
     }
 
     fn at_end(&self) -> bool {
-        self.peek().typ == TokenType::EOF
+        self.peek().typ == TokenType::Eof
     }
 
     fn peek(&self) -> &Token {
@@ -362,7 +361,7 @@ impl Parser {
     }
 
     fn error(&self, token: &Token, message: &str) -> ParseError {
-        if token.typ == TokenType::EOF {
+        if token.typ == TokenType::Eof {
             ParseError { message: format!("At end: {}", message) }
         } else {
             ParseError { message: format!("At '{}': {}", token.lexeme, message)}

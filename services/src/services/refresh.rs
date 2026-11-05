@@ -14,13 +14,15 @@ use crate::chat::registry::ExchangeRegistry;
 use crate::jobs::{JobDeps, Jobs, TokioJobs};
 use crate::{movies, series};
 
+type RefreshFuture<'a> = std::pin::Pin<Box<dyn Future<Output = (usize, usize)> + Send + 'a>>;
+
 pub async fn run_refresh() {
     let tmdb: Arc<dyn Tmdb> = Arc::new(TmdbClient::new(config().tmdb.authorization_token.clone()));
     crate::infrastructure::initialize(tmdb.as_ref()).await;
 
     let db_url = config().db.connection_url.clone();
     let conn = Database::connect(db_url.clone()).await
-        .expect(format!("Failed to connect to database using connection string \"{}\"", db_url).as_str());
+        .unwrap_or_else(|_| panic!("Failed to connect to database using connection string \"{}\"", db_url));
 
     let conn = Arc::new(conn);
     let store: Arc<dyn ImageStore> = Arc::new(FsImageStore::new(config().images.store_path.clone()));
@@ -110,7 +112,7 @@ pub async fn refresh(db: &DbConn, tmdb: &dyn Tmdb, store: &dyn ImageStore, jobs:
     let mut errors = 0usize;
 
     for (start_date, end_date) in intervals {
-        let mut futures: Vec<std::pin::Pin<Box<dyn Future<Output = (usize, usize)> + Send + '_>>> = Vec::new();
+        let mut futures: Vec<RefreshFuture<'_>> = Vec::new();
 
         if !movie_tmdb_ids.is_empty() {
             let movie_media: Vec<media::Model> = media::Entity::find()
@@ -284,7 +286,7 @@ mod tests {
             .append_query_results([[synced_at(1, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (0, 0));
         assert_statement_count(&test_support::db::log(db), 3);
@@ -302,7 +304,7 @@ mod tests {
             .append_query_results([[synced_at(1, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (0, 0));
         assert_statement_count(&test_support::db::log(db), 3);
@@ -319,7 +321,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (0, 0));
         // Only the sync_state lookup and insert: the media table is not consulted for the start date.
@@ -343,7 +345,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (1, 0));
         let log = test_support::db::log(db);
@@ -370,7 +372,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (1, 0));
         let log = test_support::db::log(db);
@@ -390,7 +392,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (0, 0));
         assert_statement_count(&test_support::db::log(db), 3);
@@ -416,7 +418,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (1, 1));
         let log = test_support::db::log(db);
@@ -438,7 +440,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (0, 1));
         assert_wrote(&test_support::db::log(db), r#"INSERT INTO "sync_state""#, &[]);
@@ -455,7 +457,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         let log = test_support::db::log(db);
         assert_wrote(&log, r#"INSERT INTO "sync_state""#, &[Value::from(clock.now().fixed_offset())]);
@@ -479,7 +481,7 @@ mod tests {
             .append_query_results([[synced_at(2, &clock)]])
             .into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (1, 0));
         assert_wrote(&test_support::db::log(db), r#"UPDATE "movies""#, &[Value::from(120), Value::from(7)]);
@@ -507,7 +509,7 @@ mod tests {
         }
         let db = db.append_query_results([[synced_at(2, &clock)]]).into_connection();
 
-        let result = run_refresh(&db, &tmdb, &clock).await.ok().expect("refresh succeeds");
+        let result = run_refresh(&db, &tmdb, &clock).await.expect("refresh succeeds");
 
         assert_eq!((result.updates, result.errors), (3, 0));
         // sync_state lookup, both tracked-id lookups, 3 intervals of (media, media locks, movie locks), insert.

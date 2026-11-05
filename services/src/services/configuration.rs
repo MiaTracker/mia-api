@@ -21,7 +21,7 @@ mod tests {
         test_support::init();
         let expected = test_support::config::test_tmdb_configuration().images;
 
-        let images = images().await.ok().expect("images should succeed");
+        let images = images().await.expect("images should succeed");
 
         assert_eq!(images.base_url, expected.base_url);
         assert_eq!(images.secure_base_url, expected.secure_base_url);

@@ -320,9 +320,9 @@ impl IntoView<ExternalIndex> for &SeriesDetails {
 }
 
 impl IntoImage for &TmdbImage {
-    fn into_image(self, languages: &Vec<languages::Model>, sizes: &Vec<views::configuration::ImageSize>) -> ImageCandidate {
+    fn into_image(self, languages: &[languages::Model], sizes: &[views::configuration::ImageSize]) -> ImageCandidate {
         ImageCandidate {
-            language: self.iso_639_1.as_ref().map(|z| languages.iter().find(|y| y.iso6391.as_str() == z).map(|l| l.english_name.clone())).flatten(),
+            language: self.iso_639_1.as_ref().and_then(|z| languages.iter().find(|y| y.iso6391.as_str() == z).map(|l| l.english_name.clone())),
             original_width: self.width,
             original_height: self.height,
             path: self.file_path.clone(),

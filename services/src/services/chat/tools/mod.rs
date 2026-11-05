@@ -125,7 +125,7 @@ mod tests {
         let conn = db::mock().into_connection();
 
         let outcome = run_tool("nope", &json!({ "query": "x" }), &user(), &conn, &MockTmdb::new(), &fixed_clock(2024, 1, 1, 12, 0, 0))
-            .await.ok().expect("run_tool");
+            .await.expect("run_tool");
 
         assert!(outcome.is_error);
         assert_eq!(outcome.content, "unknown tool 'nope'");
@@ -140,7 +140,7 @@ mod tests {
         let conn = db::mock().into_connection();
 
         let outcome = run_tool("date_time", &json!({}), &user(), &conn, &MockTmdb::new(), &fixed_clock(2024, 1, 1, 12, 0, 0))
-            .await.ok().expect("run_tool");
+            .await.expect("run_tool");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"utc":"2024-01-01T12:00:00Z","timezone":"UTC"}"#);
@@ -153,7 +153,7 @@ mod tests {
         let conn = db::mock().append_query_results([Vec::<entities::media::Model>::new()]).into_connection();
 
         let outcome = run_tool("mia_details", &json!({ "ids": [7] }), &user(), &conn, &MockTmdb::new(), &fixed_clock(2024, 1, 1, 12, 0, 0))
-            .await.ok().expect("run_tool");
+            .await.expect("run_tool");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"media":[],"not_found":[7]}"#);
@@ -168,7 +168,7 @@ mod tests {
         tmdb.expect_search_multi().times(1).returning(|_| Ok(multi_results(vec![])));
 
         let outcome = run_tool("tmdb_search", &json!({ "query": "alien" }), &user(), &conn, &tmdb, &fixed_clock(2024, 1, 1, 12, 0, 0))
-            .await.ok().expect("run_tool");
+            .await.expect("run_tool");
 
         assert!(!outcome.is_error);
         assert_eq!(outcome.content, r#"{"results":[]}"#);
