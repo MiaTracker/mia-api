@@ -13,7 +13,7 @@ use integrations::openrouter::{Llm, LlmError, LlmEventStream, StopReason};
 use log::{error, warn};
 use sea_orm::sea_query::Query;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, DbConn, EntityTrait, QueryFilter, QueryOrder, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbConn, EntityTrait, QueryFilter, QueryOrder, TransactionTrait};
 use serde_json::{json, Value};
 use tokio::time::timeout;
 use views::conversations::ExchangeEvent;
@@ -84,8 +84,10 @@ impl Drop for CloseOnDrop<'_> {
     }
 }
 
-/// Marks every in-progress Exchange as failed `Interrupted` and closes their open LLM calls.
-/// Returns how many Exchanges it marked. Run at startup, before any Exchange can be running.
+/// Marks every in-progress Exchange as failed `Interrupted` and closes their open LLM calls, and
+/// closes every open title call the same way (`{"message": "interrupted"}`). Returns how many
+/// Exchanges it marked. Run at startup, before any job can be running: a title call still open
+/// then belongs to a title job the stop killed.
 pub async fn recover_interrupted(db: &DbConn, clock: &dyn Clock) -> Result<u64, SrvErr> {
     let now = clock.now().fixed_offset();
     let error = error_json(ExchangeFailure::Interrupted, "server stopped while the exchange was running".into())?;
@@ -102,7 +104,11 @@ pub async fn recover_interrupted(db: &DbConn, clock: &dyn Clock) -> Result<u64, 
             ..Default::default()
         })
         .filter(llm_calls::Column::CompletedAt.is_null())
-        .filter(llm_calls::Column::ExchangeId.in_subquery(in_progress))
+        .filter(
+            Condition::any()
+                .add(llm_calls::Column::ExchangeId.in_subquery(in_progress))
+                .add(llm_calls::Column::Purpose.eq(LlmCallPurpose::Title)),
+        )
         .exec(&tran)
         .await?;
     let marked = exchanges::Entity::update_many()
@@ -562,18 +568,18 @@ fn delta_parts(event: &ExchangeEvent) -> Option<(u32, &str)> {
 
 /// The error of a request or stream that stayed silent for `IDLE_TIMEOUT`. Having neither status
 /// nor error type, it classifies as `ProviderUnavailable`.
-fn idle_error() -> LlmError {
+pub(crate) fn idle_error() -> LlmError {
     LlmError { status: None, error_type: None, message: format!("no event for {} s", IDLE_TIMEOUT.as_secs()), response: None }
 }
 
 /// The error of a stream that ended without error before the model finished its message. Having
 /// neither status nor error type, it classifies as `ProviderUnavailable`.
-fn unfinished_error() -> LlmError {
+pub(crate) fn unfinished_error() -> LlmError {
     LlmError { status: None, error_type: None, message: "stream ended before the answer finished".into(), response: None }
 }
 
 /// A token count for an `i32` column; counts beyond its range are stored as `i32::MAX`.
-fn tokens(count: Option<u64>) -> Option<i32> {
+pub(crate) fn tokens(count: Option<u64>) -> Option<i32> {
     count.map(|count| i32::try_from(count).unwrap_or(i32::MAX))
 }
 
@@ -1380,6 +1386,9 @@ mod tests {
             status(ExchangeStatus::Failed),
             Value::from(json!({"key": "Interrupted", "debug_message": "server stopped while the exchange was running"})),
         ]);
-        assert_wrote(&log, r#"UPDATE "llm_calls""#, &[Value::from(json!({"message": "interrupted"}))]);
+        assert_wrote(&log, r#"UPDATE "llm_calls""#, &[
+            Value::from(json!({"message": "interrupted"})),
+            Value::from(sea_orm::ActiveEnum::to_value(&LlmCallPurpose::Title)),
+        ]);
     }
 }

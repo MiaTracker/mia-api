@@ -8,7 +8,7 @@ use std::sync::Arc;
 use common::postgres::database;
 use common::seed;
 use entities::prelude::{LlmCalls, Messages};
-use entities::sea_orm_active_enums::{ExchangeStatus, MessageRole};
+use entities::sea_orm_active_enums::{ExchangeStatus, LlmCallPurpose, MessageRole};
 use entities::{conversations, exchanges, llm_calls, messages};
 use futures::StreamExt;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -72,6 +72,29 @@ async fn recover_interrupted_marks_exchange_failed_and_closes_open_llm_call() {
 
 #[tokio::test]
 #[ignore = "requires docker"]
+async fn recover_interrupted_closes_open_title_call_when_server_stopped_during_title() {
+    let db = database().await;
+    let user = seed::user(&db, 1).await;
+    let titling = seed::conversation(&db, &user).await;
+    let titled = seed::conversation(&db, &user).await;
+    let finished = seed::exchange(&db, titled.id, ExchangeStatus::Completed).await;
+    let open_title = seed::title_call(&db, &user, titling.id, None).await;
+    let completed_title = seed::title_call(&db, &user, titled.id, Some(seed::chat_time())).await;
+    let exchange_call = seed::llm_call(&db, &user, finished.id).await;
+    let clock = fixed_clock(2024, 1, 2, 8, 0, 0);
+
+    let marked = chat::recover_interrupted(&db, &clock).await.ok().expect("recovering");
+
+    assert_eq!(marked, 0);
+    let title_after = llm_call(&db, open_title.id).await;
+    assert_eq!(title_after.error, Some(json!({"message": "interrupted"})));
+    assert_eq!(title_after.completed_at, Some(clock_time(&clock)));
+    assert_eq!(llm_call(&db, completed_title.id).await, completed_title, "the completed title call is untouched");
+    assert_eq!(llm_call(&db, exchange_call.id).await, exchange_call, "a call of a finished Exchange is untouched");
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
 async fn run_exchange_stops_quietly_when_conversation_deleted_mid_exchange() {
     let db = Arc::new(database().await);
     let user = seed::user(&db, 1).await;
@@ -124,6 +147,7 @@ async fn start_exchange_persists_answer_and_ledger_when_stream_completes() {
         db: db.clone(),
         store: Arc::new(services::test_support::InMemoryImageStore::new()),
         llm: Arc::new(llm),
+        title_llm: None,
         registry: registry.clone(),
         tmdb: Arc::new(MockTmdb::new()),
         clock: clock.clone(),
@@ -151,12 +175,61 @@ async fn start_exchange_persists_answer_and_ledger_when_stream_completes() {
     assert_eq!(events.last(), Some(&ExchangeEvent::Completed { exchange_id: details.exchanges[0].id }));
 }
 
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn create_persists_conversation_exchange_and_message_when_content_given() {
+    let db = Arc::new(database().await);
+    let user = seed::user(&db, 1).await;
+    let registry = Arc::new(ExchangeRegistry::new());
+    let clock = Arc::new(fixed_clock(2024, 1, 1, 12, 0, 0));
+    let jobs = InlineJobs::new(JobDeps {
+        db: db.clone(),
+        store: Arc::new(services::test_support::InMemoryImageStore::new()),
+        llm: Arc::new(with_answer(text_answer(&["Hello", ", world"], StopReason::EndTurn))),
+        title_llm: Some(Arc::new(with_answer(text_answer(&["Alien rewatch"], StopReason::EndTurn)))),
+        registry: registry.clone(),
+        tmdb: Arc::new(MockTmdb::new()),
+        clock: clock.clone(),
+    });
+
+    let subscription = chat::create(ExchangeCreate { content: "Hi".into() }, &user, &db, &registry, &jobs, &*clock)
+        .await.ok().expect("creating the Conversation");
+
+    let conversations = conversations::Entity::find().all(&*db).await.expect("querying conversations");
+    assert_eq!(conversations.len(), 1);
+    let conversation = &conversations[0];
+    assert_eq!(conversation.user_id, user.id);
+    assert_eq!(conversation.title.as_deref(), Some("Alien rewatch"));
+    assert_eq!((conversation.created_at, conversation.updated_at), (clock_time(&clock), clock_time(&clock)));
+    let details = chat::details(conversation.id, &user, &db).await.ok().expect("details");
+    assert_eq!(details.exchanges.len(), 1);
+    let exchange_id = details.exchanges[0].id;
+    assert_eq!(details.exchanges[0].status, ExchangeStatusView::Completed);
+    assert_eq!(exchange(&db, exchange_id).await.created_at, clock_time(&clock));
+    let stored = messages_of(&db, exchange_id).await;
+    assert_eq!(stored.iter().map(|message| message.role.clone()).collect::<Vec<_>>(), vec![MessageRole::User, MessageRole::Assistant]);
+    assert_eq!(stored[0].content, text("Hi"));
+    let title_calls = LlmCalls::find().filter(llm_calls::Column::Purpose.eq(LlmCallPurpose::Title)).all(&*db).await.expect("querying LLM calls");
+    assert_eq!(title_calls.len(), 1);
+    assert_eq!(title_calls[0].exchange_id, None);
+    assert_eq!(title_calls[0].conversation_id, Some(conversation.id));
+    let events: Vec<ExchangeEvent> = subscription.into_events().collect().await;
+    assert_eq!(events, vec![
+        ExchangeEvent::ConversationCreated { conversation_id: conversation.id, exchange_id },
+        ExchangeEvent::TextDelta { block: 0, text: "Hello, world".into() },
+        ExchangeEvent::Completed { exchange_id },
+        ExchangeEvent::Title { title: "Alien rewatch".into() },
+        ExchangeEvent::StreamEnd {},
+    ]);
+}
+
 /// Jobs that run `RunExchange` on the spot against `db`, answering with `llm`.
 fn inline_jobs(db: &Arc<DbConn>, registry: &Arc<ExchangeRegistry>, clock: &Arc<services::test_support::FixedClock>, llm: MockLlm) -> InlineJobs {
     InlineJobs::new(JobDeps {
         db: db.clone(),
         store: Arc::new(services::test_support::InMemoryImageStore::new()),
         llm: Arc::new(llm),
+        title_llm: None,
         registry: registry.clone(),
         tmdb: Arc::new(MockTmdb::new()),
         clock: clock.clone(),

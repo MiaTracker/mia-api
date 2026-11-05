@@ -40,6 +40,10 @@ pub(crate) async fn load_config() {
         fail!("Invalid config {}: {}", path.display(), err);
     }
 
+    if let Err(err) = config.openrouter.validate() {
+        fail!("Invalid config {}: {}", path.display(), err);
+    }
+
     set_config(config);
 }
 
@@ -110,7 +114,22 @@ pub struct OpenRouterConfiguration {
     pub reasoning: Option<ReasoningConfiguration>,
     /// Which providers OpenRouter may route to. Absent: `deny`.
     #[serde(default)]
-    pub data_policy: DataPolicy
+    pub data_policy: DataPolicy,
+    /// Model that titles conversations, cheaper than `model`. Absent: conversations are not titled.
+    #[serde(default)]
+    pub title_model: Option<String>
+}
+
+impl OpenRouterConfiguration {
+    /// Checks the values serde cannot: `title_model` must differ from `model`.
+    pub fn validate(&self) -> Result<(), String> {
+        match &self.title_model {
+            Some(title_model) if *title_model == self.model => {
+                Err("openrouter.title_model must differ from openrouter.model".into())
+            }
+            _ => Ok(())
+        }
+    }
 }
 
 /// How the upstream providers OpenRouter routes to may handle prompts.
@@ -332,5 +351,35 @@ mod tests {
     #[test]
     fn validate_succeeds_when_assistant_limits_are_defaults() {
         assert_eq!(AssistantConfiguration::default().validate(), Ok(()));
+    }
+
+    #[test]
+    fn openrouter_configuration_has_no_title_model_when_absent() {
+        let config: OpenRouterConfiguration = serde_yaml::from_str("api_key: k\nmodel: m\n").unwrap();
+
+        assert_eq!(config.title_model, None);
+    }
+
+    #[test]
+    fn openrouter_configuration_reads_title_model_when_present() {
+        let config: OpenRouterConfiguration = serde_yaml::from_str("api_key: k\nmodel: m\ntitle_model: t/m\n").unwrap();
+
+        assert_eq!(config.title_model, Some("t/m".to_string()));
+    }
+
+    #[test]
+    fn validate_fails_when_title_model_equals_model() {
+        let config: OpenRouterConfiguration = serde_yaml::from_str("api_key: k\nmodel: m\ntitle_model: m\n").unwrap();
+
+        assert_eq!(config.validate(), Err("openrouter.title_model must differ from openrouter.model".into()));
+    }
+
+    #[test]
+    fn validate_succeeds_when_title_model_absent_or_different() {
+        for text in ["api_key: k\nmodel: m\n", "api_key: k\nmodel: m\ntitle_model: t/m\n"] {
+            let config: OpenRouterConfiguration = serde_yaml::from_str(text).unwrap();
+
+            assert_eq!(config.validate(), Ok(()));
+        }
     }
 }

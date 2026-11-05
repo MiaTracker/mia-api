@@ -7,7 +7,7 @@ A personal movie and TV show tracker: each user keeps their own library of media
 ### Assistant
 
 **Conversation**:
-A titled, ordered thread of chat messages between one user and the LLM assistant.
+A titled, ordered thread of chat messages between one user and the LLM assistant; created together with its first **Exchange**.
 _Avoid_: Chat, session, thread
 
 **Exchange**:
@@ -38,6 +38,9 @@ Rich inline content (media cards, a map) inside an assistant **Message**, drawn 
 One request to the model provider, successful or failed; every request ever sent is recorded as one, kept as a permanent usage record that is never deleted, even after its content or its user is.
 _Avoid_: Request, completion, generation
 
+**Stream end**:
+The last event of every SSE stream the server ends; it says nothing more will come, not that the run succeeded.
+
 **Retry**:
 Resuming a failed **Exchange** from the point it failed: its **Partial message** is discarded and the failed **LLM call** is made again from scratch, keeping the Messages that already succeeded. The failed LLM call stays in the ledger. The Exchange also moves to the end of the **Conversation**: its creation time becomes the time of the Retry.
 
@@ -55,6 +58,7 @@ _Avoid_: Branch (conversations do not branch)
 - An **Exchange** contains an ordered list of **Messages**, starting with exactly one user **Message**
 - Every assistant **Message** is produced by exactly one **LLM call**; an LLM call produces at most one: a complete or **Partial message** once output arrives, none if it fails before any does
 - A **Conversation**'s title is produced by its own **LLM call**, outside any Exchange
+- A **Conversation**'s title is delivered on the stream of the request that created it; other streams never carry it
 - A **User** owns all their **LLM calls**, which outlive the Conversations, Exchanges and User they belonged to
 - An assistant **Message** that requests tools is followed by exactly one **Tool result** message answering all its calls
 - The history sent to the model leaves out failed **Exchanges**; the person still sees them in the **Conversation**

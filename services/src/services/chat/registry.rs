@@ -2,16 +2,42 @@
 //!
 //! The Exchange job calls `publish` only after the matching database write has committed. Clients
 //! `subscribe` and get everything published so far (`replay`) plus a live channel, atomically.
+//!
+//! Separately, it holds one title channel per Conversation, which the request that created the
+//! Conversation opens and the title job publishes to and closes.
 
+use futures::{Stream, StreamExt, stream};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::oneshot;
 use views::conversations::{DisplayBlock, ExchangeEvent};
 
 pub struct ExchangeSubscription {
     pub replay: Vec<ExchangeEvent>,
     /// `None` when the Exchange already published its terminal event.
     pub live: Option<UnboundedReceiver<ExchangeEvent>>,
+    /// The Conversation's title, on the stream of the request that created it; `None` on every other stream.
+    pub title: Option<oneshot::Receiver<String>>,
+}
+
+impl ExchangeSubscription {
+    /// The response's events: `replay`, then `live` until its channel closes, then the title if one
+    /// was published (held back until the Exchange's events end, whichever finished first), then
+    /// `StreamEnd`.
+    pub fn into_events(self) -> impl Stream<Item = ExchangeEvent> + Send {
+        let ExchangeSubscription { replay, live, title } = self;
+        let live = stream::iter(live).flat_map(|receiver| {
+            stream::unfold(receiver, |mut receiver| async move { receiver.recv().await.map(|event| (event, receiver)) })
+        });
+        // Polled only once `live` has ended, so the title always follows the Exchange's events.
+        let end = stream::once(async move {
+            let title = async move { title?.await.ok() }.await;
+            stream::iter(title.map(|title| ExchangeEvent::Title { title }).into_iter().chain([ExchangeEvent::StreamEnd {}]))
+        })
+        .flatten();
+        stream::iter(replay).chain(live).chain(end)
+    }
 }
 
 /// State of one running Exchange. A cancel handle will live here later.
@@ -26,6 +52,8 @@ struct Entry {
 #[derive(Default)]
 pub struct ExchangeRegistry {
     entries: Mutex<HashMap<i32, Arc<Mutex<Entry>>>>,
+    /// Title senders by Conversation id, from `open_title` until `publish_title` or `close_title`.
+    titles: Mutex<HashMap<i32, oneshot::Sender<String>>>,
 }
 
 impl ExchangeRegistry {
@@ -64,11 +92,11 @@ impl ExchangeRegistry {
             .collect();
         if let Some(terminal) = &entry.terminal {
             replay.push(terminal.clone());
-            return Some(ExchangeSubscription { replay, live: None });
+            return Some(ExchangeSubscription { replay, live: None, title: None });
         }
         let (sender, receiver) = unbounded_channel();
         entry.subscribers.push(sender);
-        Some(ExchangeSubscription { replay, live: Some(receiver) })
+        Some(ExchangeSubscription { replay, live: Some(receiver), title: None })
     }
 
     /// Call only after the database write behind `event` has committed. No-op when not open.
@@ -87,7 +115,9 @@ impl ExchangeRegistry {
                 }
             }
             ExchangeEvent::ToolCall { block, call } => *slot(&mut entry.blocks, *block) = Some(DisplayBlock::Tool(call.clone())),
-            ExchangeEvent::Completed { .. } | ExchangeEvent::Failed { .. } => entry.terminal = Some(event.clone())
+            ExchangeEvent::Completed { .. } | ExchangeEvent::Failed { .. } => entry.terminal = Some(event.clone()),
+            // Never published to an Exchange entry: these belong to the response (see `into_events`).
+            ExchangeEvent::ConversationCreated { .. } | ExchangeEvent::Title { .. } | ExchangeEvent::StreamEnd {} => return
         }
         entry.subscribers.retain(|subscriber| subscriber.send(event.clone()).is_ok());
     }
@@ -99,6 +129,28 @@ impl ExchangeRegistry {
 
     fn entry(&self, exchange_id: i32) -> Option<Arc<Mutex<Entry>>> {
         lock(&self.entries).get(&exchange_id).cloned()
+    }
+
+    /// Opens the Conversation's title channel, replacing any earlier one (whose receiver then
+    /// resolves as closed). A title published before the receiver is polled is kept for it.
+    pub fn open_title(&self, conversation_id: i32) -> oneshot::Receiver<String> {
+        let (sender, receiver) = oneshot::channel();
+        lock(&self.titles).insert(conversation_id, sender);
+        receiver
+    }
+
+    /// Sends the title and closes the channel. No-op when not open or when the receiver is gone.
+    pub fn publish_title(&self, conversation_id: i32, title: String) {
+        let sender = lock(&self.titles).remove(&conversation_id);
+        if let Some(sender) = sender {
+            // An error only means the receiver was dropped, so nobody is waiting for the title.
+            let _ = sender.send(title);
+        }
+    }
+
+    /// Closes the channel without a title, so the receiver resolves as closed. No-op when not open.
+    pub fn close_title(&self, conversation_id: i32) {
+        lock(&self.titles).remove(&conversation_id);
     }
 }
 
@@ -120,6 +172,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 mod tests {
     use super::*;
     use crate::test_support;
+    use futures::{FutureExt, StreamExt};
     use tokio::sync::mpsc::error::TryRecvError;
     use views::conversations::ToolCallView;
 
@@ -348,5 +401,137 @@ mod tests {
         registry.publish(1, failed.clone());
 
         assert_eq!(live.try_recv().unwrap(), failed);
+    }
+
+    fn title(title: &str) -> ExchangeEvent {
+        ExchangeEvent::Title { title: title.into() }
+    }
+
+    fn completed() -> ExchangeEvent {
+        ExchangeEvent::Completed { exchange_id: 1 }
+    }
+
+    #[tokio::test]
+    async fn open_title_delivers_title_when_published_before_receiver_polled() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        let receiver = registry.open_title(5);
+
+        registry.publish_title(5, "T".into());
+
+        assert_eq!(receiver.await, Ok("T".to_string()));
+    }
+
+    #[test]
+    fn publish_title_does_nothing_when_receiver_dropped() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        drop(registry.open_title(5));
+
+        registry.publish_title(5, "T".into());
+
+        registry.publish_title(5, "again".into());
+        registry.close_title(5);
+        assert!(lock(&registry.titles).is_empty());
+    }
+
+    #[tokio::test]
+    async fn close_title_resolves_receiver_as_closed_when_closed_without_publishing() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        let receiver = registry.open_title(5);
+
+        registry.close_title(5);
+
+        assert!(receiver.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn open_title_replaces_earlier_sender_when_opened_again() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        let first = registry.open_title(5);
+        let second = registry.open_title(5);
+
+        registry.publish_title(5, "T".into());
+
+        assert!(first.await.is_err());
+        assert_eq!(second.await, Ok("T".to_string()));
+    }
+
+    #[tokio::test]
+    async fn into_events_ends_with_stream_end_when_subscription_has_only_replay() {
+        test_support::init();
+        let subscription = ExchangeSubscription { replay: vec![delta(0, "Hi"), completed()], live: None, title: None };
+
+        let events: Vec<ExchangeEvent> = subscription.into_events().collect().await;
+
+        assert_eq!(events, vec![delta(0, "Hi"), completed(), ExchangeEvent::StreamEnd {}]);
+    }
+
+    #[tokio::test]
+    async fn into_events_yields_replay_live_then_stream_end_when_live_closes() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        registry.open(1);
+        registry.publish(1, delta(0, "a"));
+        let subscription = registry.subscribe(1).unwrap();
+        registry.publish(1, delta(0, "b"));
+        registry.publish(1, completed());
+        registry.close(1);
+
+        let events: Vec<ExchangeEvent> = subscription.into_events().collect().await;
+
+        assert_eq!(events, vec![delta(0, "a"), delta(0, "b"), completed(), ExchangeEvent::StreamEnd {}]);
+    }
+
+    #[tokio::test]
+    async fn into_events_yields_title_after_terminal_event_when_title_published_first() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        let (sender, live) = unbounded_channel();
+        let subscription = ExchangeSubscription { replay: vec![delta(0, "Hi")], live: Some(live), title: Some(registry.open_title(5)) };
+        registry.publish_title(5, "T".into());
+        sender.send(completed()).unwrap();
+        drop(sender);
+
+        let events: Vec<ExchangeEvent> = subscription.into_events().collect().await;
+
+        assert_eq!(events, vec![delta(0, "Hi"), completed(), title("T"), ExchangeEvent::StreamEnd {}]);
+    }
+
+    #[tokio::test]
+    async fn into_events_waits_for_title_when_exchange_ends_first() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        let (sender, live) = unbounded_channel();
+        let subscription = ExchangeSubscription { replay: Vec::new(), live: Some(live), title: Some(registry.open_title(5)) };
+        let mut events = std::pin::pin!(subscription.into_events());
+        sender.send(completed()).unwrap();
+
+        assert_eq!(events.next().await, Some(completed()));
+        drop(sender);
+        assert!(events.next().now_or_never().is_none());
+
+        registry.publish_title(5, "T".into());
+
+        assert_eq!(events.next().await, Some(title("T")));
+        assert_eq!(events.next().await, Some(ExchangeEvent::StreamEnd {}));
+        assert_eq!(events.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn into_events_skips_title_when_title_channel_closed_without_publishing() {
+        test_support::init();
+        let registry = ExchangeRegistry::new();
+        let (sender, live) = unbounded_channel();
+        let subscription = ExchangeSubscription { replay: Vec::new(), live: Some(live), title: Some(registry.open_title(5)) };
+        sender.send(completed()).unwrap();
+        drop(sender);
+        registry.close_title(5);
+
+        let events: Vec<ExchangeEvent> = subscription.into_events().collect().await;
+
+        assert_eq!(events, vec![completed(), ExchangeEvent::StreamEnd {}]);
     }
 }

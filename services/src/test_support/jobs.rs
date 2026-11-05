@@ -56,13 +56,14 @@ impl Jobs for InlineJobs {
     }
 }
 
-/// `JobDeps` for `db` and `store`, with a `MockLlm` and a `MockTmdb` expecting no calls, a new
-/// registry and the clock at 2024-01-01 12:00 UTC.
+/// `JobDeps` for `db` and `store`, with a `MockLlm` and a `MockTmdb` expecting no calls, no title
+/// model, a new registry and the clock at 2024-01-01 12:00 UTC.
 pub fn job_deps(db: Arc<DbConn>, store: Arc<dyn ImageStore>) -> JobDeps {
     JobDeps {
         db,
         store,
         llm: Arc::new(MockLlm::new()),
+        title_llm: None,
         registry: Arc::new(ExchangeRegistry::new()),
         tmdb: Arc::new(MockTmdb::new()),
         clock: Arc::new(fixed_clock(2024, 1, 1, 12, 0, 0)),
@@ -74,7 +75,7 @@ pub fn sizes(jobs: &[Job]) -> Vec<(i32, u32, u32)> {
     jobs.iter()
         .filter_map(|job| match job {
             Job::SaveImageSize { image_id, width, height, .. } => Some((*image_id, *width, *height)),
-            Job::RunExchange { .. } => None,
+            Job::RunExchange { .. } | Job::GenerateTitle { .. } => None,
         })
         .collect()
 }

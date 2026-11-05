@@ -3,9 +3,10 @@
 use chrono::{DateTime, FixedOffset, Utc};
 use entities::sea_orm_active_enums::{ExchangeStatus, MessageRole};
 use entities::{conversations, exchanges, messages};
+use infrastructure::config;
 use sea_orm::sea_query::{Expr, Func, Query};
 use sea_orm::ActiveValue::{NotSet, Set};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbConn, DbErr, EntityTrait, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, SqlErr, TransactionTrait};
 use serde_json::json;
 use views::conversations::{Conversation, ConversationDetails, ExchangeCreate, ExchangeError, ExchangeEvent, ExchangeStatusView, ExchangeView};
 use views::media::PageReq;
@@ -18,16 +19,41 @@ use crate::jobs::{Job, Jobs};
 
 const IN_PROGRESS_INDEX: &str = "idx_exchanges_one_in_progress";
 
-pub async fn create(user: &CurrentUser, db: &DbConn, clock: &dyn Clock) -> Result<Conversation, SrvErr> {
+/// Creates a Conversation with a first Exchange holding the user's message and starts running it,
+/// and, when titling is on, has a title generated for it. The returned subscription first replays
+/// `ConversationCreated`, then follows the Exchange, then carries the title.
+pub async fn create(params: ExchangeCreate, user: &CurrentUser, db: &DbConn, registry: &ExchangeRegistry, jobs: &dyn Jobs, clock: &dyn Clock) -> Result<ExchangeSubscription, SrvErr> {
+    if params.content.trim().is_empty() {
+        return Err(violation(RuleViolation::ExchangeContentEmpty));
+    }
+
     let now = clock.now().fixed_offset();
-    let model = conversations::ActiveModel {
+    let tran = db.begin().await?;
+    let conversation = conversations::ActiveModel {
         user_id: Set(user.id),
         title: NotSet,
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
-    };
-    Ok(conversation_view(model.insert(db).await?))
+    }
+    .insert(&tran)
+    .await?;
+    let conversation_id = conversation.id;
+    let exchange_id = insert_exchange(conversation_id, &params.content, now, &tran).await?;
+    tran.commit().await?;
+
+    registry.open(exchange_id);
+    let followed = registry.subscribe(exchange_id)
+        .ok_or_else(|| SrvErr::Internal(format!("exchange {exchange_id} is not open right after opening it")))?;
+    let titling = config().openrouter.title_model.is_some();
+    let title = titling.then(|| registry.open_title(conversation_id));
+    jobs.submit(Job::RunExchange { exchange_id }).await;
+    if titling {
+        jobs.submit(Job::GenerateTitle { conversation_id }).await;
+    }
+    // A new Exchange has nothing to replay yet, so this is just `ConversationCreated`.
+    let replay = std::iter::once(ExchangeEvent::ConversationCreated { conversation_id, exchange_id }).chain(followed.replay).collect();
+    Ok(ExchangeSubscription { replay, live: followed.live, title })
 }
 
 pub async fn index(page: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<Conversation>, SrvErr> {
@@ -97,7 +123,14 @@ pub async fn start_exchange(conversation_id: i32, params: ExchangeCreate, user: 
     }
 
     let now = clock.now().fixed_offset();
-    let exchange_id = insert_exchange(conversation_id, &params.content, now, db).await?;
+    let tran = db.begin().await?;
+    let exchange_id = insert_exchange(conversation_id, &params.content, now, &tran).await?;
+    conversations::Entity::update_many()
+        .set(conversations::ActiveModel { updated_at: Set(now), ..Default::default() })
+        .filter(conversations::Column::Id.eq(conversation_id))
+        .exec(&tran)
+        .await?;
+    tran.commit().await?;
 
     registry.open(exchange_id);
     let subscription = registry.subscribe(exchange_id)
@@ -160,7 +193,7 @@ pub async fn subscribe(conversation_id: i32, exchange_id: i32, user: &CurrentUse
         }
         ExchangeStatus::InProgress => {}
     }
-    Ok(ExchangeSubscription { replay, live: None })
+    Ok(ExchangeSubscription { replay, live: None, title: None })
 }
 
 /// True when `err` is a violation of the unique index that allows one in-progress Exchange per Conversation.
@@ -172,16 +205,16 @@ fn violation(violation: RuleViolation) -> SrvErr {
     SrvErr::RuleViolation(vec![violation])
 }
 
-/// Inserts the in-progress Exchange, the user's Message and the Conversation's `updated_at` in one transaction.
-async fn insert_exchange(conversation_id: i32, content: &str, now: DateTime<FixedOffset>, db: &DbConn) -> Result<i32, SrvErr> {
-    let tran = db.begin().await?;
+/// Inserts, in `tran`, the Conversation's in-progress Exchange and its user Message holding
+/// `content`. Returns the Exchange's id.
+async fn insert_exchange(conversation_id: i32, content: &str, now: DateTime<FixedOffset>, tran: &DatabaseTransaction) -> Result<i32, SrvErr> {
     let exchange = exchanges::ActiveModel {
         conversation_id: Set(conversation_id),
         status: Set(ExchangeStatus::InProgress),
         created_at: Set(now),
         ..Default::default()
     }
-    .insert(&tran)
+    .insert(tran)
     .await
     .map_err(conflict_or_db)?;
     messages::ActiveModel {
@@ -191,14 +224,8 @@ async fn insert_exchange(conversation_id: i32, content: &str, now: DateTime<Fixe
         created_at: Set(now),
         ..Default::default()
     }
-    .insert(&tran)
+    .insert(tran)
     .await?;
-    conversations::Entity::update_many()
-        .set(conversations::ActiveModel { updated_at: Set(now), ..Default::default() })
-        .filter(conversations::Column::Id.eq(conversation_id))
-        .exec(&tran)
-        .await?;
-    tran.commit().await?;
     Ok(exchange.id)
 }
 
@@ -327,24 +354,60 @@ mod tests {
         json!([{"type": "text", "text": text}])
     }
 
+    /// The mock DB of a successful `create` of Conversation 3 with Exchange 9: the three inserts.
+    fn create_db() -> sea_orm::DatabaseConnection {
+        test_support::db::mock()
+            .append_query_results([[conversation_model(3, 1)]])
+            .append_query_results([[exchange_model(9, 3, ExchangeStatus::InProgress)]])
+            .append_query_results([[message_model(1, 9, MessageRole::User, text(" Hi "))]])
+            .into_connection()
+    }
+
+    #[tokio::test]
+    async fn create_fails_with_content_empty_when_content_is_whitespace() {
+        test_support::init();
+        let db = test_support::db::mock().into_connection();
+        let jobs = RecordingJobs::new();
+
+        let result = create(ExchangeCreate { content: " \n\t".into() }, &user(), &db, &ExchangeRegistry::new(), &jobs, &fixed_clock(2026, 1, 1, 0, 0, 0)).await;
+
+        assert_single_violation(result, |v| matches!(v, RuleViolation::ExchangeContentEmpty));
+        assert_statement_count(&test_support::db::log(db), 0);
+        assert!(jobs.take().is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_returns_ids_and_submits_both_jobs_when_content_given() {
+        test_support::init();
+        let db = create_db();
+        let jobs = RecordingJobs::new();
+        let registry = ExchangeRegistry::new();
+
+        let subscription = create(ExchangeCreate { content: " Hi ".into() }, &user(), &db, &registry, &jobs, &fixed_clock(2026, 3, 4, 5, 6, 7))
+            .await.ok().expect("create should succeed");
+
+        assert_eq!(subscription.replay, vec![ExchangeEvent::ConversationCreated { conversation_id: 3, exchange_id: 9 }]);
+        assert!(subscription.live.is_some());
+        registry.publish_title(9, "keyed by the Exchange".into());
+        registry.publish_title(3, "T".into());
+        assert_eq!(subscription.title.expect("title channel").await, Ok("T".to_string()), "the title channel is keyed by the Conversation id");
+        assert!(matches!(jobs.take().as_slice(), [Job::RunExchange { exchange_id: 9 }, Job::GenerateTitle { conversation_id: 3 }]));
+        let log = test_support::db::log(db);
+        assert_wrote(&log, r#"INSERT INTO "messages""#, &[Value::from(text(" Hi "))]);
+    }
+
     #[tokio::test]
     async fn create_sets_timestamps_from_clock() {
         test_support::init();
         let clock = fixed_clock(2026, 3, 4, 5, 6, 7);
-        let stored = conversations::Model {
-            created_at: clock.now().fixed_offset(),
-            updated_at: clock.now().fixed_offset(),
-            ..conversation_model(5, 1)
-        };
-        let db = test_support::db::mock().append_query_results([[stored]]).into_connection();
+        let db = create_db();
 
-        let created = create(&user(), &db, &clock).await.ok().expect("create should succeed");
+        create(ExchangeCreate { content: " Hi ".into() }, &user(), &db, &ExchangeRegistry::new(), &RecordingJobs::new(), &clock)
+            .await.ok().expect("create should succeed");
 
-        assert_eq!(created.id, 5);
-        assert_eq!(created.created_at, clock.now());
-        assert_eq!(created.updated_at, clock.now());
         let log = test_support::db::log(db);
-        assert_wrote(&log, r#"INSERT INTO "conversations""#, &[Value::from(1), Value::from(clock.now().fixed_offset())]);
+        let now = Value::from(clock.now().fixed_offset());
+        assert_wrote(&log, r#"INSERT INTO "conversations""#, &[Value::from(1), now.clone(), now]);
     }
 
     #[tokio::test]
@@ -618,6 +681,27 @@ mod tests {
         assert_eq!(statements_starting_with(&log, r#"DELETE FROM "messages""#), 1);
         let role = Value::from(sea_orm::ActiveEnum::to_value(&MessageRole::Assistant));
         assert_wrote(&log, r#"DELETE FROM "messages""#, &[role, Value::from(7)]);
+    }
+
+    #[tokio::test]
+    async fn retry_exchange_succeeds_when_title_channel_open() {
+        test_support::init();
+        let db = retry_db(vec![
+            message_model(1, 7, MessageRole::User, text("Hi")),
+            message_model(2, 7, MessageRole::Assistant, text("Hel")),
+        ]);
+        let jobs = RecordingJobs::new();
+        let registry = ExchangeRegistry::new();
+        let _title = registry.open_title(3);
+
+        let subscription = retry_exchange(3, 7, &user(), &db, &registry, &jobs, &fixed_clock(2026, 3, 4, 5, 6, 7))
+            .await.ok().expect("retry_exchange should succeed");
+
+        assert_eq!(subscription.replay, vec![ExchangeEvent::TextDelta { block: 0, text: "Hel".into() }]);
+        assert!(subscription.replay.iter().all(|event| !matches!(event, ExchangeEvent::Title { .. })));
+        assert!(subscription.title.is_none());
+        assert!(subscription.live.is_some());
+        assert!(matches!(jobs.take().as_slice(), [Job::RunExchange { exchange_id: 7 }]));
     }
 
     #[tokio::test]

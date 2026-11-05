@@ -14,7 +14,7 @@ use tower::ServiceBuilder;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use ::infrastructure::config;
-use services::infrastructure::{Clock, FsImageStore, ImageStore, openrouter_llm, OsRandom, Random, SystemClock, Tmdb, TmdbClient};
+use services::infrastructure::{Clock, FsImageStore, ImageStore, openrouter_llm, openrouter_title_llm, OsRandom, Random, SystemClock, Tmdb, TmdbClient};
 use services::chat::ExchangeRegistry;
 use services::jobs::{JobDeps, Jobs, TokioJobs};
 use crate::config::routes;
@@ -46,7 +46,7 @@ pub async fn launch() {
     let llm = openrouter_llm(&config().openrouter);
     let registry = Arc::new(ExchangeRegistry::new());
     let jobs: Arc<dyn Jobs> = Arc::new(TokioJobs::new(JobDeps {
-        db: conn.clone(), store: image_store.clone(), llm: llm.clone(), registry: registry.clone(), tmdb: tmdb.clone(), clock: clock.clone(),
+        db: conn.clone(), store: image_store.clone(), llm: llm.clone(), title_llm: openrouter_title_llm(&config().openrouter), registry: registry.clone(), tmdb: tmdb.clone(), clock: clock.clone(),
     }));
     let scheduler_jobs = jobs.clone();
     let scheduler_clock = clock.clone();

@@ -15,6 +15,7 @@ use sea_orm::DbConn;
 use tokio_util::task::TaskTracker;
 use crate::chat::exchange::run_exchange;
 use crate::chat::registry::ExchangeRegistry;
+use crate::chat::title::generate_title;
 use crate::infrastructure::{Clock, ImageStore, SrvErr, Tmdb};
 use crate::images;
 
@@ -35,6 +36,8 @@ pub enum Job {
     },
     /// Stream the model's answer for Exchange `exchange_id`, store it and end the Exchange.
     RunExchange { exchange_id: i32 },
+    /// Ask the title model for a title for Conversation `conversation_id`, store and publish it.
+    GenerateTitle { conversation_id: i32 },
 }
 
 impl Job {
@@ -45,6 +48,7 @@ impl Job {
                 format!("SaveImageSize (image {image_id}, {width}x{height})")
             }
             Job::RunExchange { exchange_id } => format!("RunExchange (exchange {exchange_id})"),
+            Job::GenerateTitle { conversation_id } => format!("GenerateTitle (conversation {conversation_id})"),
         }
     }
 }
@@ -67,6 +71,8 @@ pub struct JobDeps {
     pub db: Arc<DbConn>,
     pub store: Arc<dyn ImageStore>,
     pub llm: Arc<dyn Llm>,
+    /// The model that titles Conversations; `None` when titling is off.
+    pub title_llm: Option<Arc<dyn Llm>>,
     pub registry: Arc<ExchangeRegistry>,
     pub tmdb: Arc<dyn Tmdb>,
     pub clock: Arc<dyn Clock>,
@@ -81,6 +87,13 @@ pub async fn run(job: Job, deps: &JobDeps) -> Result<(), SrvErr> {
         }
         Job::RunExchange { exchange_id } => {
             run_exchange(exchange_id, &deps.db, deps.llm.as_ref(), &deps.registry, deps.tmdb.as_ref(), deps.clock.as_ref()).await
+        }
+        Job::GenerateTitle { conversation_id } => {
+            match &deps.title_llm {
+                Some(title_llm) => generate_title(conversation_id, &deps.db, title_llm.as_ref(), &deps.registry, deps.clock.as_ref()).await,
+                None => deps.registry.close_title(conversation_id),
+            }
+            Ok(())
         }
     }
 }
@@ -145,5 +158,24 @@ mod tests {
     fn job_debug_names_exchange_when_run_exchange_formatted() {
         crate::test_support::init();
         assert_eq!(format!("{:?}", Job::RunExchange { exchange_id: 7 }), "RunExchange (exchange 7)");
+    }
+
+    #[test]
+    fn describe_names_conversation_when_generate_title() {
+        crate::test_support::init();
+        assert_eq!(format!("{:?}", Job::GenerateTitle { conversation_id: 4 }), "GenerateTitle (conversation 4)");
+    }
+
+    #[tokio::test]
+    async fn run_closes_title_channel_when_no_title_model_configured() {
+        crate::test_support::init();
+        let db = crate::test_support::db::mock().into_connection();
+        let deps = crate::test_support::jobs::job_deps(Arc::new(db), Arc::new(crate::test_support::InMemoryImageStore::new()));
+        let receiver = deps.registry.open_title(4);
+
+        let result = run(Job::GenerateTitle { conversation_id: 4 }, &deps).await;
+
+        assert!(result.is_ok());
+        assert!(matches!(receiver.now_or_never(), Some(Err(_))), "title channel not closed");
     }
 }

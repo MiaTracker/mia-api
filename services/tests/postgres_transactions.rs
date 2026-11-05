@@ -9,7 +9,7 @@ mod common;
 use common::postgres::database;
 use common::seed;
 use common::seed::fail_on;
-use entities::prelude::{Genres, Languages, Logs, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
+use entities::prelude::{Conversations, Exchanges, Genres, Languages, Logs, Media, MediaGenres, MediaTags, Sources, Tags, Titles};
 use entities::sea_orm_active_enums::MediaType;
 use entities::{media, titles};
 use integrations::tmdb::views::Languages as TmdbLanguage;
@@ -17,6 +17,7 @@ use sea_orm::{ColumnTrait, DbConn, EntityTrait, QueryFilter, QueryOrder};
 use services::test_support::tmdb::genre_list;
 use services::test_support::MockTmdb;
 use services::{genres, logs, masterdata, media as media_service, movies, series, sources, tags, titles as titles_service};
+use views::conversations::ExchangeCreate;
 use views::genres::GenreCreate;
 use views::logs::{LogCreate, LogUpdate};
 use views::media::MediaType as ViewMediaType;
@@ -323,4 +324,22 @@ async fn media_delete_w_source_keeps_media_when_deleting_orphaned_tags_fails() {
 
     assert!(result.is_err());
     assert!(Media::find_by_id(movie.id).one(&db).await.expect("querying media").is_some(), "the media deletion is rolled back");
+}
+
+#[tokio::test]
+#[ignore = "requires docker"]
+async fn create_rolls_back_conversation_when_message_insert_fails() {
+    let db = database().await;
+    let user = seed::user(&db, 1).await;
+    fail_on(&db, "messages", "INSERT").await;
+    let registry = services::chat::ExchangeRegistry::new();
+    let jobs = services::test_support::RecordingJobs::new();
+
+    let result = services::chat::create(ExchangeCreate { content: "Hi".into() }, &user, &db, &registry, &jobs,
+        &services::test_support::fixed_clock(2024, 1, 1, 12, 0, 0)).await;
+
+    assert!(result.is_err());
+    assert_eq!(seed::count(&db, Conversations).await, 0, "the new Conversation is rolled back");
+    assert_eq!(seed::count(&db, Exchanges).await, 0, "the new Exchange is rolled back");
+    assert!(jobs.take().is_empty());
 }

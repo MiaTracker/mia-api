@@ -86,7 +86,10 @@ pub enum ExchangeEvent {
     ThinkingDelta { block: u32, text: String },
     Completed { exchange_id: i32 },
     ToolCall { block: u32, #[serde(flatten)] call: ToolCallView },
-    Failed { exchange_id: i32, key: String, debug_message: String }
+    Failed { exchange_id: i32, key: String, debug_message: String },
+    ConversationCreated { conversation_id: i32, exchange_id: i32 },
+    Title { title: String },
+    StreamEnd {}
 }
 
 impl ExchangeEvent {
@@ -106,7 +109,10 @@ impl ExchangeEvent {
             ExchangeEvent::ThinkingDelta { .. } => "thinking_delta",
             ExchangeEvent::ToolCall { .. } => "tool_call",
             ExchangeEvent::Completed { .. } => "exchange_completed",
-            ExchangeEvent::Failed { .. } => "exchange_failed"
+            ExchangeEvent::Failed { .. } => "exchange_failed",
+            ExchangeEvent::ConversationCreated { .. } => "conversation_created",
+            ExchangeEvent::Title { .. } => "title",
+            ExchangeEvent::StreamEnd { .. } => "stream_end"
         }
     }
 }
@@ -194,5 +200,29 @@ mod tests {
         let event = ExchangeEvent::replay(1, DisplayBlock::Text { text: "Hi".into() });
 
         assert_eq!(event, ExchangeEvent::TextDelta { block: 1, text: "Hi".into() });
+    }
+
+    #[test]
+    fn exchange_event_serializes_both_ids_when_conversation_created() {
+        let event = ExchangeEvent::ConversationCreated { conversation_id: 4, exchange_id: 9 };
+
+        assert_eq!(serde_json::to_value(&event).unwrap(), json!({"conversation_id": 4, "exchange_id": 9}));
+        assert_eq!(event.name(), "conversation_created");
+    }
+
+    #[test]
+    fn exchange_event_serializes_title_when_title() {
+        let event = ExchangeEvent::Title { title: "Alien rewatch".into() };
+
+        assert_eq!(serde_json::to_value(&event).unwrap(), json!({"title": "Alien rewatch"}));
+        assert_eq!(event.name(), "title");
+    }
+
+    #[test]
+    fn exchange_event_serializes_empty_object_when_stream_end() {
+        let event = ExchangeEvent::StreamEnd {};
+
+        assert_eq!(serde_json::to_value(&event).unwrap(), json!({}));
+        assert_eq!(event.name(), "stream_end");
     }
 }

@@ -12,6 +12,7 @@ tmdb:
 openrouter:
   api_key: "some key"
   model: 'openrouter/free'
+  title_model: 'some cheaper model'  # optional; titles conversations with a cheaper model, must differ from model; absent disables titling
   max_tokens: 1500
   reasoning:            # optional; absent disables reasoning
     effort: low         # low | medium | high | xhigh | max

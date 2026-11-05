@@ -53,6 +53,7 @@ openrouter:
   reasoning:          # optional; absent disables reasoning
     effort: medium        # low | medium | high | xhigh | max
   data_policy: deny     # optional, default deny: allow (any provider) | deny (no prompt collection) | zdr (zero retention); free models need allow
+  title_model: <model>  # optional; titles conversations with a cheaper model, must differ from model; absent disables titling
 assistant:            # optional; each limit defaults as shown and must be at least 1
   mia_search_limit: 30    # most results per page of one mia_search call (also the default page size)
   mia_details_limit: 60   # ids of one mia_details call

@@ -383,3 +383,9 @@ pub fn llm_call_model(id: i32, exchange_id: i32) -> llm_calls::Model {
         completed_at: None,
     }
 }
+
+/// An open `title` LLM call of `conversation_id` (user 1) to `test/model`, with no Exchange: no
+/// result yet, created at a fixed time.
+pub fn title_llm_call_model(id: i32, conversation_id: i32) -> llm_calls::Model {
+    llm_calls::Model { conversation_id: Some(conversation_id), exchange_id: None, purpose: LlmCallPurpose::Title, ..llm_call_model(id, 0) }
+}

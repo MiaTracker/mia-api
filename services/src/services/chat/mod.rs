@@ -5,6 +5,7 @@ pub mod exchange;
 pub mod failure;
 pub mod history;
 pub mod registry;
+pub mod title;
 pub mod tools;
 
 pub use conversations::*;

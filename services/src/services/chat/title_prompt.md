@@ -1,0 +1,1 @@
+Write a short title, at most six words, for a conversation that begins with the message the user gives you. Write it in the language of the message. Answer with the title only: no quotes, no full stop at the end, no explanation.

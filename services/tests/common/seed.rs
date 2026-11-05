@@ -281,6 +281,27 @@ pub async fn llm_call(db: &DbConn, user: &CurrentUser, exchange_id: i32) -> llm_
     }.insert(db).await.expect("inserting LLM call")
 }
 
+/// A title call for the Conversation (no Exchange), open unless `completed_at` is given.
+pub async fn title_call(db: &DbConn, user: &CurrentUser, conversation_id: i32, completed_at: Option<DateTime<FixedOffset>>) -> llm_calls::Model {
+    llm_calls::ActiveModel {
+        id: NotSet,
+        user_id: Set(Some(user.id)),
+        conversation_id: Set(Some(conversation_id)),
+        exchange_id: Set(None),
+        purpose: Set(LlmCallPurpose::Title),
+        model: Set("test/title-model".into()),
+        stop_reason: Set(completed_at.map(|_| "end_turn".into())),
+        input_tokens: Set(None),
+        output_tokens: Set(None),
+        cache_read_tokens: Set(None),
+        cache_creation_tokens: Set(None),
+        provider_request_id: Set(None),
+        error: Set(None),
+        created_at: Set(chat_time()),
+        completed_at: Set(completed_at),
+    }.insert(db).await.expect("inserting title call")
+}
+
 pub async fn count<E: EntityTrait>(db: &DbConn, _entity: E) -> u64 where E::Model: Sync {
     E::find().count(db).await.expect("counting rows")
 }

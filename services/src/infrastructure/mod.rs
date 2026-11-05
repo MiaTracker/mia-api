@@ -12,7 +12,7 @@ pub mod constants;
 
 pub use srv_err::*;
 pub use clock::{Clock, SystemClock};
-pub use llm::openrouter_llm;
+pub use llm::{openrouter_llm, openrouter_title_llm, TITLE_MAX_TOKENS};
 pub use random::{OsRandom, Random};
 pub use image_store::{FsImageStore, ImageStore};
 pub use rule_violation::*;
