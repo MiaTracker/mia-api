@@ -1,6 +1,6 @@
 use crate::infrastructure::{AppState, IntoApiResponse};
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
 use views::api::ApiErrView;
@@ -8,8 +8,9 @@ use views::api::{MaybeRouteType, RouteType};
 use views::images::ImageCandidate;
 use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate};
 use views::media::{MediaCreateParams, MediaIndex, MediaSourceCreate, MediaSourceDelete, MediaType, MovieDeletePathParams, PageReq, SearchParams, SearchQuery, SearchResults};
-use views::movies::{MovieDetails, MovieMetadata};
+use views::movies::{MovieDetails, MovieMetadata, MoviePreview};
 use views::users::CurrentUser;
+use services::media_preview::Preview;
 
 #[utoipa::path(
     post,
@@ -134,6 +135,34 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
             Some(details) => { (StatusCode::OK, Some(details)) }
         }
     })
+}
+
+#[utoipa::path(
+    get,
+    operation_id = "movies::preview",
+    path = "/movies/preview/{tmdb_id}",
+    params(
+        ("tmdb_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "Movie details from TMDB, for a movie that is not in the library", body = MoviePreview),
+        (status = 303, description = "The movie is in the library already; the body is its id and Location points to its details", body = i32),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "TMDB does not know the movie"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn preview(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(tmdb_id): Path<i32>) -> impl IntoResponse {
+    match services::movies::preview(tmdb_id, &user, &state.conn, state.tmdb.as_ref()).await {
+        Ok(Preview::InLibrary(id)) => (StatusCode::SEE_OTHER, [(header::LOCATION, format!("/movies/{id}"))], Json(id)).into_response(),
+        Ok(Preview::New(preview)) => (StatusCode::OK, Json(preview)).into_response(),
+        Err(err) => {
+            let api_err: views::api::ApiErr = (&err).into();
+            api_err.into_response()
+        }
+    }
 }
 
 #[utoipa::path(

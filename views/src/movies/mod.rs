@@ -1,5 +1,7 @@
 mod movie_details;
 mod movie_metadata;
+mod movie_preview;
 
 pub use movie_details::*;
 pub use movie_metadata::*;
+pub use movie_preview::*;

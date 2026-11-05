@@ -10,6 +10,7 @@ pub mod titles;
 pub mod sources;
 pub mod media;
 pub mod media_details;
+pub mod media_preview;
 pub mod watchlist;
 pub mod logset;
 pub mod app_tokens;

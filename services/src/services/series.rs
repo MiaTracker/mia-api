@@ -11,7 +11,9 @@ use sea_orm::FromQueryResult;
 use std::collections::HashMap;
 use views::images::Image;
 use entities::{episodes, functions, genres, image_sizes, media, media_genres, seasons, series, series_locks, titles};
-use integrations::tmdb::views::{SeasonDetails, SeriesTitle, TmdbEpisode};
+use integrations::tmdb::views::{SeasonDetails, SeriesDetails, SeriesTitle, SeriesTitles, TmdbEpisode};
+use views::series::SeriesPreview;
+use crate::services::media_preview::{library_id, load_genres, load_language, non_empty, parse_date, tmdb_error, tmdb_images, Preview};
 use views::users::CurrentUser;
 use crate::infrastructure::{constants, Clock, ImageStore, Random, RuleViolation, SrvErr, Tmdb};
 use crate::jobs::Jobs;
@@ -108,18 +110,11 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tm
         id: NotSet,
         media_id: Set(inserted_media.id),
         primary: Set(true),
-        title: Set(tmdb_series.name)
+        title: Set(tmdb_series.name.clone())
     };
     model.insert(&tran).await?;
 
-    let filtered_titles = alt_titles.results.iter().filter(|x| {
-        if x.iso_3166_1 == constants::TMDB_3166_1 { return true }
-        if let Some(countries) = &tmdb_series.production_countries {
-            return countries.iter().any(|y| { y.iso_3166_1 == x.iso_3166_1 })
-        }
-        true
-    }).collect::<Vec<&SeriesTitle>>();
-    for title in filtered_titles {
+    for title in relevant_titles(&alt_titles, &tmdb_series) {
         let model = titles::ActiveModel {
             id: NotSet,
             media_id: Set(inserted_media.id),
@@ -131,6 +126,55 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tm
 
     tran.commit().await?;
     Ok((true, inserted_media.id))
+}
+
+/// The alternative titles of `series` worth keeping: those for the US and for the countries the
+/// series was produced in (all of them when TMDB lists no production countries).
+fn relevant_titles<'a>(titles: &'a SeriesTitles, series: &SeriesDetails) -> Vec<&'a SeriesTitle> {
+    titles.results.iter().filter(|x| {
+        if x.iso_3166_1 == constants::TMDB_3166_1 { return true }
+        if let Some(countries) = &series.production_countries {
+            return countries.iter().any(|y| { y.iso_3166_1 == x.iso_3166_1 })
+        }
+        true
+    }).collect()
+}
+
+/// What TMDB says about series `tmdb_id`, for a series that is not in the user's library; or the id
+/// of the user's series when it is, in which case TMDB is not called. Writes nothing. The season and
+/// episode counts are TMDB's, and no season is fetched. Fails with `MasterdataOutdated` when a genre
+/// of the series is not in the masterdata, as `create` does, and with `NotFound` when TMDB does not
+/// know the series. At most 3 queries.
+pub async fn preview(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tmdb) -> Result<Preview<SeriesPreview>, SrvErr> {
+    if let Some(id) = library_id(tmdb_id, MediaType::Series, user, db).await? {
+        return Ok(Preview::InLibrary(id));
+    }
+
+    let tmdb_series = tmdb.series_details(tmdb_id).await.map_err(tmdb_error)?;
+    let titles = tmdb.series_alternative_titles(tmdb_id).await.map_err(tmdb_error)?;
+
+    let genres = load_genres(&tmdb_series.genres, MediaType::Series, db).await?;
+    let original_language = load_language(tmdb_series.original_language.as_deref(), db).await?;
+    let (poster, backdrop) = tmdb_images(&tmdb_series.poster_path, &tmdb_series.backdrop_path);
+    let alternative_titles = relevant_titles(&titles, &tmdb_series).into_iter()
+        .map(|t| t.title.clone()).collect();
+
+    Ok(Preview::New(SeriesPreview {
+        poster,
+        backdrop,
+        title: tmdb_series.name,
+        alternative_titles,
+        first_air_date: parse_date(tmdb_series.first_air_date.as_deref()),
+        number_of_episodes: tmdb_series.number_of_episodes,
+        number_of_seasons: tmdb_series.number_of_seasons,
+        status: tmdb_series.status,
+        r#type: tmdb_series.r#type,
+        overview: non_empty(tmdb_series.overview),
+        tmdb_id: tmdb_series.id,
+        tmdb_vote_average: tmdb_series.vote_average,
+        original_language,
+        genres,
+    }))
 }
 
 pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
@@ -794,6 +838,7 @@ mod tests {
     use sea_orm::Value;
     use uuid::Uuid;
     use super::*;
+    use crate::services::media_preview::Preview;
     use crate::test_support;
     use crate::test_support::db::{assert_no_statement_starting_with, assert_statement_count, assert_wrote, deleted, with_saved_tmdb_image};
     use crate::test_support::fixtures;
@@ -1127,6 +1172,156 @@ mod tests {
         let log = test_support::db::log(db);
         assert_statement_count(&log, 1);
         assert_no_statement_starting_with(&log, "INSERT");
+    }
+
+    // -------------------------------------------------------------------- preview
+
+    /// A TMDB answering `series_details` and `series_alternative_titles` once each, for series 70
+    /// with two genres, a poster, a backdrop, TMDB's season and episode counts and production in
+    /// France. The alternative titles are one each for US, FR and DE.
+    fn full_series_tmdb() -> MockTmdb {
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_series_details().withf(|id| *id == 70).times(1).returning(|id| Ok(TmdbSeriesDetails {
+            genres: vec![TmdbGenre { id: 18, name: "Drama".into() }, TmdbGenre { id: 9648, name: "Mystery".into() }],
+            number_of_seasons: Some(3),
+            number_of_episodes: Some(30),
+            production_countries: Some(vec![ProductionCountry { iso_3166_1: "FR".into(), name: "France".into() }]),
+            ..test_support::tmdb::series_details(id)
+        }));
+        tmdb.expect_series_alternative_titles().withf(|id| *id == 70).times(1).returning(|id| Ok(SeriesTitles {
+            id,
+            results: ["US", "FR", "DE"].iter().map(|country| SeriesTitle {
+                iso_3166_1: country.to_string(), title: format!("Title {country}"), r#type: String::new(),
+            }).collect(),
+        }));
+        tmdb
+    }
+
+    #[tokio::test]
+    async fn preview_returns_library_id_without_calling_tmdb_when_series_already_added() {
+        test_support::init();
+        let tmdb = MockTmdb::new();
+        let db = test_support::db::mock()
+            .append_query_results([[media::Model { tmdb_id: Some(70), ..fixtures::series_media_model(5, 1) }]])
+            .into_connection();
+
+        let result = preview(70, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Ok(Preview::InLibrary(5))));
+        let log = test_support::db::log(db);
+        assert_statement_count(&log, 1);
+        assert_wrote(&log, "SELECT", &[Value::from(70), Value::from(1)]);
+    }
+
+    #[tokio::test]
+    async fn preview_returns_tmdb_data_when_series_not_in_library() {
+        test_support::init();
+        let tmdb = full_series_tmdb();
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .append_query_results([[series_genre(5, 18, "Drama"), series_genre(6, 9648, "Mystery")]])
+            .append_query_results([[fixtures::language_model("en", "English")]])
+            .into_connection();
+
+        let result = preview(70, &fixtures::user(), &db, &tmdb).await;
+
+        let Ok(Preview::New(series)) = result else { panic!("expected a preview") };
+        assert_eq!(series.tmdb_id, 70);
+        assert_eq!(series.title, "Series 70");
+        // Titles of the US and of the production countries, as when the series is created.
+        assert_eq!(series.alternative_titles.iter().map(String::as_str).collect::<Vec<_>>(), vec!["Title US", "Title FR"]);
+        assert_eq!(series.first_air_date, Some(date(2024, 1, 1)));
+        assert_eq!((series.number_of_seasons, series.number_of_episodes), (Some(3), Some(30)));
+        assert_eq!(series.status.as_deref(), Some("Ended"));
+        assert_eq!(series.r#type.as_deref(), Some("Scripted"));
+        assert_eq!(series.overview.as_deref(), Some("Overview of series 70"));
+        assert_eq!(series.tmdb_vote_average, Some(7.5));
+        assert_eq!(series.original_language.as_ref().map(|l| l.english_name.as_str()), Some("English"));
+        assert_eq!(series.genres.iter().map(|g| (g.id, g.name.as_str())).collect::<Vec<_>>(), vec![(5, "Drama"), (6, "Mystery")]);
+        let poster = series.poster.expect("poster should be set");
+        assert_eq!(poster.path, "/series-70-poster.jpg");
+        assert_eq!(poster.sizes.iter().map(|s| s.slug.as_str()).collect::<Vec<_>>(),
+                   vec!["tmdb/w92", "tmdb/w154", "tmdb/w185", "tmdb/w342", "tmdb/w500", "tmdb/w780", "tmdb/original"]);
+        let backdrop = series.backdrop.expect("backdrop should be set");
+        assert_eq!(backdrop.path, "/series-70-backdrop.jpg");
+        assert_eq!(backdrop.sizes.iter().map(|s| s.slug.as_str()).collect::<Vec<_>>(),
+                   vec!["tmdb/w300", "tmdb/w780", "tmdb/w1280", "tmdb/original"]);
+        let log = test_support::db::log(db);
+        assert_statement_count(&log, 3);
+        assert_no_statement_starting_with(&log, "INSERT");
+        assert_no_statement_starting_with(&log, "UPDATE");
+        assert_no_statement_starting_with(&log, "DELETE");
+    }
+
+    #[tokio::test]
+    async fn preview_skips_genre_and_language_queries_when_series_has_none() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_series_details().times(1).returning(|id| Ok(TmdbSeriesDetails {
+            backdrop_path: None, poster_path: None, original_language: None, overview: Some(String::new()),
+            first_air_date: Some(String::new()), ..test_support::tmdb::series_details(id)
+        }));
+        tmdb.expect_series_alternative_titles().times(1).returning(|id| Ok(SeriesTitles { id, results: Vec::new() }));
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .into_connection();
+
+        let result = preview(70, &fixtures::user(), &db, &tmdb).await;
+
+        let Ok(Preview::New(series)) = result else { panic!("expected a preview") };
+        assert!(series.poster.is_none());
+        assert!(series.backdrop.is_none());
+        assert!(series.original_language.is_none());
+        assert!(series.genres.is_empty());
+        assert!(series.alternative_titles.is_empty());
+        assert_eq!(series.overview, None);
+        assert_eq!(series.first_air_date, None);
+        assert_statement_count(&test_support::db::log(db), 1);
+    }
+
+    #[tokio::test]
+    async fn preview_returns_masterdata_outdated_when_genre_unknown() {
+        test_support::init();
+        let tmdb = full_series_tmdb();
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .append_query_results([[series_genre(5, 18, "Drama")]])
+            .into_connection();
+
+        let result = preview(70, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Err(SrvErr::MasterdataOutdated)));
+        assert_no_statement_starting_with(&test_support::db::log(db), "INSERT");
+    }
+
+    #[tokio::test]
+    async fn preview_returns_not_found_when_tmdb_answers_404() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_series_details().times(1)
+            .returning(|_| Err(test_support::tmdb::error_with_status(http::StatusCode::NOT_FOUND)));
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .into_connection();
+
+        let result = preview(70, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Err(SrvErr::NotFound)));
+        assert_statement_count(&test_support::db::log(db), 1);
+    }
+
+    #[tokio::test]
+    async fn preview_returns_integration_err_when_tmdb_fails() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_series_details().times(1).returning(|_| Err(test_support::tmdb::error("TMDB unavailable")));
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .into_connection();
+
+        let result = preview(70, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Err(SrvErr::Integration(_))));
     }
 
     #[tokio::test]

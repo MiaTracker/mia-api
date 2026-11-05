@@ -1,12 +1,13 @@
 use axum::{Extension, Json};
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use views::api::{MaybeRouteType, RouteType};
 use views::images::{BackdropUpdate, ImagesUpdate, PosterUpdate, ImageCandidates};
 use views::media::{MediaCreateParams, SearchQuery, MediaSourceCreate, MediaSourceDelete, MediaType, SearchParams, PageReq, MediaIndex, SearchResults, SeriesDeletePathParams};
-use views::series::{SeriesDetails, SeriesMetadata};
+use views::series::{SeriesDetails, SeriesMetadata, SeriesPreview};
 use views::users::CurrentUser;
+use services::media_preview::Preview;
 use crate::infrastructure::{AppState, IntoApiResponse};
 use views::api::ApiErrView;
 use views::images::ImageCandidate;
@@ -135,6 +136,34 @@ pub async fn details(state: State<AppState>, Extension(user): Extension<CurrentU
             Some(details) => { (StatusCode::OK, Some(details)) }
         }
     })
+}
+
+#[utoipa::path(
+    get,
+    operation_id = "series::preview",
+    path = "/series/preview/{tmdb_id}",
+    params(
+        ("tmdb_id" = i32, Path, )
+    ),
+    responses(
+        (status = 200, description = "Series details from TMDB, for a series that is not in the library", body = SeriesPreview),
+        (status = 303, description = "The series is in the library already; the body is its id and Location points to its details", body = i32),
+        (status = 400, description = "The request is invalid", body = [Vec<ApiErrView>]),
+        (status = 401, description = "Authorization token was not provided or is invalid", body = [Vec<ApiErrView>]),
+        (status = 404, description = "TMDB does not know the series"),
+        (status = 500, description = "An internal error occurred while processing the request", body = [Vec<ApiErrView>])
+    ),
+    security(("api_key" = []))
+)]
+pub async fn preview(state: State<AppState>, Extension(user): Extension<CurrentUser>, Path(tmdb_id): Path<i32>) -> impl IntoResponse {
+    match services::series::preview(tmdb_id, &user, &state.conn, state.tmdb.as_ref()).await {
+        Ok(Preview::InLibrary(id)) => (StatusCode::SEE_OTHER, [(header::LOCATION, format!("/series/{id}"))], Json(id)).into_response(),
+        Ok(Preview::New(preview)) => (StatusCode::OK, Json(preview)).into_response(),
+        Err(err) => {
+            let api_err: views::api::ApiErr = (&err).into();
+            api_err.into_response()
+        }
+    }
 }
 
 #[utoipa::path(

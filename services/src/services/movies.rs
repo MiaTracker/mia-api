@@ -7,7 +7,7 @@ use integrations::tmdb::views::PropertyChanges;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DbConn, EntityTrait, IntoActiveModel as SeaOrmIntoActiveModel, ModelTrait, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
 use views::media::{MediaIndex, PageReq};
-use views::movies::{MovieDetails, MovieMetadata};
+use views::movies::{MovieDetails, MovieMetadata, MoviePreview};
 use views::users::CurrentUser;
 
 use crate::infrastructure::traits::IntoActiveModel;
@@ -18,6 +18,7 @@ use crate::services;
 use entities::traits::locks::{SetLock, ToLocks};
 use crate::services::images::{fetch_backdrop_and_poster, save_tmdb_image};
 use crate::services::media_details::{load_parts, MediaParts};
+use crate::services::media_preview::{library_id, load_genres, load_language, non_empty, parse_date, tmdb_error, tmdb_images, Preview};
 use std::collections::HashMap;
 use views::images::Image;
 
@@ -103,6 +104,38 @@ pub async fn create(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tm
     Ok((true, inserted_media.id))
 }
 
+
+/// What TMDB says about movie `tmdb_id`, for a movie that is not in the user's library; or the id of
+/// the user's movie when it is, in which case TMDB is not called. Writes nothing. Fails with
+/// `MasterdataOutdated` when a genre of the movie is not in the masterdata, as `create` does, and
+/// with `NotFound` when TMDB does not know the movie. At most 3 queries.
+pub async fn preview(tmdb_id: i32, user: &CurrentUser, db: &DbConn, tmdb: &dyn Tmdb) -> Result<Preview<MoviePreview>, SrvErr> {
+    if let Some(id) = library_id(tmdb_id, MediaType::Movie, user, db).await? {
+        return Ok(Preview::InLibrary(id));
+    }
+
+    let tmdb_movie = tmdb.movie_details(tmdb_id).await.map_err(tmdb_error)?;
+    let titles = tmdb.movie_alternative_titles(tmdb_id).await.map_err(tmdb_error)?;
+
+    let genres = load_genres(&tmdb_movie.genres, MediaType::Movie, db).await?;
+    let original_language = load_language(tmdb_movie.original_language.as_deref(), db).await?;
+    let (poster, backdrop) = tmdb_images(&tmdb_movie.poster_path, &tmdb_movie.backdrop_path);
+
+    Ok(Preview::New(MoviePreview {
+        poster,
+        backdrop,
+        title: tmdb_movie.title,
+        alternative_titles: titles.titles.into_iter().map(|t| t.title).collect(),
+        release_date: parse_date(tmdb_movie.release_date.as_deref()),
+        runtime: tmdb_movie.runtime,
+        status: tmdb_movie.status,
+        overview: non_empty(tmdb_movie.overview),
+        tmdb_id: tmdb_movie.id,
+        tmdb_vote_average: tmdb_movie.vote_average,
+        original_language,
+        genres,
+    }))
+}
 
 pub async fn index(page_req: PageReq, user: &CurrentUser, db: &DbConn) -> Result<Vec<MediaIndex>, SrvErr> {
     let media = Media::find().filter(media::Column::UserId.eq(user.id))
@@ -381,6 +414,7 @@ mod tests {
     use sea_orm::Value;
     use uuid::Uuid;
     use super::*;
+    use crate::services::media_preview::Preview;
     use crate::test_support;
     use crate::test_support::db::{assert_no_statement_starting_with, assert_statement_count, assert_wrote, deleted, with_saved_tmdb_image};
     use crate::test_support::fixtures;
@@ -552,6 +586,148 @@ mod tests {
         let log = test_support::db::log(db);
         assert_statement_count(&log, 1);
         assert_no_statement_starting_with(&log, "INSERT");
+    }
+
+    // -------------------------------------------------------------------- preview
+
+    /// A TMDB answering `movie_details` and `movie_alternative_titles` once each, for movie 603
+    /// with two genres, a poster, a backdrop and one alternative title.
+    fn full_movie_tmdb() -> MockTmdb {
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_movie_details().withf(|id| *id == 603).times(1).returning(|id| Ok(TmdbMovieDetails {
+            genres: vec![TmdbGenre { id: 28, name: "Action".into() }, TmdbGenre { id: 878, name: "Science Fiction".into() }],
+            ..test_support::tmdb::movie_details(id)
+        }));
+        tmdb.expect_movie_alternative_titles().withf(|id| *id == 603).times(1).returning(|id| Ok(MovieTitles {
+            id,
+            titles: vec![MovieTitle { iso_3166_1: "DE".into(), title: "Matrix Deutsch".into(), r#type: String::new() }],
+        }));
+        tmdb
+    }
+
+    #[tokio::test]
+    async fn preview_returns_library_id_without_calling_tmdb_when_movie_already_added() {
+        test_support::init();
+        let tmdb = MockTmdb::new();
+        let db = test_support::db::mock()
+            .append_query_results([[media::Model { tmdb_id: Some(603), ..fixtures::movie_media_model(5, 1) }]])
+            .into_connection();
+
+        let result = preview(603, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Ok(Preview::InLibrary(5))));
+        let log = test_support::db::log(db);
+        assert_statement_count(&log, 1);
+        assert_wrote(&log, "SELECT", &[Value::from(603), Value::from(1)]);
+    }
+
+    #[tokio::test]
+    async fn preview_returns_tmdb_data_when_movie_not_in_library() {
+        test_support::init();
+        let tmdb = full_movie_tmdb();
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .append_query_results([[movie_genre(5, 28, "Action"), movie_genre(6, 878, "Science Fiction")]])
+            .append_query_results([[fixtures::language_model("en", "English")]])
+            .into_connection();
+
+        let result = preview(603, &fixtures::user(), &db, &tmdb).await;
+
+        let Ok(Preview::New(movie)) = result else { panic!("expected a preview") };
+        assert_eq!(movie.tmdb_id, 603);
+        assert_eq!(movie.title, "Movie 603");
+        assert_eq!(movie.alternative_titles.iter().map(String::as_str).collect::<Vec<_>>(), vec!["Matrix Deutsch"]);
+        assert_eq!(movie.release_date, Some(date(2024, 1, 1)));
+        assert_eq!(movie.runtime, Some(100));
+        assert_eq!(movie.status.as_deref(), Some("Released"));
+        assert_eq!(movie.overview.as_deref(), Some("Overview of movie 603"));
+        assert_eq!(movie.tmdb_vote_average, Some(7.5));
+        assert_eq!(movie.original_language.as_ref().map(|l| l.english_name.as_str()), Some("English"));
+        assert_eq!(movie.genres.iter().map(|g| (g.id, g.name.as_str())).collect::<Vec<_>>(), vec![(5, "Action"), (6, "Science Fiction")]);
+        let poster = movie.poster.expect("poster should be set");
+        assert_eq!(poster.path, "/movie-603-poster.jpg");
+        assert_eq!(poster.sizes.iter().map(|s| s.slug.as_str()).collect::<Vec<_>>(),
+                   vec!["tmdb/w92", "tmdb/w154", "tmdb/w185", "tmdb/w342", "tmdb/w500", "tmdb/w780", "tmdb/original"]);
+        let backdrop = movie.backdrop.expect("backdrop should be set");
+        assert_eq!(backdrop.path, "/movie-603-backdrop.jpg");
+        assert_eq!(backdrop.sizes.iter().map(|s| s.slug.as_str()).collect::<Vec<_>>(),
+                   vec!["tmdb/w300", "tmdb/w780", "tmdb/w1280", "tmdb/original"]);
+        let log = test_support::db::log(db);
+        assert_statement_count(&log, 3);
+        assert_no_statement_starting_with(&log, "INSERT");
+        assert_no_statement_starting_with(&log, "UPDATE");
+        assert_no_statement_starting_with(&log, "DELETE");
+    }
+
+    #[tokio::test]
+    async fn preview_skips_genre_and_language_queries_when_movie_has_none() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_movie_details().times(1).returning(|id| Ok(TmdbMovieDetails {
+            backdrop_path: None, poster_path: None, original_language: None, overview: Some(String::new()),
+            release_date: Some("not a date".into()), ..test_support::tmdb::movie_details(id)
+        }));
+        tmdb.expect_movie_alternative_titles().times(1).returning(|id| Ok(MovieTitles { id, titles: Vec::new() }));
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .into_connection();
+
+        let result = preview(603, &fixtures::user(), &db, &tmdb).await;
+
+        let Ok(Preview::New(movie)) = result else { panic!("expected a preview") };
+        assert!(movie.poster.is_none());
+        assert!(movie.backdrop.is_none());
+        assert!(movie.original_language.is_none());
+        assert!(movie.genres.is_empty());
+        assert!(movie.alternative_titles.is_empty());
+        assert_eq!(movie.overview, None);
+        assert_eq!(movie.release_date, None);
+        assert_statement_count(&test_support::db::log(db), 1);
+    }
+
+    #[tokio::test]
+    async fn preview_returns_masterdata_outdated_when_genre_unknown() {
+        test_support::init();
+        let tmdb = full_movie_tmdb();
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .append_query_results([[movie_genre(5, 28, "Action")]])
+            .into_connection();
+
+        let result = preview(603, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Err(SrvErr::MasterdataOutdated)));
+        assert_no_statement_starting_with(&test_support::db::log(db), "INSERT");
+    }
+
+    #[tokio::test]
+    async fn preview_returns_not_found_when_tmdb_answers_404() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_movie_details().times(1)
+            .returning(|_| Err(test_support::tmdb::error_with_status(http::StatusCode::NOT_FOUND)));
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .into_connection();
+
+        let result = preview(603, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Err(SrvErr::NotFound)));
+        assert_statement_count(&test_support::db::log(db), 1);
+    }
+
+    #[tokio::test]
+    async fn preview_returns_integration_err_when_tmdb_fails() {
+        test_support::init();
+        let mut tmdb = MockTmdb::new();
+        tmdb.expect_movie_details().times(1).returning(|_| Err(test_support::tmdb::error("TMDB unavailable")));
+        let db = test_support::db::mock()
+            .append_query_results([Vec::<media::Model>::new()])
+            .into_connection();
+
+        let result = preview(603, &fixtures::user(), &db, &tmdb).await;
+
+        assert!(matches!(result, Err(SrvErr::Integration(_))));
     }
 
     #[tokio::test]
